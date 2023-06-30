@@ -841,7 +841,7 @@ assemble_mt_graph = function(wt_ccm,
                                                                    verbose=verbose)
   if (break_cycles) {
     print ("breaking cycles in perturbation graph...")
-    mutant_supergraph = plattt:::break_cycles_in_state_transition_graph(mutant_supergraph, "total_perturb_path_score_supporting")
+    mutant_supergraph = platt:::break_cycles_in_state_transition_graph(mutant_supergraph, "total_perturb_path_score_supporting")
   }
 
   return(mutant_supergraph)
