@@ -1,146 +1,5 @@
-source("R/plotting.R")
+# source("R/plotting.R")
 
-subcds_from_coldata = function(cds, coldata, partiton_id) {
-
-  sub_coldata = coldata %>% filter(partition == partiton_id)
-  sub_cds = cds[, colData(cds)$cell %in% sub_coldata$cell]
-  col_names = sub_coldata %>% colnames
-  umap_cols = col_names[grepl("partition_umap", col_names)]
-  reducedDims(sub_cds)[["UMAP"]] = sub_coldata %>% select(all_of(umap_cols)) %>% as.matrix
-  colData(sub_cds)$cluster = sub_coldata$cluster
-  return(sub_cds)
-}
-
-detect_outlier_cells = function(cds, prefix , k=10) {
-
-  # build annoy index
-  cds = make_cds_nn_index(cds, reduction_method = "UMAP")
-
-  # save it
-  # save_transform_models(cds, paste0(prefix, "mt_umap_nn_models"))
-
-  # throw them away or just NA everything?
-
-  query_ann = cds@reduce_dim_aux$UMAP$nn_index$annoy$nn_index$annoy_index
-  query_dims = reducedDims(cds)[["UMAP"]]
-  query_res = uwot:::annoy_search(query_dims, k = k + 1, ann = query_ann)
-
-  df = lapply(1:nrow(query_dims), function(i) {
-    # remember to ignore first index
-    neighbor_indices = query_res$idx[i,2:(k+1)]
-    neighbor_dists = query_res$dist[i,2:(k+1)]
-    data.frame("idx"=i,
-               "mean_nn_dist" = mean(neighbor_dists),
-               "max_nn_dist" = max(neighbor_dists),
-               "median_nn_dist" = median(neighbor_dists),
-               "min_nn_dist" = min(neighbor_dists)
-    )
-  }) %>% bind_rows()
-
-  colData(cds)$mean_nn_dist = df$mean_nn_dist
-  colData(cds)$median_nn_dist = df$median_nn_dist
-  colData(cds)$min_nn_dist = df$min_nn_dist
-  colData(cds)$max_nn_dist = df$max_nn_dist
-
-  # fig = plot_cells_3d(cds, color_cells_by = "mean")
-  # saveWidget(fig, paste0("plots/", prefix,"_mean_nn_dist.html"))
-
-  # p = colData(cds) %>% as.data.frame %>% ggplot(aes(mean)) + geom_density() + geom_vline(xintercept = 0.1)
-  # ggsave(p, paste0("plots", prefix, "_mean_nn_dist.png"))
-
-  return(cds)
-}
-
-drop_outlier_cells = function(cds, pct = 99) {
-
-  cds = detect_outlier_cells(cds)
-  max_dist_quantiles = quantile(colData(cds)$max_nn_dist, probs = seq(0, 1, 0.01), na.rm=TRUE)
-  percentile = paste0(pct, "%")
-  max_dist_thresh = max_dist_quantiles[percentile]
-  colData(cds)$outlier = colData(cds)$max_nn_dist > max_dist_thresh
-  # colData(cds)$outlier %>% sum()
-  cds = cds[,colData(cds)$outlier == FALSE]
-  return(cds)
-}
-
-
-# what is the distance of that cell to the centroid
-# of all cells with that label
-dist_from_other_cell_type_sub_cells = function(ref_coldata, centroids_per_cts, i, cell_type_label) {
-  curr_loc = ref_coldata[i,c("umap3d_1","umap3d_2", "umap3d_3")]
-  centroid_loc = centroids_per_cts[cell_type_label,]
-  eucl.dist = dist(rbind(curr_loc,centroid_loc) %>% as.matrix)
-  return(eucl.dist[[1]])
-}
-
-# this currently needs to be run on the full cds in the global space
-
-clean_up_labels = function(cds,
-                           old_colname,
-                           new_colname = old_colname,
-                           return_na = FALSE,
-                           k = 10,
-                           max_dist_fct = 10) {
-
-  # build a knn
-  cds = make_cds_nn_index(cds, reduction_method = "UMAP")
-  query_ann = cds@reduce_dim_aux$UMAP$nn_index$annoy$nn_index$annoy_index
-  query_dims = reducedDims(cds)[["UMAP"]]
-  query_res = uwot:::annoy_search(query_dims, k = k + 1, ann = query_ann)
-  ref_coldata = colData(cds) %>% as.data.frame()
-  ref_coldata = ref_coldata %>% mutate(rn = row_number())
-
-  ref_coldata$umap3d_1 = reducedDim(x = cds, type = "UMAP")[,1]
-  ref_coldata$umap3d_2 = reducedDim(x = cds, type = "UMAP")[,2]
-  ref_coldata$umap3d_3 = reducedDim(x = cds,type = "UMAP")[,3]
-
-
-  # where are the rest of those labels
-  centroids_per_cts = reducedDims(cds)[["UMAP"]] %>% as.data.frame
-  centroids_per_cts$aggregate_col = colData(cds)[[old_colname]]
-  centroids_per_cts = aggregate(.~aggregate_col, data = centroids_per_cts, FUN=mean)
-  centroids_per_cts = centroids_per_cts %>% tibble::column_to_rownames("aggregate_col")
-  names(centroids_per_cts) = c("umap3d_1","umap3d_2", "umap3d_3")
-
-  #
-  new_labels = sapply(ref_coldata$rn, function(i) {
-    # print(i)
-    self_label = ref_coldata[query_res$idx[i,1], old_colname]
-    neighbor_indices = query_res$idx[i,2:(k+1)]
-    neighbor_labels = ref_coldata[neighbor_indices, old_colname]
-    neighbor_dists = query_res$dist[i,2:(k+1)]
-    # mean_dist = mean(neighbor_dists)
-    max_dist = max(neighbor_dists)
-    min_dist = min(neighbor_dists)
-    majority_label = monocle3:::which_mode(neighbor_labels)
-    eucl.dist = dist_from_other_cell_type_sub_cells(ref_coldata, centroids_per_cts, i, self_label)
-
-    if (is.na(self_label)){
-      self_label = ""
-    }
-
-    if (self_label != "") {
-      eucl.dist = dist_from_other_cell_type_sub_cells(ref_coldata, centroids_per_cts, i, self_label)
-    } else {
-      # we can keep these as ""
-      eucl.dist = 0
-    }
-
-
-    # only change it if far from like-things and clear majority
-    if (eucl.dist > max_dist_fct*max_dist & !is.na(majority_label)) {
-      majority_label
-    } else if (return_na) {
-      NA_character_
-    } else {
-      self_label
-    }
-
-  })
-
-  colData(cds)[[new_colname]] = new_labels
-  return(cds)
-}
 
 
 
@@ -291,7 +150,7 @@ assemble_partition = function(cds,
       #stop("Error: fit_mt_models() failed")
     }
 
-    perturb_models_tbl = hooke:::assess_perturbation_effects(wt_ccm,
+    perturb_models_tbl = platt:::assess_perturbation_effects(wt_ccm,
                                                              perturb_models_tbl,
                                                              q_val=0.1, # FIXME: hardcoding
                                                              start_time = start_time,
@@ -336,7 +195,7 @@ assemble_partition = function(cds,
       merge_graph_annotated = rbind(merge_graph_annotated,
                                      merge_mt_graph_edges %>% inner_join(mt_only))
       merge_graph_annotated = igraph::graph_from_data_frame(merge_graph_annotated, vertices = merge_annotated_graph_nodes)
-      merge_graph_annotated = hooke:::break_cycles_in_state_transition_graph(merge_graph_annotated, "total_perturb_path_score_supporting")
+      merge_graph_annotated = platt:::break_cycles_in_state_transition_graph(merge_graph_annotated, "total_perturb_path_score_supporting")
 
       mt_graph = merge_graph_annotated
 
@@ -816,7 +675,7 @@ assemble_wt_graph = function(cds,
                                                               expt=expt)
   if (break_cycles) {
     print ("breaking cycles in control timeseries graph...")
-    wt_state_transition_graph = hooke::break_cycles_in_state_transition_graph(wt_state_transition_graph, "support")
+    wt_state_transition_graph = platt:::break_cycles_in_state_transition_graph(wt_state_transition_graph, "support")
   }
 
   return(wt_state_transition_graph)
@@ -982,7 +841,7 @@ assemble_mt_graph = function(wt_ccm,
                                                                    verbose=verbose)
   if (break_cycles) {
     print ("breaking cycles in perturbation graph...")
-    mutant_supergraph = hooke:::break_cycles_in_state_transition_graph(mutant_supergraph, "total_perturb_path_score_supporting")
+    mutant_supergraph = plattt:::break_cycles_in_state_transition_graph(mutant_supergraph, "total_perturb_path_score_supporting")
   }
 
   return(mutant_supergraph)
@@ -998,7 +857,8 @@ subcluster_cds = function(cds,
                           max_num_cells = NULL,
                           min_res=5e-6,
                           max_res=1e-5,
-                          cluster_k=20) {
+                          cluster_k=20,
+                          num_threads = 1) {
 
   message("Clustering all cells")
 
@@ -1462,3 +1322,17 @@ categorize_genetic_requirements = function(perturb_ccm_tbl, state_graph) {
   #node_direct_perturbs = dplyr::setdiff(node_direct_perturbs, node_indirect_perturbs)
 }
 #debug(categorize_genetic_requirements)
+
+
+# extract a single ccm from perturb_models_tbl
+#'@param perturb_models_tbl
+#'@param perturb_name
+get_perturb_ccm = function(perturb_models_tbl, perturb_name) {
+
+  perturb_ccm = perturb_models_tbl %>% 
+                filter(perturb_name == perturb_name) %>% 
+                pull(perturb_ccm) 
+  perturb_ccm = perturb_ccm[[1]]
+  return(perturb_ccm)
+
+}

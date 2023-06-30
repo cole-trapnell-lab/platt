@@ -933,7 +933,7 @@ build_timeseries_transition_graph <- function(ccm,
     print (igraph::edge_attr(G, "support"))
 
     print ("breaking cycles...")
-    G = hooke:::break_cycles_in_state_transition_graph(G)
+    G = platt:::break_cycles_in_state_transition_graph(G)
 
     G = compute_min_path_cover(ccm, G, weight_attribute="support")
 
