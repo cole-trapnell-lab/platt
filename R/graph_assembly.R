@@ -49,8 +49,8 @@ add_cross_component_pathfinding_links = function(ccm,
   # Only allow cross partition links when one cell group is in an emergent partition
   cross_partition_map = cross_partition_map %>% filter(from %in% cell_groups_in_emergent_partitions |
                                                        to %in% cell_groups_in_emergent_partitions)
-  cross_partition_map = dplyr::left_join(cross_partition_map, clusters_by_partition %>% setNames(paste0('to_', names(.))), by=c("to"="to_cell_group")) #%>%
-  cross_partition_map = dplyr::left_join(cross_partition_map, clusters_by_partition %>% setNames(paste0('from_', names(.))), by=c("from"="from_cell_group")) #%>%
+  cross_partition_map = dplyr::left_join(cross_partition_map, clusters_by_partition %>% setNames(paste0('to_', names(.))), by=c("to"="to_cell_group"), relationship = "many-to-many") #%>%
+  cross_partition_map = dplyr::left_join(cross_partition_map, clusters_by_partition %>% setNames(paste0('from_', names(.))), by=c("from"="from_cell_group"), relationship = "many-to-many") #%>%
   cross_partition_map = cross_partition_map %>% filter (from_partition != to_partition)
 
   # only add cross-partition links between cell groups that are present
