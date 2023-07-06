@@ -1957,7 +1957,8 @@ assemble_transition_graph_from_perturbations <- function(control_timeseries_ccm,
                                                        edge_blacklist=edge_blacklist,
                                                        ...)
 
-    if (is.null(timeseries_graph) || is.na(timeseries_graph)){
+    # if (is.null(timeseries_graph) || is.na(timeseries_graph)){
+    if (is.null(timeseries_graph)){
       stop("Error: timeseries graph assembly failed. Aborting.")
     }
 
