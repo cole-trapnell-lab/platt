@@ -71,8 +71,9 @@ add_cross_component_pathfinding_links = function(ccm,
   #mod_predict = predict(pcor_vs_dist_model, newdata=pcor_graph) %>% as.data.frame()
   #pcor_graph$model_fit = mod_predict$mu
   #pcor_graph$model_sd = sqrt((mod_predict$mu)^2 / exp(mod_predict$`loglink(shape)`))
-
-  pcor_vs_dist_model = VGAM::vglm(pcor ~ umap_dist, data=pcor_graph, family=VGAM::gaussianff(zero=NULL, lmean="identitylink", lsd="loglink"))
+  
+  # pcor_vs_dist_model = VGAM::vglm(pcor ~ umap_dist, data=pcor_graph, family=VGAM::gaussianff(zero=NULL, lmean="identitylink", lsd="loglink"))
+  pcor_vs_dist_model = VGAM::vglm(pcor ~ umap_dist, data=pcor_graph, family=VGAM::uninormal(zero=NULL, lmean="identitylink", lsd="loglink"))
   mod_predict = predict(pcor_vs_dist_model, newdata=pcor_graph) %>% as.data.frame()
   pcor_graph$model_fit = mod_predict$mean
   #pcor_graph$model_sd = sqrt((mod_predict$mean)^2 / exp(mod_predict$`loglink(sd)`))
