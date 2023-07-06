@@ -923,8 +923,9 @@ build_timeseries_transition_graph <- function(ccm,
 
   print ("combining paths...")
   G = select_paths_from_pathfinding_graph(pathfinding_graph, selected_paths, allow_cycles = TRUE)
-
-  if (!is.null(G) && !is.na(G) && make_dag){
+  
+  # if (!is.null(G) && !is.na(G) && make_dag){
+  if (!is.null(G) && make_dag){
 
     #igraph::edge_attr(G, "support") = igraph::edge_attr(G, "total_perturb_path_score_supporting")
     cycle_breaking_scores = igraph::edge_attr(G, "total_path_score_supporting")
