@@ -396,6 +396,7 @@ fit_genotype_ccm = function(genotype,
                             prior_state_transition_graph=NULL,
                             interval_col = "timepoint",
                             perturbation_col = "gene_target",
+                            batch_col = "expt", 
                             ctrl_ids=c("wt", "ctrl-inj", "ctrl-noto", "ctrl-mafba", "ctrl-hgfa", "ctrl-tbx16", "ctrl-met"),
                             assembly_time_start=NULL,
                             assembly_time_stop=NULL,
@@ -407,11 +408,12 @@ fit_genotype_ccm = function(genotype,
                             vhat_method = "bootstrap",
                             num_threads=1,
                             backend="nlopt",
-                            num_bootstraps=10){
+                            num_bootstraps=10
+                            ){
   message(paste("Fitting knockout model for", genotype))
   #subset_ccs = ccs[,colData(ccs)$gene_target == genotype | colData(ccs)$gene_target %in% ctrl_ids]
 
-  subset_ccs = ccs[,colData(ccs)[[perturbation_col]] == genotype]
+  subset_ccs = ccs[,replace_na(colData(ccs)[[perturbation_col]] == genotype, F)]
   expts = unique(colData(subset_ccs)$expt)
 
   if (is.null(assembly_time_start)){
@@ -428,8 +430,8 @@ fit_genotype_ccm = function(genotype,
 
   num_knockout_timepoints = length(unique(colData(subset_ccs)[[interval_col]]))
 
-  message(paste("\ttime range:", knockout_time_start, "to", knockout_time_stop))
-  subset_ccs = ccs[,(colData(ccs)[[perturbation_col]] == genotype | colData(ccs)[[perturbation_col]] %in% ctrl_ids) & colData(ccs)$expt %in% expts]
+  message(paste("\time range:", knockout_time_start, "to", knockout_time_stop))
+  subset_ccs = ccs[,( replace_na(colData(ccs)[[perturbation_col]] == genotype, F) | colData(ccs)[[perturbation_col]] %in% ctrl_ids) & colData(ccs)$expt %in% expts]
 
   colData(subset_ccs)$knockout = colData(subset_ccs)[[perturbation_col]] == genotype
   subset_ccs = subset_ccs[,(colData(subset_ccs)[[interval_col]] >= knockout_time_start & colData(subset_ccs)[[interval_col]] <= knockout_time_stop)]
@@ -466,10 +468,11 @@ fit_genotype_ccm = function(genotype,
     else
       nuisance_model_formula_str = "~ 1"
   }
-
-  if (length(unique(colData(subset_ccs)$expt)) > 1){
+  
+  # make this any column 
+  if (length(unique(colData(subset_ccs)[[batch_col]])) > 1){
     #main_model_formula_str = paste(main_model_formula_str, "+expt")
-    nuisance_model_formula_str = paste(nuisance_model_formula_str, "+expt")
+    nuisance_model_formula_str = paste(nuisance_model_formula_str, "+", batch_col)
   }
 
   main_model_formula_str_xxx = stringr::str_replace_all(main_model_formula_str, "~", "")
@@ -517,9 +520,9 @@ fit_genotype_ccm = function(genotype,
 
 # wrapper function to easily plot output of fit_genotype_ccm 
 #' @export
-make_tbl = function(ccm, timepoint) {
-  wt_cond = estimate_abundances(ccm, tibble(timepoint = timepoint, knockout = F))
-  mt_cond = estimate_abundances(ccm, tibble(timepoint = timepoint, knockout = T))
+make_tbl = function(ccm, timepoint, ...) {
+  wt_cond = estimate_abundances(ccm, tibble(timepoint = timepoint, knockout = F, ...))
+  mt_cond = estimate_abundances(ccm, tibble(timepoint = timepoint, knockout = T, ...))
   tbl = compare_abundances(ccm, wt_cond, mt_cond)
   return(tbl)
 }
