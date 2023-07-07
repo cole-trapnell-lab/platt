@@ -442,14 +442,16 @@ get_discordant_loss_pairs <- function(perturbation_ccm,
 #
 # }
 
-
+#' @export
 get_perturbation_paths <- function(perturbation_ccm,
                                    perturb_summary_tbl,
                                    pathfinding_graph){
 
   # Temporarily set the number of threads OpenMP & the BLAS library can use to be 1
-  old_omp_num_threads = single_thread_omp()
-  old_blas_num_threads = single_thread_blas()
+  # old_omp_num_threads = single_thread_omp()
+  # old_blas_num_threads = single_thread_blas()
+  Sys.setenv("OMP_NUM_THREADS" = 1)
+  Sys.setenv("OPENBLAS_NUM_THREADS" = 1)
 
   tryCatch({
 
@@ -784,6 +786,7 @@ measure_perturbation_freq_along_path <- function(path_df, ccs, cells_along_path_
 #' Identify the possible origins for each destination
 #'
 #' @noRd
+
 build_timeseries_transition_graph <- function(ccm,
                                               extant_cell_type_df,
                                               pathfinding_graph,
@@ -800,6 +803,8 @@ build_timeseries_transition_graph <- function(ccm,
   # Temporarily set the number of threads OpenMP & the BLAS library can use to be 1
   #old_omp_num_threads = single_thread_omp()
   #old_blas_num_threads = single_thread_blas()
+  Sys.setenv("OMP_NUM_THREADS" = 1)
+  Sys.setenv("OPENBLAS_NUM_THREADS" = 1)
 
   # First, let's figure out when each cell type is present and
   # which ones emerge over the course of the caller's time interval
@@ -2015,14 +2020,17 @@ assemble_transition_graph_from_perturbations <- function(control_timeseries_ccm,
 
     path_tbl = path_tbl %>%
       filter(!is.na(paths_between_concordant_loss_nodes)) %>%
-      select(-perturb_summary_tbl) %>%
-      tidyr::unnest(paths_between_concordant_loss_nodes) %>%
-      filter(!is.na(path))
+      select(-perturb_summary_tbl) 
 
-    message (paste("Found ", nrow(path_tbl), " loss paths"))
-
+    
     if (nrow(path_tbl) == 0){
       stop("No loss paths")
+    } else {
+      path_tbl = path_tbl %>%
+        tidyr::unnest(paths_between_concordant_loss_nodes) %>%
+        filter(!is.na(path))
+      message (paste("Found ", nrow(path_tbl), " loss paths"))
+      
     }
 
 

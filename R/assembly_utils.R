@@ -5,29 +5,29 @@
 
 
 # a version of subpartition cds where you run assembly on the top
-
+#' @export
 assemble_partition = function(cds,
-                              partition_name,
                               sample_group,
                               cell_group,
-                              main_model_formula_str,
-                              start_time,
-                              stop_time,
-                              interval_col,
-                              nuisance_model_formula_str,
-                              ctrl_ids,
-                              mt_ids,
-                              sparsity_factor,
-                              perturbation_col,
-                              max_num_cells,
-                              verbose,
-                              num_threads,
-                              backend,
-                              vhat_method,
-                              expts_excluded_from_assembly,
-                              num_bootstraps,
-                              component_col,
-                              embryo_size_factors){
+                              partition_name = NULL,
+                              main_model_formula_str = NULL,
+                              start_time = 18,
+                              stop_time = 48,
+                              interval_col = "timepoint",
+                              nuisance_model_formula_str = "~1",
+                              ctrl_ids = NULL,
+                              mt_ids = NULL,
+                              sparsity_factor = 0.01,
+                              perturbation_col = "gene_target",
+                              max_num_cells=NULL,
+                              verbose=FALSE,
+                              num_threads = 1,
+                              backend = "nlopt",
+                              vhat_method = "bootstrap",
+                              num_bootstraps=10,
+                              expts_excluded_from_assembly=c(),
+                              component_col="partition",
+                              embryo_size_factors=NULL){
 
   colData(cds)$subassembly_group = stringr::str_c(partition_name, colData(cds)[,cell_group], sep="-")
 
@@ -236,6 +236,7 @@ assemble_partition = function(cds,
   return(partition_results)
 }
 
+
 sub_partition_assembly = function(cds,
                                   partition_name = NULL,
                                   num_dim = NULL,
@@ -380,6 +381,7 @@ sub_partition_assembly = function(cds,
   }
 }
 
+#' @export
 get_time_window <- function(genotype, ccs, interval_col, perturbation_col = gene_target){
   subset_ccs = ccs[,colData(ccs)[[perturbation_col]] == genotype]
   colData(subset_ccs)$knockout = colData(subset_ccs)[[perturbation_col]] == genotype
@@ -388,6 +390,7 @@ get_time_window <- function(genotype, ccs, interval_col, perturbation_col = gene
   return(tibble(start_time=knockout_time_start, stop_time=knockout_time_stop))
 }
 
+#' @export
 fit_genotype_ccm = function(genotype,
                             ccs,
                             prior_state_transition_graph=NULL,
@@ -512,6 +515,17 @@ fit_genotype_ccm = function(genotype,
   return(genotype_ccm)
 }
 
+# wrapper function to easily plot output of fit_genotype_ccm 
+#' @export
+make_tbl = function(ccm, timepoint) {
+  wt_cond = estimate_abundances(ccm, tibble(timepoint = timepoint, knockout = F))
+  mt_cond = estimate_abundances(ccm, tibble(timepoint = timepoint, knockout = T))
+  tbl = compare_abundances(ccm, wt_cond, mt_cond)
+  return(tbl)
+}
+
+
+#' @export
 fit_wt_model = function(cds,
                         sample_group,
                         cell_group,
@@ -610,6 +624,8 @@ fit_wt_model = function(cds,
   return(wt_ccm)
 }
 
+#' assembles a graph using timepoint data
+#' @export
 assemble_wt_graph = function(cds,
                              wt_ccm,
                              sample_group,
@@ -684,6 +700,7 @@ assemble_wt_graph = function(cds,
 
 
 # FIXME: allow using WT graph as a prior?
+#' @export
 fit_mt_models = function(cds,
                          sample_group,
                          cell_group,
@@ -779,6 +796,8 @@ fit_mt_models = function(cds,
   return(perturb_models_tbl)
 }
 
+#' assembles a graph using the perturbation data
+#' @export 
 assemble_mt_graph = function(wt_ccm,
                              perturb_models_tbl,
                              interval_col = "timepoint",
@@ -847,7 +866,7 @@ assemble_mt_graph = function(wt_ccm,
   return(mutant_supergraph)
 }
 
-
+#' @export
 subcluster_cds = function(cds,
                           recursive_subcluster = FALSE,
                           partition_name = NULL,
@@ -967,7 +986,7 @@ subcluster_cds = function(cds,
 
 # recluster=T, recursive_subcluster=T, want to run clustering until reach one partition
 # recluster=T, recursive_subcluster=F, want to run clustering once
-
+#' @export
 assemble_partition_from_cds = function(cds,
                                        recluster = TRUE,
                                        recursive_subcluster = FALSE,
@@ -1081,6 +1100,7 @@ convert_graph_ids = function(state_graph, partition, cluster_to_state_id_tbl, su
 
 # if you have saved partition coords, can reconstruct sub cdss
 # still need to cluster them
+
 get_partition_cds = function(cds,
                              partition_id,
                              partition_col="pcor_cluster",
@@ -1134,6 +1154,7 @@ assign_cell_states = function(comb_res) {
 # this cds was clustered/has partitions, but i only want to run assembly on 1
 # partition
 # wrapper function for purrr use cases
+#' @export
 run_assembly = function(cds,
                         partition_group,
                         interval_col = "timepoint",
@@ -1155,6 +1176,7 @@ run_assembly = function(cds,
 
 # wrapper function to split it up
 # because i can't hold comb_cds in memory
+#' @export
 run_partition_assembly = function(wt_cds,
                                   mt_cds,
                                   partition,
@@ -1222,6 +1244,7 @@ run_partition_assembly = function(wt_cds,
 
 }
 
+#' @export
 run_cds_assembly = function(cds,
                             resolution_fun = NULL,
                             max_num_cells = NULL,
@@ -1256,6 +1279,7 @@ run_cds_assembly = function(cds,
 
 }
 
+#' @export
 collect_genotype_effects = function(ccm, timepoint=24, experiment="GAP16"){
   control_abund = estimate_abundances(ccm, tibble(knockout=FALSE, timepoint=timepoint, expt=experiment))
   knockout_abund = estimate_abundances(ccm, tibble(knockout=TRUE, timepoint=timepoint, expt=experiment))
@@ -1265,6 +1289,7 @@ collect_genotype_effects = function(ccm, timepoint=24, experiment="GAP16"){
 
 # This function looks at the effects of each perturbation to assemble a list
 # of genes required by each cell type
+#' @export
 categorize_genetic_requirements = function(perturb_ccm_tbl, state_graph) {
   lost_cell_groups = perturb_ccm_tbl %>%
     tidyr::unnest(perturb_summary_tbl) %>%
@@ -1327,6 +1352,7 @@ categorize_genetic_requirements = function(perturb_ccm_tbl, state_graph) {
 # extract a single ccm from perturb_models_tbl
 #'@param perturb_models_tbl
 #'@param perturb_name
+#' @export
 get_perturb_ccm = function(perturb_models_tbl, perturb_name) {
 
   perturb_ccm = perturb_models_tbl %>% 
@@ -1336,3 +1362,128 @@ get_perturb_ccm = function(perturb_models_tbl, perturb_name) {
   return(perturb_ccm)
 
 }
+
+#' @export
+fit_global_models = function(res,
+                             cds = all_cds,
+                             sample_group = "embryo",
+                             cell_group = "cell_state",
+                             main_model_formula_str = NULL,
+                             start_time = assembly_start_time,
+                             stop_time = assembly_stop_time,
+                             interval_col = "timepoint",
+                             ctrl_ids = control_genotypes,
+                             perturbation_col = "gene_target") {
+  
+  
+  # build a whitelist
+  global_wt_graph_edge_whitelist = do.call(igraph::union, res %>% filter(is.na(wt_graph) == FALSE) %>% pull(wt_graph))
+  global_wt_graph_edge_whitelist = igraph::as_data_frame(global_wt_graph_edge_whitelist)
+  global_wt_graph_edge_whitelist = global_wt_graph_edge_whitelist %>% select(from, to) %>% distinct()
+  
+  
+  # transfer this back to global cds
+  
+  colData(cds)$cds_row_id = colnames(cds)
+  
+  colData(cds)$cell_state = left_join(colData(cds) %>% as.data.frame(),
+                                      res %>% tidyr::unnest(data) %>% select(cds_row_id, subassembly_group),
+                                      by = "cds_row_id") %>% pull(subassembly_group)
+  
+  
+  # Fit a single wild-type cell count timeseries model to all the cell states at once
+  global_wt_ccm = platt:::fit_wt_model(cds,
+                                       sample_group = sample_group,
+                                       cell_group = cell_group,
+                                       start_time = assembly_start_time,
+                                       stop_time = assembly_stop_time,
+                                       interval_col = interval_col,
+                                       vhat_method="bootstrap",
+                                       num_time_breaks=4,
+                                       nuisance_model_formula_str = "~expt",
+                                       ctrl_ids = control_genotypes,
+                                       sparsity_factor = 0.01,
+                                       perturbation_col = perturbation_col,
+                                       edge_whitelist = global_wt_graph_edge_whitelist,
+                                       keep_cds = FALSE,
+                                       num_threads=num_threads,
+                                       backend=assembly_backend,
+                                       verbose=TRUE,
+                                       penalize_by_distance=TRUE,
+                                       pln_num_penalties=30)
+  
+  
+  # Learn a single graph on all states at once (using the subgraphs as a whitelist/prior)
+  
+  # error getting no partitions
+  global_wt_graph = platt:::assemble_wt_graph(cds,
+                                              global_wt_ccm,
+                                              sample_group = sample_group,
+                                              cell_group = cell_group,
+                                              main_model_formula_str = NULL,
+                                              start_time = assembly_start_time,
+                                              stop_time = assembly_stop_time,
+                                              interval_col = interval_col,
+                                              ctrl_ids = control_genotypes,
+                                              sparsity_factor = 0.01,
+                                              perturbation_col = perturbation_col,
+                                              edge_whitelist = global_wt_graph_edge_whitelist,
+                                              verbose=TRUE)
+  
+  # Fit cell count models to each mutant vs control
+  global_perturb_models_tbl = platt:::fit_mt_models(cds,
+                                                    sample_group = sample_group,
+                                                    cell_group = cell_group,
+                                                    main_model_formula_str = NULL,
+                                                    start_time = assembly_start_time,
+                                                    stop_time = assembly_stop_time,
+                                                    interval_col= interval_col,
+                                                    num_time_breaks=3,
+                                                    ctrl_ids = control_genotypes,
+                                                    mt_ids = mt_genotypes,
+                                                    sparsity_factor = 0.01,
+                                                    perturbation_col = perturbation_col,
+                                                    keep_cds=FALSE,
+                                                    num_threads=num_threads,
+                                                    backend=assembly_backend,
+                                                    vhat_method="bootstrap",
+                                                    penalize_by_distance=TRUE)
+  
+  # Build a whitelist of edges by collecting the edges in the subassemblies from the mutants
+  
+  global_mt_graph_edge_whitelist = do.call(igraph::union, res %>% filter(is.na(wt_graph) == FALSE) %>% pull(mt_graph))
+  global_mt_graph_edge_whitelist = igraph::as_data_frame(global_mt_graph_edge_whitelist)
+  global_mt_graph_edge_whitelist = global_mt_graph_edge_whitelist %>% select(from, to) %>% distinct()
+  
+  # Build a global assembly from all the mutant models, using the subassembly as a whitelist
+  # NOTE: this graph should really only have edges that are directly supported by
+  # genetic perturbations, and may therefore be somewhat sparse.
+  global_mt_graph = platt:::assemble_mt_graph(global_wt_ccm,
+                                              global_perturb_models_tbl,
+                                              start_time = assembly_start_time,
+                                              stop_time = assembly_stop_time,
+                                              interval_col = interval_col,
+                                              perturbation_col = perturbation_col,
+                                              edge_whitelist = global_mt_graph_edge_whitelist,
+                                              q_val=0.1,
+                                              verbose=TRUE)
+  
+  # make the annotated graph
+  global_wt_graph_edges = igraph::as_data_frame(global_wt_graph)
+  global_mt_graph_edges = igraph::as_data_frame(global_mt_graph)
+  mt_only = setdiff(global_mt_graph_edges %>% select(from, to), global_wt_graph_edges %>% select(from, to))
+  
+  global_graph_annotated = left_join(global_wt_graph_edges, global_mt_graph_edges)
+  global_graph_annotated = global_graph_annotated %>% select(-support)
+  global_graph_annotated = rbind(global_graph_annotated,
+                                 global_mt_graph_edges %>% inner_join(mt_only))
+  global_graph_annotated = igraph::graph_from_data_frame(global_graph_annotated)
+  
+  return(global_graph_annotated)
+  
+  
+}
+
+
+
+
