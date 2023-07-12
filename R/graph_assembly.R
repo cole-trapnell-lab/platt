@@ -1,3 +1,99 @@
+#' Return a dataframe that describes which cell types are present in a time interval
+#'
+#' @export
+get_extant_cell_types <- function(ccm,
+                                  start,
+                                  stop,
+                                  interval_col="timepoint",
+                                  interval_step = 2,
+                                  log_abund_detection_thresh = -5,
+                                  pct_dynamic_range = 0.25,
+                                  pct_range_detection_thresh = pct_dynamic_range,
+                                  min_cell_range = 2,
+                                  ...){
+  
+  timepoint_pred_df = estimate_abundances_over_interval(ccm, start, stop, interval_col=interval_col, interval_step=interval_step, ...)
+  
+  norm_mat = normalized_counts(ccm@ccs, "size_only")
+  norm_mat[norm_mat == 0] = NA
+  count_quantiles = sparseMatrixStats::rowQuantiles(norm_mat, probs = seq(from = 0, to = 1, by = pct_range_detection_thresh), na.rm=T)
+  count_ranges = sparseMatrixStats::rowRanges(norm_mat, na.rm=T)
+  row.names(count_ranges) = row.names(count_quantiles)
+  
+  #abund_range = range(timepoint_pred_df$log_abund)
+  #dynamic_range = abund_range[2]-abund_range[1]
+  
+  cell_type_thresh_df = tibble(cell_group = timepoint_pred_df %>% pull(cell_group) %>% unique,
+                               cell_group_pct_range_detection_thresh = count_quantiles[cell_group, 2],
+                               min_count = count_ranges[cell_group, 1],
+                               max_count = count_ranges[cell_group, 2])
+  
+  timepoint_pred_df = timepoint_pred_df %>% left_join(cell_type_thresh_df)
+  
+  if (is.null(log_abund_detection_thresh)) {
+    log_abund_detection_thresh = abund_range[1] + pct_dynamic_range*dynamic_range
+  }
+  
+  timepoint_pred_df = timepoint_pred_df %>%
+    group_by(cell_group) %>%
+    mutate(max_abundance = max(exp(log_abund)),
+           percent_max_abund = exp(log_abund) / max_abundance,
+           cell_type_prediction_range = max(log_abund)-(min(log_abund)),
+           percent_cell_type_range = (log_abund - min(log_abund)) / cell_type_prediction_range,
+           above_log_abund_thresh = (log_abund - 2*log_abund_se > log_abund_detection_thresh & log_abund - 2*log_abund_se > log(cell_group_pct_range_detection_thresh)) | cell_type_prediction_range < min_cell_range,
+           present_flag = ifelse(above_log_abund_thresh, TRUE, NA)) %>%
+    ungroup()
+  
+  longest_present_interval <- function(tps_df){
+    tryCatch(
+      {
+        delta_t = as.numeric(tps_df[2,1] - tps_df[1,1])
+        ts_la = ts(tps_df$present_flag,
+                   start=min(tps_df[,1]),
+                   #end=max(tps_df[,1]),
+                   deltat=delta_t)
+        longest_contig = na.contiguous(ts_la)
+        return(tibble(longest_contig_start = start(longest_contig)[1], longest_contig_end = end(longest_contig)[1]))
+      }, error = function(e) {
+        return (tibble(longest_contig_start = NA, longest_contig_end = NA))
+      }
+    )
+  }
+  
+  # undebug(longest_present_interval)
+  nested_timepoints_df = timepoint_pred_df %>%
+    select(cell_group, !!sym(interval_col), present_flag) %>%
+    group_by(cell_group)
+  
+  nested_timepoints_df = nested_timepoints_df %>%
+    group_modify(~ longest_present_interval(.x))
+  #mutate(cg_ts = purrr:::map2(.f=purrr::possibly(longest_present_interval, NA_real_),
+  #                            .x=!!sym(interval_col),
+  #                            .y=present_flag))
+  
+  timepoint_pred_df = left_join(timepoint_pred_df, nested_timepoints_df)
+  
+  timepoint_pred_df = timepoint_pred_df %>%
+    mutate(present_above_thresh = !!sym(interval_col) >= longest_contig_start & !!sym(interval_col) <= longest_contig_end,
+           present_above_thresh = ifelse(is.na(present_above_thresh), FALSE, present_above_thresh))
+  
+  extant_cell_type_df = timepoint_pred_df %>%
+    select(!!sym(interval_col),
+           cell_group,
+           log_abund,
+           max_abundance,
+           percent_max_abund,
+           percent_cell_type_range,
+           longest_contig_start,
+           longest_contig_end,
+           present_above_thresh)
+  return(extant_cell_type_df)
+}
+#undebug(get_extant_cell_types)
+#get_extant_cell_types(wt_ccm_wl, 72, 96) %>% filter(cell_group == "21")
+
+
+
 # FIXME: we need to standardize notation (use either "partition" or "component") throughout the code
 #' @noRd
 add_cross_component_pathfinding_links = function(ccm,
@@ -268,7 +364,7 @@ get_discordant_loss_pairs <- function(perturbation_ccm,
     pull(cell_group)
 
   message ("\tEstimating loss timing")
-  earliest_loss_tbl = hooke:::estimate_loss_timing(perturbation_ccm,
+  earliest_loss_tbl =estimate_loss_timing(perturbation_ccm,
                                                    start_time=perturb_start_time,
                                                    stop_time=perturb_stop_time,
                                                    interval_step = interval_step,
@@ -564,8 +660,8 @@ find_cycles = function(g) {
 
 
 #' score a path based on fitting a linear model of time ~ geodeisic distance
-#' @param ccs
-#' @param path_df
+#' @param ccs cell count set
+#' @param path_df path df
 #' @noRd
 measure_time_delta_along_path <- function(path_df, ccs, cells_along_path_df, interval_col="timepoint") {
 
@@ -1789,7 +1885,7 @@ assemble_timeseries_transitions <- function(ccm,
 
 #' helper function for assessing the gains and losses of each cell type in a
 #' perturbation
-#'
+#' @importFrom hooke function estimate_loss_timing
 #' @noRd
 collect_perturb_effects = function(perturbation_ccm,
                                    time_window,
@@ -1804,6 +1900,7 @@ collect_perturb_effects = function(perturbation_ccm,
                                    log_abund_detection_thresh=-5,
                                    min_lfc=0,
                                    ...) {
+  
   start_time = min(as.numeric(time_window$start_time))
   stop_time = min(as.numeric(time_window$stop_time))
 
@@ -1813,7 +1910,7 @@ collect_perturb_effects = function(perturbation_ccm,
   #print (start_time)
   #print (stop_time)
   #message ("\tEstimating loss timing")
-  perturb_effect_summary = hooke:::estimate_loss_timing(perturbation_ccm,
+  perturb_effect_summary = estimate_loss_timing(perturbation_ccm,
                                                         start_time=start_time,
                                                         stop_time=stop_time,
                                                         interval_step = interval_step,

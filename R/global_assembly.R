@@ -74,8 +74,8 @@ fit_global_wt_model = function(cds,
 
 
 #' fit a global perturbation model 
-#' @param cds
-#' @param 
+#' @param cds input cds
+#' @param global_wt_ccm ccm fit on all the umaps
 #' @export
 fit_global_mt_model = function(cds, 
                                global_wt_ccm, 
@@ -171,8 +171,8 @@ fit_global_models = function(res,
 
 
 #' annotate graph by wt and mt graphs
-#' @param global_wt_graph
-#' @param global_mt_graph
+#' @param global_wt_graph wt graph
+#' @param global_mt_graph mt graph 
 #' @export
 get_annotated_graph = function(global_wt_graph,
                                global_mt_graph) {
@@ -187,7 +187,7 @@ get_annotated_graph = function(global_wt_graph,
   global_annotated_graph_nodes = data.frame(name=row.names(global_wt_ccm@ccs))
   global_annotated_graph_nodes = left_join(global_annotated_graph_nodes, global_mt_graph_nodes)
   
-  mt_only = setdiff(global_mt_graph_edges %>% select(from, to), global_wt_graph_edges %>% select(from, to))
+  mt_only = setdiff(global_mt_graph_edges %>% select(from, to), global_wt_graph_edges %>% select(from, to)) %>% as.data.frame
   
   global_graph_annotated = left_join(global_wt_graph_edges, global_mt_graph_edges)
   global_graph_annotated = global_graph_annotated %>% select(-support)
@@ -195,6 +195,6 @@ get_annotated_graph = function(global_wt_graph,
                                  global_mt_graph_edges %>% inner_join(mt_only))
   global_graph_annotated = igraph::graph_from_data_frame(global_graph_annotated, vertices = global_annotated_graph_nodes)
   global_graph_annotated = platt:::break_cycles_in_state_transition_graph(global_graph_annotated, "total_perturb_path_score_supporting")
-  global_graph_annotated
+  return(global_graph_annotated)
   
 }
