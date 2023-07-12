@@ -83,7 +83,7 @@ assemble_partition = function(cds,
     }
 
     #FIXME: probably need to pass additional args here sometimes:
-    wt_extant_cell_type_df = hooke:::get_extant_cell_types(wt_ccm, start_time, stop_time, interval_col=interval_col, expt="GAP16")
+    wt_extant_cell_type_df = get_extant_cell_types(wt_ccm, start_time, stop_time, interval_col=interval_col, expt="GAP16")
 
     message ("Assembling wild-type graph...")
     wt_graph = assemble_wt_graph (cds,

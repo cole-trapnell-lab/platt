@@ -88,6 +88,7 @@ fit_global_mt_model = function(cds,
                                interval_col = "timepoint",
                                ctrl_ids = control_genotypes,
                                perturbation_col = "gene_target",
+                               component_col="partition", 
                                nuisance_model_formula_str = "~1") {
   
   
@@ -95,23 +96,23 @@ fit_global_mt_model = function(cds,
   
   
   # Fit cell count models to each mutant vs control
-  global_perturb_models_tbl = platt:::fit_mt_models(cds,
-                                                    sample_group = sample_group,
-                                                    cell_group = cell_group,
-                                                    main_model_formula_str = NULL,
-                                                    start_time = assembly_start_time,
-                                                    stop_time = assembly_stop_time,
-                                                    interval_col= interval_col,
-                                                    num_time_breaks=3,
-                                                    ctrl_ids = control_genotypes,
-                                                    mt_ids = mt_genotypes,
-                                                    sparsity_factor = 0.01,
-                                                    perturbation_col = perturbation_col,
-                                                    keep_cds=FALSE,
-                                                    num_threads=num_threads,
-                                                    backend=assembly_backend,
-                                                    vhat_method="bootstrap",
-                                                    penalize_by_distance=TRUE)
+  global_perturb_models_tbl = fit_mt_models(cds,
+                                            sample_group = sample_group,
+                                            cell_group = cell_group,
+                                            main_model_formula_str = NULL,
+                                            start_time = assembly_start_time,
+                                            stop_time = assembly_stop_time,
+                                            interval_col= interval_col,
+                                            num_time_breaks=3,
+                                            ctrl_ids = control_genotypes,
+                                            mt_ids = mt_genotypes,
+                                            sparsity_factor = 0.01,
+                                            perturbation_col = perturbation_col,
+                                            keep_cds=FALSE,
+                                            num_threads=num_threads,
+                                            backend=assembly_backend,
+                                            vhat_method="bootstrap",
+                                            penalize_by_distance=TRUE)
   
   # Build a whitelist of edges by collecting the edges in the subassemblies from the mutants
   
@@ -122,12 +123,13 @@ fit_global_mt_model = function(cds,
   # Build a global assembly from all the mutant models, using the subassembly as a whitelist
   # NOTE: this graph should really only have edges that are directly supported by
   # genetic perturbations, and may therefore be somewhat sparse.
-  global_mt_graph = platt:::assemble_mt_graph(global_wt_ccm,
+  global_mt_graph = assemble_mt_graph(global_wt_ccm,
                                               global_perturb_models_tbl,
                                               start_time = assembly_start_time,
                                               stop_time = assembly_stop_time,
                                               interval_col = interval_col,
                                               perturbation_col = perturbation_col,
+                                              component_col = component_col, 
                                               edge_whitelist = global_mt_graph_edge_whitelist,
                                               q_val=0.1,
                                               verbose=TRUE)

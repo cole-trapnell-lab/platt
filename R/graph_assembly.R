@@ -1885,7 +1885,6 @@ assemble_timeseries_transitions <- function(ccm,
 
 #' helper function for assessing the gains and losses of each cell type in a
 #' perturbation
-#' @importFrom hooke function estimate_loss_timing
 #' @noRd
 collect_perturb_effects = function(perturbation_ccm,
                                    time_window,
@@ -2057,6 +2056,7 @@ assemble_transition_graph_from_perturbations <- function(control_timeseries_ccm,
                                                        links_between_components=links_between_components,
                                                        edge_whitelist=edge_whitelist,
                                                        edge_blacklist=edge_blacklist,
+                                                       components = components,
                                                        ...)
 
     # if (is.null(timeseries_graph) || is.na(timeseries_graph)){
