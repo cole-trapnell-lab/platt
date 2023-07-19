@@ -554,7 +554,7 @@ calc_sig_ind <- function(p_value, html = TRUE) {
 
 #' Plot the expression of a single gene on the state transition graph
 #' @export
-plot_state_graph_abundance_changes <- function(ccm,
+plot_state_graph_abundance_changes <- function(ccs,
                                                state_graph,
                                                comp_abund_table,
                                                contrast = "contrast",
@@ -591,7 +591,7 @@ plot_state_graph_abundance_changes <- function(ccm,
   #edges = hooke:::distance_to_root(edges)
   edges = edges %>% dplyr::ungroup()
 
-  node_metadata = collect_psg_node_metadata(ccm@ccs, color_nodes_by=NULL, label_nodes_by, group_nodes_by)
+  node_metadata = collect_psg_node_metadata(ccs, color_nodes_by=NULL, label_nodes_by, group_nodes_by)
 
   if (hide_unlinked_nodes){
     node_metadata = node_metadata %>% filter(id %in% edges$from | id %in% edges$to)
