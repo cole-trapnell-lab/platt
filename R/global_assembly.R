@@ -1,3 +1,26 @@
+#'
+#' @param res
+build_whitelist = function(res) {
+  # build a whitelist
+  edge_whitelist = do.call(igraph::union, res %>% filter(is.na(wt_graph) == FALSE) %>% pull(wt_graph))
+  edge_whitelist = igraph::as_data_frame(edge_whitelist)
+  edge_whitelist = edge_whitelist %>% select(from, to) %>% distinct()
+  
+  return(edge_whitelist)
+  
+}
+
+
+#'
+#' @param cds
+#' @param res
+transfer_cell_states = function(cds, res, colname="cell_state") {
+  colData(cds)$cds_row_id = colnames(cds)
+  colData(cds)[[colname]] = left_join(colData(cds) %>% as.data.frame(),
+                                      res %>% tidyr::unnest(data) %>% select(cds_row_id, subassembly_group),
+                                      by = "cds_row_id") %>% pull(subassembly_group)
+  return(cds)
+}
 
 
 #' after fitting on sub partitions, fit a model on the entire cds
@@ -8,21 +31,23 @@ fit_global_wt_model = function(cds,
                                sample_group = "embryo",
                                cell_group = "cell_state",
                                main_model_formula_str = NULL,
-                               start_time = assembly_start_time,
-                               stop_time = assembly_stop_time,
+                               start_time = 18,
+                               stop_time = 72,
                                interval_col = "timepoint",
-                               ctrl_ids = control_genotypes,
+                               ctrl_ids = c("Control"),
                                perturbation_col = "gene_target",
-                               nuisance_model_formula_str = "~1") {
+                               component_col = "partition", 
+                               nuisance_model_formula_str = "~1", 
+                               num_threads=1, 
+                               assembly_backend = "nlopt", 
+                               num_time_breaks = 4,
+                               vhat_method = "bootstrap", 
+                               sparsity_factor = 0.01) {
   
   
-  # build a whitelist
-  global_wt_graph_edge_whitelist = do.call(igraph::union, res %>% filter(is.na(wt_graph) == FALSE) %>% pull(wt_graph))
-  global_wt_graph_edge_whitelist = igraph::as_data_frame(global_wt_graph_edge_whitelist)
-  global_wt_graph_edge_whitelist = global_wt_graph_edge_whitelist %>% select(from, to) %>% distinct()
+  global_wt_graph_edge_whitelist = build_whitelist(res)
   
-  
-  # transfer this back to global cds
+  # transfer the cell states back to global cds
   
   colData(cds)$cds_row_id = colnames(cds)
   
@@ -32,43 +57,45 @@ fit_global_wt_model = function(cds,
   
   
   # Fit a single wild-type cell count timeseries model to all the cell states at once
-  global_wt_ccm = platt:::fit_wt_model(cds,
-                                       sample_group = sample_group,
-                                       cell_group = cell_group,
-                                       start_time = assembly_start_time,
-                                       stop_time = assembly_stop_time,
-                                       interval_col = interval_col,
-                                       vhat_method="bootstrap",
-                                       num_time_breaks=4,
-                                       nuisance_model_formula_str = nuisance_model_formula_str,
-                                       ctrl_ids = control_genotypes,
-                                       sparsity_factor = 0.01,
-                                       perturbation_col = perturbation_col,
-                                       edge_whitelist = global_wt_graph_edge_whitelist,
-                                       keep_cds = TRUE,
-                                       num_threads=num_threads,
-                                       backend=assembly_backend,
-                                       verbose=TRUE,
-                                       penalize_by_distance=TRUE,
-                                       pln_num_penalties=30)
+  global_wt_ccm = fit_wt_model(cds,
+                               sample_group = sample_group,
+                               cell_group = cell_group,
+                               start_time = start_time,
+                               stop_time = stop_time,
+                               interval_col = interval_col,
+                               vhat_method = vhat_method,
+                               num_time_breaks = num_time_breaks,
+                               nuisance_model_formula_str = nuisance_model_formula_str,
+                               ctrl_ids = ctrl_ids,
+                               sparsity_factor = sparsity_factor,
+                               perturbation_col = perturbation_col,
+                               edge_whitelist = global_wt_graph_edge_whitelist,
+                               keep_cds = TRUE,
+                               num_threads = num_threads,
+                               backend = assembly_backend,
+                               verbose = TRUE,
+                               penalize_by_distance = TRUE,
+                               pln_num_penalties = 30)
   
+  return(global_wt_ccm)
   
-  global_wt_graph = platt:::assemble_wt_graph(cds,
-                                              global_wt_ccm,
-                                              sample_group = sample_group,
-                                              cell_group = cell_group,
-                                              main_model_formula_str = NULL,
-                                              start_time = assembly_start_time,
-                                              stop_time = assembly_stop_time,
-                                              interval_col = interval_col,
-                                              ctrl_ids = control_genotypes,
-                                              sparsity_factor = 0.01,
-                                              perturbation_col = perturbation_col,
-                                              edge_whitelist = global_wt_graph_edge_whitelist,
-                                              verbose=TRUE)
+  # global_wt_graph = assemble_wt_graph(cds,
+  #                                     global_wt_ccm,
+  #                                     sample_group = sample_group,
+  #                                     cell_group = cell_group,
+  #                                     main_model_formula_str = NULL,
+  #                                     start_time = assembly_start_time,
+  #                                     stop_time = assembly_stop_time,
+  #                                     interval_col = interval_col,
+  #                                     ctrl_ids = control_genotypes,
+  #                                     sparsity_factor = 0.01,
+  #                                     perturbation_col = perturbation_col,
+  #                                     component_col = component_col,
+  #                                     edge_whitelist = global_wt_graph_edge_whitelist,
+  #                                     verbose=TRUE)
   
-  return(list(ccm = global_wt_ccm,
-              graph = global_wt_graph))
+  # return(list(ccm = global_wt_ccm,
+  #             graph = global_wt_graph))
   
 }
 
@@ -89,7 +116,10 @@ fit_global_mt_model = function(cds,
                                ctrl_ids = control_genotypes,
                                perturbation_col = "gene_target",
                                component_col="partition", 
-                               nuisance_model_formula_str = "~1") {
+                               nuisance_model_formula_str = "~1", 
+                               num_time_breaks=3,
+                               sparsity_factor = 0.01, 
+                               vhat_method="bootstrap") {
   
   
   # Learn a single graph on all states at once (using the subgraphs as a whitelist/prior)
@@ -103,36 +133,35 @@ fit_global_mt_model = function(cds,
                                             start_time = assembly_start_time,
                                             stop_time = assembly_stop_time,
                                             interval_col= interval_col,
-                                            num_time_breaks=3,
+                                            num_time_breaks = num_time_breaks,
                                             ctrl_ids = control_genotypes,
                                             mt_ids = mt_genotypes,
-                                            sparsity_factor = 0.01,
+                                            sparsity_factor = sparsity_factor,
                                             perturbation_col = perturbation_col,
                                             keep_cds=FALSE,
                                             num_threads=num_threads,
                                             backend=assembly_backend,
-                                            vhat_method="bootstrap",
+                                            vhat_method=vhat_method,
                                             penalize_by_distance=TRUE)
   
-  # Build a whitelist of edges by collecting the edges in the subassemblies from the mutants
+  # # Build a whitelist of edges by collecting the edges in the subassemblies from the mutants
+  # global_mt_graph_edge_whitelist = build_whitelist(res)
+  # 
+  # # Build a global assembly from all the mutant models, using the subassembly as a whitelist
+  # # NOTE: this graph should really only have edges that are directly supported by
+  # # genetic perturbations, and may therefore be somewhat sparse.
+  # global_mt_graph = assemble_mt_graph(global_wt_ccm,
+  #                                             global_perturb_models_tbl,
+  #                                             start_time = assembly_start_time,
+  #                                             stop_time = assembly_stop_time,
+  #                                             interval_col = interval_col,
+  #                                             perturbation_col = perturbation_col,
+  #                                             component_col = component_col, 
+  #                                             edge_whitelist = global_mt_graph_edge_whitelist,
+  #                                             q_val=0.1,
+  #                                             verbose=TRUE)
   
-  global_mt_graph_edge_whitelist = do.call(igraph::union, res %>% filter(is.na(wt_graph) == FALSE) %>% pull(mt_graph))
-  global_mt_graph_edge_whitelist = igraph::as_data_frame(global_mt_graph_edge_whitelist)
-  global_mt_graph_edge_whitelist = global_mt_graph_edge_whitelist %>% select(from, to) %>% distinct()
-  
-  # Build a global assembly from all the mutant models, using the subassembly as a whitelist
-  # NOTE: this graph should really only have edges that are directly supported by
-  # genetic perturbations, and may therefore be somewhat sparse.
-  global_mt_graph = assemble_mt_graph(global_wt_ccm,
-                                              global_perturb_models_tbl,
-                                              start_time = assembly_start_time,
-                                              stop_time = assembly_stop_time,
-                                              interval_col = interval_col,
-                                              perturbation_col = perturbation_col,
-                                              component_col = component_col, 
-                                              edge_whitelist = global_mt_graph_edge_whitelist,
-                                              q_val=0.1,
-                                              verbose=TRUE)
+  return(global_perturb_models)
   
   
 }
