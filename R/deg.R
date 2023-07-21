@@ -70,6 +70,42 @@ measure_maintenance_effect <- function (self_estimate, other_estimates)
   return(effect_size)
 }
 
+
+#' get the parent(s) of a state in a state transition graph
+#' @noRd
+get_parents = function(state_graph, cell_state){
+  parents = igraph::neighbors(state_graph, cell_state, mode="in")
+  if (length(parents) > 0)
+    return (parents$name)
+  else
+    return (c())
+}
+
+#' get the children of a state in a state transition graph
+#' @noRd
+get_children = function(state_graph, cell_state){
+  children = igraph::neighbors(state_graph, cell_state, mode="out")
+  if (length(children) > 0)
+    return (children$name)
+  else
+    return (c())
+}
+
+#' get the siblings of a state in a state transition graph
+#' @noRd
+get_siblings = function(state_graph, cell_state){
+  parents = get_parents(state_graph, cell_state)
+  if (length(parents) > 0){
+    siblings = igraph::neighbors(state_graph, parents, mode="out")
+    siblings = setdiff(siblings$name, cell_state) #exclude self
+    return(siblings)
+  } else{
+    return (c())
+  }
+  
+}
+
+
 #' @noRd
 score_genes_for_expression_pattern <- function(cell_state, gene_patterns, state_graph, estimate_matrix, state_term="cell_group", cores=1){
 
