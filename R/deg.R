@@ -572,6 +572,7 @@ classify_genes_over_graph <- function(ccs,
                                       state_graph,
                                       gene_ids = NULL,
                                       group_nodes_by=NULL,
+                                      label_nodes_by="cell_state", 
                                       log_fc_thresh=1,
                                       abs_expr_thresh = 1e-3,
                                       sig_thresh=0.05,
@@ -665,6 +666,33 @@ classify_genes_over_graph <- function(ccs,
       .y = gene_classes,
       state_graph,
       estimate_matrix))
+  
   return(cell_states)
 }
+
+#' helper function 
+#' @param ccs
+#' @param cell_states
+#' @param label_nodes_by
+#' @export
+unnest_degs = function(ccs, 
+                       cell_states, 
+                       label_nodes_by) {
+  
+  cell_states = cell_states %>%
+    filter(is.na(gene_classes) == FALSE) %>%
+    tidyr::unnest(gene_class_scores) %>%
+    dplyr::select(cell_state, gene_id, interpretation, pattern_match_score, pattern_activity_score)
+  
+  cell_states = left_join(cell_states,
+                          rowData(ccs@cds) %>% as_tibble %>% select(id, gene_short_name), by=c("gene_id"="id"))
+  
+  cell_states = left_join(cell_states,
+                          collect_psg_node_metadata(ccs, color_nodes_by=NULL, group_nodes_by = NULL, label_nodes_by=label_nodes_by), 
+                          by=c("cell_state"="id")) %>%
+    dplyr::rename(cell_type=label_nodes_by)
+  
+  return(cell_states)
+}
+
 
