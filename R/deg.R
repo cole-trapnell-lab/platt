@@ -696,3 +696,80 @@ unnest_degs = function(ccs,
 }
 
 
+#' similar to fit_genotype_ccm
+#' @param ccs
+#' @param genotype
+#' @param ctrl_ids
+#' @param perturbation_col
+#' @param interval_col
+#' @param cell_groups
+fit_genotype_deg = function(ccs,
+                            genotype,
+                            ctrl_ids = c("Control"),
+                            perturbation_col = "perturbation",
+                            interval_col = "timepoint",
+                            assembly_time_start = 18,
+                            assembly_time_stop= 72,
+                            cell_groups = NULL,
+                            cores = 1,
+                            ... ) {
+  
+  subset_ccs = ccs[,replace_na(colData(ccs)[[perturbation_col]] == genotype, F)]
+  expts = unique(colData(subset_ccs)$expt)
+  
+  if (is.null(assembly_time_start)){
+    knockout_time_start = min(colData(subset_ccs)[[interval_col]])
+  }else{
+    knockout_time_start = assembly_time_start
+  }
+  
+  if (is.null(assembly_time_stop)){
+    knockout_time_stop = max(colData(subset_ccs)[[interval_col]])
+  }else{
+    knockout_time_stop = assembly_time_stop
+  }
+  
+  num_knockout_timepoints = length(unique(colData(subset_ccs)[[interval_col]]))
+  
+  message(paste("\ttime range:", knockout_time_start, "to", knockout_time_stop))
+  subset_ccs = ccs[,( replace_na(colData(ccs)[[perturbation_col]] == genotype, F) | colData(ccs)[[perturbation_col]] %in% ctrl_ids) & colData(ccs)$expt %in% expts]
+  
+  colData(subset_ccs)$knockout = colData(subset_ccs)[[perturbation_col]] == genotype
+  subset_ccs = subset_ccs[,(colData(subset_ccs)[[interval_col]] >= knockout_time_start & colData(subset_ccs)[[interval_col]] <= knockout_time_stop)]
+  
+  colData(subset_ccs@cds)$knockout = colData(subset_ccs@cds)[[perturbation_col]] == genotype
+  
+  pb_cds = pseudobulk_ccs_for_states(subset_ccs)
+  
+  # subset to genes that are expressed over a certain min value
+  expr_over_thresh = normalized_counts(pb_cds, "size_only", pseudocount = 0)
+  genes_to_test = which(Matrix::rowSums(expr_over_thresh) >= 1)
+  pb_cds = pb_cds[genes_to_test,]
+  
+  pb_cds = add_covariate(subset_ccs, pb_cds, "knockout")
+  
+  if (is.null(cell_groups)) {
+    cell_groups = rownames(counts(ccs))
+  }
+  
+  # fit models in every cell group
+  group_models = lapply(cell_groups, function(cell_group){
+    
+    cg_pb_cds = pb_cds[, colData(pb_cds)$cell_group == cell_group]
+    message(paste0("fitting regression models for ", cell_group))
+    cg_group_models = monocle3::fit_models(cg_pb_cds,
+                                           weights = colData(cg_pb_cds)$num_cells_in_group,
+                                           model_formula_str = "~ knockout",
+                                           cores = cores,
+                                           ... )
+    cg_group_models
+    message(paste0("      collecting coefficients for ", cell_group))
+    fit_coefs = coefficient_table(cg_group_models) %>%
+      dplyr::select(gene_short_name, id, term, estimate, std_err) 
+    fit_coefs
+  })
+  
+  return(group_models)
+}
+
+
