@@ -179,7 +179,7 @@ classify_genes_in_cell_state <- function(cell_state, state_graph, estimate_matri
 
   expr_df = tibble(gene_id=row.names(estimate_matrix))
 
-  message("      examining coeffficients ", cell_state)
+  message("      examining coefficients ", cell_state)
 
   expr_df$expr_self = pnorm(estimate_matrix[,cell_state] - log(abs_expr_thresh), sd = stderr_matrix[,cell_state], lower.tail=FALSE)
   expr_df$expr_self = p.adjust(expr_df$expr_self, method="BH") < sig_thresh
@@ -566,7 +566,50 @@ classify_genes_in_cell_state <- function(cell_state, state_graph, estimate_matri
 #debug(classify_genes_in_cell_state)
 
 
-#' Classify each gene's pattern of expresison in each state in a state transition graph
+#' @export
+classify_genes_within_state_graph = function(ccs,
+                                             state_graph,
+                                             cell_groups = NULL, 
+                                             gene_ids = NULL,
+                                             group_nodes_by=NULL,
+                                             label_nodes_by="cell_state", 
+                                             log_fc_thresh=1,
+                                             abs_expr_thresh = 1e-3,
+                                             sig_thresh=0.05,
+                                             min_samples_detected = 2,
+                                             min_cells_per_pseudobulk = 3,
+                                             cores=1,
+                                             ...) {
+  
+  expts = unique(colData(ccs)$expt)
+  
+  pb_cds = hooke:::pseudobulk_ccs_for_states(ccs)
+  pb_cds = add_covariate(ccs, pb_cds, perturbation_col)
+  
+  # subset to genes that are expressed over a certain min value
+  expr_over_thresh = normalized_counts(pb_cds, "size_only", pseudocount = 0)
+  genes_to_test = which(Matrix::rowSums(expr_over_thresh) >= min_samples_detected)
+  pb_cds = pb_cds[genes_to_test,]
+  
+  pseudobulks_to_test = which(colData(pb_cds)$num_cells_in_group >= min_cells_per_pseudobulk)
+  pb_cds = pb_cds[,pseudobulks_to_test]
+  
+  
+  if (is.null(cell_groups)) {
+    cell_groups = rownames(counts(ccs))
+  }
+  
+  df = data.frame(cell_group = cell_groups) %>% 
+    mutate(genes_within_cell_group = purrr::map(.f = classify_genes_within_node, 
+                                    .x = cell_group, 
+                                    pb_cds = pb_cds))
+  
+  
+  return(df)
+  
+}
+
+#' Classify each gene's pattern of expression in each state in a state transition graph
 #' @export
 classify_genes_over_graph <- function(ccs,
                                       state_graph,
@@ -581,10 +624,10 @@ classify_genes_over_graph <- function(ccs,
                                       cores=1,
                                       ...){
   if (is.null(group_nodes_by)){
-    pb_cds = pseudobulk_ccs_for_states(ccs)
+    pb_cds = hooke:::pseudobulk_ccs_for_states(ccs)
     state_term = "cell_group"
   }else{
-    pb_cds = pseudobulk_ccs_for_states(ccs, state_col = group_nodes_by)
+    pb_cds = hooke:::pseudobulk_ccs_for_states(ccs, state_col = group_nodes_by)
     state_term = group_nodes_by
   }
 
@@ -681,7 +724,7 @@ unnest_degs = function(ccs,
   
   cell_states = cell_states %>%
     filter(is.na(gene_classes) == FALSE) %>%
-    tidyr::unnest(gene_class_scores) %>%
+    tidyr::unnest(gene_class_scores) %>% 
     dplyr::select(cell_state, gene_id, interpretation, pattern_match_score, pattern_activity_score)
   
   cell_states = left_join(cell_states,
@@ -712,13 +755,14 @@ fit_genotype_deg = function(ccs,
                             assembly_time_stop= 72,
                             cell_groups = NULL,
                             cores = 1,
+                            min_samples_detected = 2,
+                            min_cells_per_pseudobulk = 3,
                             ... ) {
   
-  subset_ccs = ccs[,replace_na(colData(ccs)[[perturbation_col]] == genotype, F)]
-  expts = unique(colData(subset_ccs)$expt)
+  expts = unique(colData(ccs)$expt)
   
   if (is.null(assembly_time_start)){
-    knockout_time_start = min(colData(subset_ccs)[[interval_col]])
+    knockout_time_start = min(colData(ccs)[[interval_col]])
   }else{
     knockout_time_start = assembly_time_start
   }
@@ -739,37 +783,244 @@ fit_genotype_deg = function(ccs,
   
   colData(subset_ccs@cds)$knockout = colData(subset_ccs@cds)[[perturbation_col]] == genotype
   
-  pb_cds = pseudobulk_ccs_for_states(subset_ccs)
+  pb_cds = hooke:::pseudobulk_ccs_for_states(subset_ccs)
   
   # subset to genes that are expressed over a certain min value
   expr_over_thresh = normalized_counts(pb_cds, "size_only", pseudocount = 0)
-  genes_to_test = which(Matrix::rowSums(expr_over_thresh) >= 1)
+  genes_to_test = which(Matrix::rowSums(expr_over_thresh) >= min_samples_detected)
   pb_cds = pb_cds[genes_to_test,]
   
-  pb_cds = add_covariate(subset_ccs, pb_cds, "knockout")
+  pseudobulks_to_test = which(colData(pb_cds)$num_cells_in_group >= min_cells_per_pseudobulk)
+  pb_cds = pb_cds[,pseudobulks_to_test]
+  
+  
+  pb_cds = hooke:::add_covariate(subset_ccs, pb_cds, "knockout")
+  
   
   if (is.null(cell_groups)) {
     cell_groups = rownames(counts(ccs))
   }
   
-  # fit models in every cell group
-  group_models = lapply(cell_groups, function(cell_group){
+  if (is.null(perturbations)) {
+    perturbations = unique(colData(pb_cds)[[perturbation_col]])
+  }
+  
+  # cell_group_models = lapply(perturbations, function(perturbation) {
+  cell_group_models = lapply(cell_groups, function(cell_group) {
     
-    cg_pb_cds = pb_cds[, colData(pb_cds)$cell_group == cell_group]
+    # perturb_pb_cds = pb_cds[, colData(pb_cds)[[perturbation_col]] == perturbation]
+    cg_pb_cds = pb_cds[, colData(pb_cds)[[state_term]] == cell_group]
+  
+    # message(paste0("fitting regression models for ", perturbation))
     message(paste0("fitting regression models for ", cell_group))
-    cg_group_models = monocle3::fit_models(cg_pb_cds,
-                                           weights = colData(cg_pb_cds)$num_cells_in_group,
-                                           model_formula_str = "~ knockout",
-                                           cores = cores,
-                                           ... )
-    cg_group_models
-    message(paste0("      collecting coefficients for ", cell_group))
-    fit_coefs = coefficient_table(cg_group_models) %>%
-      dplyr::select(gene_short_name, id, term, estimate, std_err) 
-    fit_coefs
+  
+    pb_group_models = fit_models(cg_pb_cds,
+                                 model_formula_str=paste("~ 0 + knockout", ),
+                                 weights=colData(pb_cds)$num_cells_in_group,
+                                 cores=cores) %>% dplyr::select(gene_short_name, id, model, model_summary)
+  
+    message(paste0("fitting regression models for ", cell_group))
+    
+    pb_group_models = coefficient_table(pb_group_models) %>%
+      dplyr::select(gene_short_name, id, term, estimate, std_err) %>%
+      mutate(term = stringr::str_replace_all(term, state_term, ""))
+    estimate_matrix = pb_group_models %>% dplyr::select(id, term, estimate)
+    estimate_matrix = estimate_matrix %>% mutate(term = factor(term, levels=unique(colData(cg_pb_cds)[,"knockout"])))
+    estimate_matrix = estimate_matrix %>% tidyr::pivot_wider(names_from=term, values_from=estimate, values_fill=0)
+  
+    gene_ids = estimate_matrix$id
+    estimate_matrix$id = NULL
+    estimate_matrix = as.matrix(estimate_matrix)
+    row.names(estimate_matrix) = gene_ids
+    colnames(estimate_matrix) = as.character(colnames(estimate_matrix))
+  
+    stderr_matrix = pb_group_models %>% dplyr::select(id, term, std_err)
+    estimate_matrix = estimate_matrix %>% mutate(term = factor(term, levels=unique(colData(cg_pb_cds)[,"knockout"])))
+    stderr_matrix = stderr_matrix %>% tidyr::pivot_wider(names_from=term, values_from=std_err, values_fill=0)
+  
+    gene_ids = stderr_matrix$id
+    stderr_matrix$id = NULL
+    stderr_matrix = as.matrix(stderr_matrix)
+    row.names(stderr_matrix) = gene_ids
+    colnames(stderr_matrix) = as.character(colnames(stderr_matrix))
+  
+    # states_to_assess = intersect(as.character(unique(colData(pb_cds)[,state_term])), unlist(igraph::V(state_graph)$name))
+    # cell_states = tibble(cell_state = states_to_assess)
+  
+    # cell_states = cell_states %>%
+    #   dplyr::mutate(gene_classes = purrr::map(.f = purrr::possibly(
+    #     classify_genes_in_cell_state, NA_real_), .x = cell_state,
+    #     state_graph, estimate_matrix, stderr_matrix, state_term,
+    #     log_fc_thresh=log_fc_thresh,
+    #     abs_expr_thresh = abs_expr_thresh,
+    #     sig_thresh=sig_thresh,
+    #     cores=cores))
+    # 
+    # cell_states = cell_states %>%
+    #   filter(is.na(gene_classes) == FALSE) %>%
+    #   dplyr::mutate(gene_class_scores = purrr::map2(.f = purrr::possibly(
+    #     score_genes_for_expression_pattern, NA_real_),
+    #     .x = cell_state,
+    #     .y = gene_classes,
+    #     state_graph,
+    #     estimate_matrix))
+      
+    # cell_states
+
   })
   
-  return(group_models)
+  return(perturb_group_models)
+  
+}
+
+#' to do: do i want to subset by time or do i not care
+#' @param ccs
+#' @param perturbation_col
+#' @param control_ids
+#' @param cell_groups
+fit_mt_deg_models = function(ccs,
+                             perturbation_col,
+                             control_ids,
+                             cell_groups = NULL,
+                             num_threads = 1) {
+  
+  ccs@cds_coldata[["perturb_name"]] = ccs@cds_coldata[[perturbation_col]]
+  
+  perturb_df = ccs@cds_coldata %>%
+    as_tibble() %>%
+    dplyr::select(perturb_name) %>%
+    filter(!perturb_name %in% ctrl_ids) %>%
+    distinct()
+  
+  perturb_models_tbl = perturb_df %>%
+    purrr::map(.f = fit_genotype_deg,
+               .x = perturb_name,
+               control_ids = control_ids,
+               cell_groups = cell_groups)
+  
+  return(perturb_models_tbl)
 }
 
 
+
+#' classify each gene's pattern of expression in each node of the state transition graph
+#' @export
+classify_genes_within_node <- function(cell_group, 
+                                       pb_cds, 
+                                       state_term ="cell_group",
+                                       log_fc_thresh=1,
+                                       abs_expr_thresh = 1e-3,
+                                       sig_thresh=0.05) {
+  
+  # now fit models per cell group
+  
+  cg_pb_cds = pb_cds[, colData(pb_cds)[[state_term]] == cell_group]
+  message(paste0("fitting regression models for ", cell_group))
+  
+  
+  pb_group_models = fit_models(cg_pb_cds,
+                               model_formula_str=paste(paste0("~ 0 + perturbation")),
+                               weights=colData(cg_pb_cds)$num_cells_in_group,
+                               cores=cores) %>% dplyr::select(gene_short_name, id, model, model_summary)
+  
+  
+  message(paste0("fitting regression models for ", cell_group))
+  
+  pb_coeffs = coefficient_table(pb_group_models) %>%
+    dplyr::select(gene_short_name, id, term, estimate, std_err) %>%
+    mutate(term = stringr::str_replace_all(term, "perturbation", ""))
+  estimate_matrix = pb_coeffs %>% dplyr::select(id, term, estimate)
+  estimate_matrix = estimate_matrix %>% mutate(term = factor(term, levels=unique(colData(cg_pb_cds)[,"perturbation"])))
+  estimate_matrix = estimate_matrix %>% tidyr::pivot_wider(names_from=term, values_from=estimate, values_fill=0)
+  
+  gene_ids = estimate_matrix$id
+  estimate_matrix$id = NULL
+  estimate_matrix = as.matrix(estimate_matrix)
+  row.names(estimate_matrix) = gene_ids
+  colnames(estimate_matrix) = as.character(colnames(estimate_matrix))
+  
+  stderr_matrix = pb_coeffs %>% dplyr::select(id, term, std_err)
+  stderr_matrix = stderr_matrix %>% mutate(term = factor(term, levels=unique(colData(cg_pb_cds)[,"perturbation"])))
+  stderr_matrix = stderr_matrix %>% tidyr::pivot_wider(names_from=term, values_from=std_err, values_fill=0)
+  
+  gene_ids = stderr_matrix$id
+  stderr_matrix$id = NULL
+  stderr_matrix = as.matrix(stderr_matrix)
+  row.names(stderr_matrix) = gene_ids
+  colnames(stderr_matrix) = as.character(colnames(stderr_matrix))
+  
+  # make a graph of control --> all perturbations
+  cell_perturbations = tibble(perturbation = unique(colData(pb_cds)[,"perturbation"]))
+  state_graph = data.frame("from" = cell_perturbations[cell_perturbations != "Control"])
+  state_graph$to = "Control"
+  state_graph = state_graph %>% igraph::graph_from_data_frame() %>% igraph::reverse_edges()
+  
+  cell_perturbations = cell_perturbations %>%
+    dplyr::mutate(gene_classes = purrr::map(.f = purrr::possibly(
+      classify_genes_in_cell_state, NA_real_), .x = perturbation,
+      state_graph, estimate_matrix, stderr_matrix, state_term,
+      log_fc_thresh=log_fc_thresh,
+      abs_expr_thresh = abs_expr_thresh,
+      sig_thresh=sig_thresh,
+      cores=cores))
+  
+  cell_perturbations = cell_perturbations %>%
+    filter(is.na(gene_classes) == FALSE) %>%
+    dplyr::mutate(gene_class_scores = purrr::map2(.f = purrr::possibly(
+      score_genes_for_expression_pattern, NA_real_),
+      .x = perturbation,
+      .y = gene_classes,
+      state_graph,
+      estimate_matrix))
+  
+  # cell_perturbations$cell_group = cell_group
+  
+  cell_perturbations = cell_perturbations %>%
+    filter(is.na(gene_classes) == FALSE) %>%
+    tidyr::unnest(gene_class_scores) %>% 
+    dplyr::select(perturbation, gene_id, interpretation, pattern_match_score, pattern_activity_score) %>% 
+    dplyr::filter(!interpretation %in% c("Absent", "Maintained", "Specifically maintained", "Selectively maintained"))
+  
+  
+  cell_perturbations = left_join(cell_perturbations,
+                                 rowData(ccs@cds) %>%
+                                   as_tibble %>%
+                                   select(id, gene_short_name), 
+                                 by=c("gene_id"="id")) %>% 
+    mutate(group = case_when(
+      grepl(pattern ="down", interpretation) | grepl(pattern = "de", interpretation)  ~ "Down",
+      grepl(pattern ="aintain", interpretation) ~ "Maintained",
+      T ~ "Up"
+    )) %>% 
+    mutate(broad_interpretation = case_when(
+      (grepl(pattern = "ly", interpretation) & group == "Up")  ~ "Sp/Sel Up",
+      (grepl(pattern ="ly", interpretation) & group == "Down") ~ "Sp/Sel Down",
+      (!grepl(pattern ="ly", interpretation) & group == "Up") ~ "Up",
+      (!grepl(pattern ="ly", interpretation) & group == "Down") ~ "Down",
+      (grepl(pattern = "ly", interpretation) & group == "Maintained")  ~ "Sp/Sel Maintained",
+      (!grepl(pattern ="ly", interpretation) & group == "Maintained") ~ "Maintained",
+    )) %>% 
+    select(-group)
+  
+  
+  return(cell_perturbations) 
+  
+}
+
+
+calc_gsea_enrichment_on_state_specific_genes <- function(gene_df, msigdbr_t2g, sig_thresh = 0.1) {
+  
+  gene_set_list = split(x = msigdbr_t2g$gene_short_name, f = msigdbr_t2g$gs_name)
+  gene_ranking = gene_patterns_within_state_graph %>% pull(pattern_activity_score)
+  names(gene_ranking) = gene_patterns_within_state_graph %>% pull(gene_short_name)
+  gsea_res = fgsea(pathways=gene_set_list, stats=gene_ranking) %>% as_tibble()
+  gsea_res = gsea_res %>% filter(padj < sig_thresh)
+  return(gsea_res)
+}
+
+
+calc_pathway_enrichment_on_state_specific_genes <- function(gene_df, msigdbr_t2g, sig_thresh = 0.1, ...){
+  gene_symbols_vector = gene_df$gene_short_name
+  enrich_res = clusterProfiler::enricher(gene = gene_symbols_vector, TERM2GENE = msigdbr_t2g, ...) %>% as_tibble()
+  return(enrich_res)
+}
