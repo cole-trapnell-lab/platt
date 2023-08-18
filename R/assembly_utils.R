@@ -1,6 +1,167 @@
+#' @export
+get_time_window <- function(genotype, ccs, interval_col, perturbation_col = gene_target){
+  subset_ccs = ccs[,replace_na(colData(ccs)[[perturbation_col]] == genotype, F)]
+  colData(subset_ccs)$knockout = colData(subset_ccs)[[perturbation_col]] == genotype
+  knockout_time_start = min(colData(subset_ccs)[[interval_col]][colData(subset_ccs)$knockout])
+  knockout_time_stop = max(colData(subset_ccs)[[interval_col]][colData(subset_ccs)$knockout])
+  return(tibble(start_time=knockout_time_start, stop_time=knockout_time_stop))
+}
 
-# a version of subpartition cds where you run assembly on the top
 #' 
+#' @param genotype
+#' @param ccs
+#' @param prior_state_graph
+#' @param interval_col
+#' @param perturbation_col
+#' @param batch_col
+#' @param ctrl_ids
+#' @export
+fit_genotype_ccm = function(genotype,
+                            ccs,
+                            prior_state_transition_graph=NULL,
+                            interval_col = "timepoint",
+                            perturbation_col = "gene_target",
+                            batch_col = "expt", 
+                            ctrl_ids=c("ctrl-uninj", "ctrl-inj", "ctrl-noto", "ctrl-mafba", "ctrl-hgfa", "ctrl-tbx16", "ctrl-met"),
+                            assembly_time_start=NULL,
+                            assembly_time_stop=NULL,
+                            num_time_breaks=NULL,
+                            independent_spline_for_ko=TRUE,
+                            edge_whitelist=NULL,
+                            edge_blacklist=NULL,
+                            penalize_by_distance=TRUE,
+                            vhat_method = "bootstrap",
+                            num_threads=1,
+                            backend="nlopt",
+                            sparsity_factor=0.01, 
+                            num_bootstraps=10
+){
+  message(paste("Fitting knockout model for", genotype))
+  #subset_ccs = ccs[,colData(ccs)$gene_target == genotype | colData(ccs)$gene_target %in% ctrl_ids]
+  
+  subset_ccs = ccs[,replace_na(colData(ccs)[[perturbation_col]] == genotype, F)]
+  expts = unique(colData(subset_ccs)$expt)
+  
+  if (is.null(assembly_time_start)){
+    knockout_time_start = min(colData(subset_ccs)[[interval_col]])
+  }else{
+    knockout_time_start = assembly_time_start
+  }
+  
+  if (is.null(assembly_time_stop)){
+    knockout_time_stop = max(colData(subset_ccs)[[interval_col]])
+  }else{
+    knockout_time_stop = assembly_time_stop
+  }
+  
+  num_knockout_timepoints = length(unique(colData(subset_ccs)[[interval_col]]))
+  
+  message(paste("\ttime range:", knockout_time_start, "to", knockout_time_stop))
+  subset_ccs = ccs[,( replace_na(colData(ccs)[[perturbation_col]] == genotype, F) | colData(ccs)[[perturbation_col]] %in% ctrl_ids) & colData(ccs)$expt %in% expts]
+  
+  colData(subset_ccs)$knockout = colData(subset_ccs)[[perturbation_col]] == genotype
+  subset_ccs = subset_ccs[,(colData(subset_ccs)[[interval_col]] >= knockout_time_start & colData(subset_ccs)[[interval_col]] <= knockout_time_stop)]
+  time_breakpoints = c()
+  
+  if (is.null(num_time_breaks)){
+    num_time_breaks = 3
+  }
+  
+  # Set up the knockout model formula. Considers the number of timepoints in the knockout
+  if (num_knockout_timepoints > 2 & knockout_time_stop > knockout_time_start){
+    time_breakpoints = seq(knockout_time_start, knockout_time_stop, length.out=num_time_breaks)
+    time_breakpoints = time_breakpoints[2:(length(time_breakpoints) - 1)] #exclude the first and last entry as these will become boundary knots
+    
+    time_term = paste("~ ns(",interval_col,", knots=", paste("c(",paste(time_breakpoints, collapse=","), ")", sep=""), ")")
+    
+    # If there are only two timepoints for a knockout, we can't have interaction terms between
+    # the time spline and the knockout indicator variable. The model won't be
+    # full rank
+    if (independent_spline_for_ko & num_knockout_timepoints >= 3){
+      knockout_terms = paste("~ ns(",interval_col,", knots=", paste("c(",paste(time_breakpoints, collapse=","), ")", sep=""), "):knockout + knockout")
+    }else{
+      knockout_terms = "~ knockout"
+    }
+    
+    main_model_formula_str = knockout_terms #paste(time_term, knockout_terms , sep="+")
+    #print (main_model_formula_str)
+    nuisance_model_formula_str = time_term
+  }else{
+    time_term = paste("~ ",interval_col)
+    main_model_formula_str = "~ knockout"
+    if (num_knockout_timepoints > 1)
+      nuisance_model_formula_str = time_term
+    else
+      nuisance_model_formula_str = "~ 1"
+  }
+  
+  # make this any column 
+  if (length(unique(colData(subset_ccs)[[batch_col]])) > 1){
+    #main_model_formula_str = paste(main_model_formula_str, "+expt")
+    nuisance_model_formula_str = paste(nuisance_model_formula_str, "+", batch_col)
+  }
+  
+  main_model_formula_str_xxx = stringr::str_replace_all(main_model_formula_str, "~", "")
+  nuisance_model_formula_str_xxx = stringr::str_replace_all(nuisance_model_formula_str, "~", "")
+  
+  full_model_formula_str = paste("~", nuisance_model_formula_str_xxx, "+", main_model_formula_str_xxx)
+  
+  
+  message(paste("\tformula:", full_model_formula_str))
+  
+  full_model_matrix = Matrix::sparse.model.matrix(as.formula(full_model_formula_str), data=colData(subset_ccs))
+  if (Matrix::rankMatrix(full_model_matrix) < ncol(full_model_matrix)){
+    print(paste("Error: full model matrix is not full rank [model rank = ", Matrix::rankMatrix(full_model_matrix) , "ncol =", ncol(full_model_matrix),"]" ))
+    print(colnames(full_model_matrix))
+    return (NA)
+  }
+  
+  if (is.null(prior_state_transition_graph) == FALSE){
+    wt_prior_whitelist = prior_state_transition_graph %>% igraph::as_data_frame()
+  }else{
+    wt_prior_whitelist = NULL
+  }
+  
+  genotype_ccm = suppressMessages(suppressWarnings(new_cell_count_model(subset_ccs,
+                                                                        main_model_formula_str = main_model_formula_str,
+                                                                        #main_model_formula_str = "~ splines::ns(timepoint, knots=c(24, 30, 36)) + knockout",
+                                                                        #main_model_formula_str = "~ as.factor(timepoint) + knockout",
+                                                                        
+                                                                        nuisance_model_formula_str = nuisance_model_formula_str,
+                                                                        whitelist = edge_whitelist,
+                                                                        blacklist = edge_blacklist,
+                                                                        vhat_method = vhat_method,
+                                                                        penalize_by_distance=penalize_by_distance,
+                                                                        num_threads = num_threads,
+                                                                        num_bootstraps=num_bootstraps,
+                                                                        backend = backend,
+                                                                        ftol_rel=1e-6,
+                                                                        verbose=FALSE
+  )))
+  # FIXME: we should maybe be pulling out the sparsity_factor used for the WT prior model and using that here rather
+  # than hardcoding?
+  genotype_ccm = select_model(genotype_ccm, sparsity_factor = sparsity_factor)
+  return(genotype_ccm)
+}
+
+#' wrapper function to easily plot output of fit_genotype_ccm 
+#' @param ccm a cell_count_model object
+#' @export
+make_contrast = function(ccm, timepoint, ...) {
+  wt_cond = estimate_abundances(ccm, tibble(timepoint = timepoint, knockout = F, ...))
+  mt_cond = estimate_abundances(ccm, tibble(timepoint = timepoint, knockout = T, ...))
+  tbl = compare_abundances(ccm, wt_cond, mt_cond)
+  return(tbl)
+}
+
+#' a version of subpartition cds where you run assembly on the top
+#' @param cds cell_count_data_set
+#' @param sample_group
+#' @param perturbation_group
+#' @param perturbation_col description
+#' @param batch_col 
+#' @param batches_excluded_from_assembly=c(),
+#' @param component_col
 #' @export
 assemble_partition = function(cds,
                               sample_group,
@@ -19,14 +180,18 @@ assemble_partition = function(cds,
                               verbose=FALSE,
                               num_threads = 1,
                               backend = "nlopt",
+                              q_val = 0.1, 
                               vhat_method = "bootstrap",
-                              num_bootstraps=10,
-                              expts_excluded_from_assembly=c(),
+                              num_bootstraps = 10,
+                              batch_col = "expt",
+                              min_lfc = 0, 
+                              log_abund_detection_thresh = log(1), 
+                              batches_excluded_from_assembly=c(),
                               component_col="partition",
                               embryo_size_factors=NULL){
 
   colData(cds)$subassembly_group = stringr::str_c(partition_name, colData(cds)[,cell_group], sep="-")
-
+  colData(cds)[["cell_state"]] = colData(cds)[[cell_group]]
   #selected_colData = selected_colData %>% mutate(cell_state = paste0(partition_name, cell_state))
   selected_colData = colData(cds) %>% as_tibble() %>% dplyr::select(cell, embryo, cluster, cell_state, subassembly_group)
 
@@ -34,11 +199,11 @@ assemble_partition = function(cds,
 
   partition_results = selected_colData %>% tidyr::nest(data = c(cds_row_id, cell, embryo, cluster, cell_state, subassembly_group))
 
-  partition_results$cell_plot_state = list(plot_cells(cds, color_cells_by="cell_state"))
-  partition_results$cell_plot_time = list(plot_cells(cds, color_cells_by=interval_col))
-  partition_results$cell_plot_type = list(plot_cells(cds, color_cells_by="cell_type_sub"))
+  # partition_results$cell_plot_state = list(plot_cells(cds, color_cells_by="cell_state"))
+  # partition_results$cell_plot_time = list(plot_cells(cds, color_cells_by=interval_col))
+  # partition_results$cell_plot_type = list(plot_cells(cds, color_cells_by="cell_type_sub"))
 
-  if (length(unique(selected_colData$cluster)) <= 1){
+  if (length(unique(selected_colData[["cell_state"]])) <= 1){
     partition_results$wt_graph = list(NA)
     partition_results$mt_graph = list(NA)
     partition_results$perturbation_effects = list(NA)
@@ -48,7 +213,7 @@ assemble_partition = function(cds,
   }
 
   # Exclude user-specified experiments prior to assembly but after iterative UMAP & clustering:
-  cds = cds[,colData(cds)$expt %in% expts_excluded_from_assembly == FALSE]
+  cds = cds[,colData(cds)[[batch_col]] %in% batches_excluded_from_assembly == FALSE]
 
   tryCatch( {
 
@@ -121,10 +286,10 @@ assemble_partition = function(cds,
                                                           sample_group = sample_group,
                                                           cell_group = cell_group,
                                                           main_model_formula_str = main_model_formula_str,
+                                                          nuisance_model_formula_str =nuisance_model_formula_str,
                                                           start_time = start_time,
                                                           stop_time = stop_time,
                                                           interval_col=interval_col,
-                                                          #nuisance_model_formula_str = "~expt",
                                                           ctrl_ids = ctrl_ids,
                                                           mt_ids = mt_ids,
                                                           sparsity_factor = sparsity_factor,
@@ -147,17 +312,17 @@ assemble_partition = function(cds,
     }
 
     perturb_models_tbl = assess_perturbation_effects(wt_ccm,
-                                                             perturb_models_tbl,
-                                                             q_val=0.1, # FIXME: hardcoding
-                                                             start_time = start_time,
-                                                             stop_time = stop_time,
-                                                             perturbation_col=perturbation_col,
-                                                             interval_col=interval_col,
-                                                             batch_col="expt",
-                                                             log_abund_detection_thresh=log(1), # FIXME: hardcoding
-                                                             min_lfc=0, # FIXME: hardcoding
-                                                             verbose=verbose,
-                                                             expt="GAP16")
+                                                     perturb_models_tbl,
+                                                     q_val= q_val, 
+                                                     start_time = start_time,
+                                                     stop_time = stop_time,
+                                                     perturbation_col=perturbation_col,
+                                                     interval_col=interval_col,
+                                                     batch_col=batch_col,
+                                                     log_abund_detection_thresh= log_abund_detection_thresh, 
+                                                     min_lfc=min_lfc, 
+                                                     verbose=verbose,
+                                                     expt="GAP16")
 
 
     message ("Assembling mutant graphs...")
@@ -185,9 +350,13 @@ assemble_partition = function(cds,
       merge_annotated_graph_nodes = left_join(merge_annotated_graph_nodes, merge_mt_graph_nodes)
 
       mt_only = setdiff(merge_mt_graph_edges %>% select(from, to), merge_wt_graph_edges %>% select(from, to))
-
+      
+      
+      # merge_wt_graph_edges doesn't have the assembly group name 
       merge_graph_annotated = left_join(merge_wt_graph_edges, merge_mt_graph_edges, by = c("from", "to"))
       merge_graph_annotated = merge_graph_annotated %>% select(-support)
+      
+      # BREAK
       merge_graph_annotated = rbind(merge_graph_annotated,
                                      merge_mt_graph_edges %>% inner_join(mt_only))
       merge_graph_annotated = igraph::graph_from_data_frame(merge_graph_annotated, vertices = merge_annotated_graph_nodes)
@@ -232,298 +401,14 @@ assemble_partition = function(cds,
   return(partition_results)
 }
 
-
-sub_partition_assembly = function(cds,
-                                  partition_name = NULL,
-                                  num_dim = NULL,
-                                  max_components = 3,
-                                  resolution_fun = NULL,
-                                  min_res=5e-6,
-                                  max_res=1e-5,
-                                  #final_resolution = resolution,
-                                  sample_group = "embryo",
-                                  cell_group = "cluster",
-                                  main_model_formula_str = NULL,
-                                  start_time = 18,
-                                  stop_time = 48,
-                                  interval_col="adjusted_timepoint",
-                                  nuisance_model_formula_str = "~1",
-                                  ctrl_ids = NULL,
-                                  mt_ids = NULL,
-                                  sparsity_factor = 0.01,
-                                  perturbation_col = "gene_target",
-                                  max_num_cells=NULL,
-                                  verbose=FALSE,
-                                  num_threads=1,
-                                  backend="nlopt",
-                                  vhat_method="bootstrap",
-                                  expts_excluded_from_assembly=c(),
-                                  embryo_size_factors=NULL) {
-
-  message("Clustering all cells")
-
-  if (is.null(max_num_cells)){
-    max_num_cells = ncol(cds)
-  }
-
-  if (is.null(resolution_fun)){
-    resolution_fun = function(num_cells) {
-      resolution = approxfun(c(0, log10(max_num_cells)), c(min_res, max_res))(log10(num_cells))
-      reflected_resolution = (max_res - resolution) + min_res
-      return (reflected_resolution)
-    }
-    #resolution_fun(min_res)
-  }
-
-  message(paste("Clustering", ncol(cds), "cells at resolution =", resolution_fun(ncol(cds))))
-  cds = monocle3::cluster_cells(cds, resolution = resolution_fun(ncol(cds)))
-  colData(cds)$cluster = monocle3::clusters(cds)
-  partitions = unique(monocle3::partitions(cds))
-
-  if (length(partitions) > 1) {
-    partition_res = lapply(partitions, function(partition) {
-      if (is.null(partition_name)) {
-        next_partition_name = partition
-      } else {
-        next_partition_name = paste0(partition_name, "_",  partition)
-      }
-      message(paste("Constructing sub-UMAP for partition", next_partition_name))
-      cds = cds[, monocle3::partitions(cds) == partition]
-
-      RhpcBLASctl::blas_set_num_threads(num_threads)
-      RhpcBLASctl::omp_set_num_threads(num_threads)
-
-      cds = suppressMessages(suppressWarnings(preprocess_cds(cds))) %>%
-        align_cds(residual_model_formula_str = "~log.n.umi") %>%
-        suppressMessages(suppressWarnings(reduce_dimension(max_components = max_components,
-                                                           preprocess_method="Aligned",
-                                                           umap.fast_sgd=TRUE,
-                                                           cores=num_threads)))
-
-      RhpcBLASctl::blas_set_num_threads(1)
-      RhpcBLASctl::omp_set_num_threads(1)
-
-      res = sub_partition_assembly(cds,
-                                   next_partition_name,
-                                   num_dim,
-                                   max_components,
-                                   resolution_fun,
-                                   sample_group = sample_group,
-                                   cell_group = cell_group,
-                                   main_model_formula_str = main_model_formula_str,
-                                   start_time = start_time,
-                                   stop_time = stop_time,
-                                   interval_col=interval_col,
-                                   nuisance_model_formula_str = nuisance_model_formula_str,
-                                   ctrl_ids = ctrl_ids,
-                                   mt_ids = mt_ids,
-                                   sparsity_factor = sparsity_factor,
-                                   perturbation_col = perturbation_col,
-                                   max_num_cells=max_num_cells,
-                                   verbose=verbose,
-                                   num_threads = num_threads,
-                                   backend=backend,
-                                   vhat_method=vhat_method,
-                                   expts_excluded_from_assembly=expts_excluded_from_assembly,
-                                   embryo_size_factors=embryo_size_factors
-      )
-      res = bind_rows(res)
-      #if (is.list(res) & length(res) > 1)
-      #  res = res %>% unlist(recursive=FALSE)
-      return(res)
-    })
-
-    return(partition_res)
-  } else {
-    # save the umap coordinates
-    partion_umap_coords = reducedDims(cds)[["UMAP"]]
-    num_components = dim(partion_umap_coords)[[2]]
-    for (i in 1:num_components) {
-      name = paste0("partition_umap", num_components, "d_", i)
-      colData(cds)[[name]] = reducedDims(cds)[["UMAP"]][,i]
-    }
-
-    if (is.null(partition_name)) {
-      colData(cds)$partition = monocle3::partitions(cds)
-      colData(cds)$cluster = monocle3::clusters(cds)
-      colData(cds)$cell_state = monocle3::clusters(cds)
-    } else {
-      colData(cds)$partition = partition_name #paste0(partition_name, "_",  monocle3::partitions(cds))
-      colData(cds)$cluster = monocle3::clusters(cds)
-      colData(cds)$cell_state = paste0(partition_name, "-", monocle3::clusters(cds))
-    }
-
-    partition_results = assemble_partition(cds=cds,
-                                           partition_name=partition_name,
-                                           sample_group=sample_group,
-                                           cell_group=cell_group,
-                                           main_model_formula_str=main_model_formula_str,
-                                           start_time=start_time,
-                                           stop_time=stop_time,
-                                           interval_col=interval_col,
-                                           nuisance_model_formula_str=nuisance_model_formula_str,
-                                           ctrl_ids=ctrl_ids,
-                                           mt_ids=mt_ids,
-                                           sparsity_factor=sparsity_factor,
-                                           perturbation_col=perturbation_col,
-                                           max_num_cells=max_num_cells,
-                                           verbose=verbose,
-                                           num_threads=num_threads,
-                                           backend=backend,
-                                           vhat_method=vhat_method,
-                                           expts_excluded_from_assembly=expts_excluded_from_assembly,
-                                           embryo_size_factors=embryo_size_factors)
-    return(partition_results)
-  }
-}
-
-#' @export
-get_time_window <- function(genotype, ccs, interval_col, perturbation_col = gene_target){
-  subset_ccs = ccs[,replace_na(colData(ccs)[[perturbation_col]] == genotype, F)]
-  colData(subset_ccs)$knockout = colData(subset_ccs)[[perturbation_col]] == genotype
-  knockout_time_start = min(colData(subset_ccs)[[interval_col]][colData(subset_ccs)$knockout])
-  knockout_time_stop = max(colData(subset_ccs)[[interval_col]][colData(subset_ccs)$knockout])
-  return(tibble(start_time=knockout_time_start, stop_time=knockout_time_stop))
-}
-
-#' @export
-fit_genotype_ccm = function(genotype,
-                            ccs,
-                            prior_state_transition_graph=NULL,
-                            interval_col = "timepoint",
-                            perturbation_col = "gene_target",
-                            batch_col = "expt", 
-                            ctrl_ids=c("ctrl-uninj", "ctrl-inj", "ctrl-noto", "ctrl-mafba", "ctrl-hgfa", "ctrl-tbx16", "ctrl-met"),
-                            assembly_time_start=NULL,
-                            assembly_time_stop=NULL,
-                            num_time_breaks=NULL,
-                            independent_spline_for_ko=TRUE,
-                            edge_whitelist=NULL,
-                            edge_blacklist=NULL,
-                            penalize_by_distance=TRUE,
-                            vhat_method = "bootstrap",
-                            num_threads=1,
-                            backend="nlopt",
-                            num_bootstraps=10
-                            ){
-  message(paste("Fitting knockout model for", genotype))
-  #subset_ccs = ccs[,colData(ccs)$gene_target == genotype | colData(ccs)$gene_target %in% ctrl_ids]
-
-  subset_ccs = ccs[,replace_na(colData(ccs)[[perturbation_col]] == genotype, F)]
-  expts = unique(colData(subset_ccs)$expt)
-
-  if (is.null(assembly_time_start)){
-    knockout_time_start = min(colData(subset_ccs)[[interval_col]])
-  }else{
-    knockout_time_start = assembly_time_start
-  }
-
-  if (is.null(assembly_time_stop)){
-    knockout_time_stop = max(colData(subset_ccs)[[interval_col]])
-  }else{
-    knockout_time_stop = assembly_time_stop
-  }
-
-  num_knockout_timepoints = length(unique(colData(subset_ccs)[[interval_col]]))
-
-  message(paste("\time range:", knockout_time_start, "to", knockout_time_stop))
-  subset_ccs = ccs[,( replace_na(colData(ccs)[[perturbation_col]] == genotype, F) | colData(ccs)[[perturbation_col]] %in% ctrl_ids) & colData(ccs)$expt %in% expts]
-
-  colData(subset_ccs)$knockout = colData(subset_ccs)[[perturbation_col]] == genotype
-  subset_ccs = subset_ccs[,(colData(subset_ccs)[[interval_col]] >= knockout_time_start & colData(subset_ccs)[[interval_col]] <= knockout_time_stop)]
-  time_breakpoints = c()
-
-  if (is.null(num_time_breaks)){
-    num_time_breaks = 3
-  }
-
-  # Set up the knockout model formula. Considers the number of timepoints in the knockout
-  if (num_knockout_timepoints > 2 & knockout_time_stop > knockout_time_start){
-    time_breakpoints = seq(knockout_time_start, knockout_time_stop, length.out=num_time_breaks)
-    time_breakpoints = time_breakpoints[2:(length(time_breakpoints) - 1)] #exclude the first and last entry as these will become boundary knots
-
-    time_term = paste("~ ns(",interval_col,", knots=", paste("c(",paste(time_breakpoints, collapse=","), ")", sep=""), ")")
-
-    # If there are only two timepoints for a knockout, we can't have interaction terms between
-    # the time spline and the knockout indicator variable. The model won't be
-    # full rank
-    if (independent_spline_for_ko & num_knockout_timepoints >= 3){
-      knockout_terms = paste("~ ns(",interval_col,", knots=", paste("c(",paste(time_breakpoints, collapse=","), ")", sep=""), "):knockout + knockout")
-    }else{
-      knockout_terms = "~ knockout"
-    }
-
-    main_model_formula_str = knockout_terms #paste(time_term, knockout_terms , sep="+")
-    #print (main_model_formula_str)
-    nuisance_model_formula_str = time_term
-  }else{
-    time_term = paste("~ ",interval_col)
-    main_model_formula_str = "~ knockout"
-    if (num_knockout_timepoints > 1)
-      nuisance_model_formula_str = time_term
-    else
-      nuisance_model_formula_str = "~ 1"
-  }
-  
-  # make this any column 
-  if (length(unique(colData(subset_ccs)[[batch_col]])) > 1){
-    #main_model_formula_str = paste(main_model_formula_str, "+expt")
-    nuisance_model_formula_str = paste(nuisance_model_formula_str, "+", batch_col)
-  }
-
-  main_model_formula_str_xxx = stringr::str_replace_all(main_model_formula_str, "~", "")
-  nuisance_model_formula_str_xxx = stringr::str_replace_all(nuisance_model_formula_str, "~", "")
-
-  full_model_formula_str = paste("~", nuisance_model_formula_str_xxx, "+", main_model_formula_str_xxx)
-
-
-  message(paste("\tformula:", full_model_formula_str))
-
-  full_model_matrix = Matrix::sparse.model.matrix(as.formula(full_model_formula_str), data=colData(subset_ccs))
-  if (Matrix::rankMatrix(full_model_matrix) < ncol(full_model_matrix)){
-    print(paste("Error: full model matrix is not full rank [model rank = ", Matrix::rankMatrix(full_model_matrix) , "ncol =", ncol(full_model_matrix),"]" ))
-    print(colnames(full_model_matrix))
-    return (NA)
-  }
-
-  if (is.null(prior_state_transition_graph) == FALSE){
-    wt_prior_whitelist = prior_state_transition_graph %>% igraph::as_data_frame()
-  }else{
-    wt_prior_whitelist = NULL
-  }
-
-  genotype_ccm = suppressMessages(suppressWarnings(new_cell_count_model(subset_ccs,
-                                                                        main_model_formula_str = main_model_formula_str,
-                                                                        #main_model_formula_str = "~ splines::ns(timepoint, knots=c(24, 30, 36)) + knockout",
-                                                                        #main_model_formula_str = "~ as.factor(timepoint) + knockout",
-
-                                                                        nuisance_model_formula_str = nuisance_model_formula_str,
-                                                                        whitelist = edge_whitelist,
-                                                                        blacklist = edge_blacklist,
-                                                                        vhat_method = vhat_method,
-                                                                        penalize_by_distance=penalize_by_distance,
-                                                                        num_threads = num_threads,
-                                                                        num_bootstraps=num_bootstraps,
-                                                                        backend = backend,
-                                                                        ftol_rel=1e-6,
-                                      verbose=FALSE
-  )))
-  # FIXME: we should maybe be pulling out the sparsity_factor used for the WT prior model and using that here rather
-  # than hardcoding?
-  genotype_ccm = select_model(genotype_ccm, sparsity_factor = 0.01)
-  return(genotype_ccm)
-}
-
-# wrapper function to easily plot output of fit_genotype_ccm 
-#' @export
-make_contrast = function(ccm, timepoint, ...) {
-  wt_cond = estimate_abundances(ccm, tibble(timepoint = timepoint, knockout = F, ...))
-  mt_cond = estimate_abundances(ccm, tibble(timepoint = timepoint, knockout = T, ...))
-  tbl = compare_abundances(ccm, wt_cond, mt_cond)
-  return(tbl)
-}
-
-
+#' 
+#' @param cds cell_count_data_set
+#' @param sample_group sample_group
+#' @param cell_group cell_group
+#' @param main_model_formula_str
+#' @param nuisance_model_formul_str
+#' @param ctrl_ids
+#' @param 
 #' @export
 fit_wt_model = function(cds,
                         sample_group,
@@ -603,6 +488,7 @@ fit_wt_model = function(cds,
     message(paste("Nuisance effects:", nuisance_model_formula_str))
   }
 
+  undebug(new_cell_count_model)
   wt_ccm = new_cell_count_model(wt_ccs,
                                 main_model_formula_str = main_model_formula_str,
                                 nuisance_model_formula_str = nuisance_model_formula_str,
@@ -624,6 +510,12 @@ fit_wt_model = function(cds,
 }
 
 #' assembles a graph using timepoint data
+#' @param cds
+#' @param wt_ccm
+#' @param sample_group
+#' @param cell_group
+#' @param interval_group
+#' @param 
 #' @export
 assemble_wt_graph = function(cds,
                              wt_ccm,
@@ -700,6 +592,11 @@ assemble_wt_graph = function(cds,
 
 
 # FIXME: allow using WT graph as a prior?
+#' @param cds
+#' @param sample_group
+#' @param cell_group
+#' @param ctrl_ids
+#' @param mt_ids
 #' @export
 fit_mt_models = function(cds,
                          sample_group,
@@ -1004,7 +901,7 @@ assemble_partition_from_cds = function(cds,
                                        main_model_formula_str = NULL,
                                        start_time = 18,
                                        stop_time = 48,
-                                       interval_col="adjusted_timepoint",
+                                       interval_col="timepoint",
                                        nuisance_model_formula_str = "~1",
                                        ctrl_ids = NULL,
                                        mt_ids = NULL,
@@ -1016,9 +913,11 @@ assemble_partition_from_cds = function(cds,
                                        backend="nlopt",
                                        vhat_method="bootstrap",
                                        num_bootstraps=10,
-                                       expts_excluded_from_assembly=c(),
+                                       batch_col = "expt", 
+                                       batches_excluded_from_assembly=c(),
                                        component_col="partition",
-                                       embryo_size_factors=NULL) {
+                                       embryo_size_factors=NULL, 
+                                       break_cycles = TRUE) {
 
   # if the input cds needs new clustering
   # important for when you are reconstructing a umap from coldata and
@@ -1065,7 +964,8 @@ assemble_partition_from_cds = function(cds,
                                          num_threads=num_threads,
                                          backend=backend,
                                          vhat_method=vhat_method,
-                                         expts_excluded_from_assembly=expts_excluded_from_assembly,
+                                         batch_col = batch_col,
+                                         batches_excluded_from_assembly=batches_excluded_from_assembly,
                                          num_bootstraps=num_bootstraps,
                                          component_col=component_col,
                                          embryo_size_factors=embryo_size_factors)
