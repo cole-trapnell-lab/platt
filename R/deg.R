@@ -789,7 +789,7 @@ classify_genes_over_graph <- function(ccs,
     if (is(state_graph, "igraph")) {
       state_graph = igraph::as_data_frame(state_graph)
     }
-    state_graph = state_graph %>% filter(assembly_group == assembly_group)
+    state_graph = state_graph[state_graph$assembly_group == assembly_group,]
   }
   
   
