@@ -176,7 +176,7 @@ assemble_partition = function(cds,
                               mt_ids = NULL,
                               sparsity_factor = 0.01,
                               perturbation_col = "gene_target",
-                              max_num_cells=NULL,
+                              max_num_cells = NULL,
                               verbose=FALSE,
                               num_threads = 1,
                               backend = "nlopt",
@@ -184,6 +184,7 @@ assemble_partition = function(cds,
                               vhat_method = "bootstrap",
                               num_bootstraps = 10,
                               batch_col = "expt",
+                              expt = "GAP16",
                               min_lfc = 0, 
                               log_abund_detection_thresh = log(1), 
                               batches_excluded_from_assembly=c(),
@@ -322,7 +323,7 @@ assemble_partition = function(cds,
                                                      log_abund_detection_thresh= log_abund_detection_thresh, 
                                                      min_lfc=min_lfc, 
                                                      verbose=verbose,
-                                                     expt="GAP16")
+                                                     expt=expt)
 
 
     message ("Assembling mutant graphs...")
@@ -349,7 +350,8 @@ assemble_partition = function(cds,
       merge_annotated_graph_nodes = data.frame(name=stringr::str_c(partition_name, row.names(wt_ccm@ccs), sep="-"))
       merge_annotated_graph_nodes = left_join(merge_annotated_graph_nodes, merge_mt_graph_nodes)
 
-      mt_only = setdiff(merge_mt_graph_edges %>% select(from, to), merge_wt_graph_edges %>% select(from, to))
+      mt_only = setdiff(merge_mt_graph_edges %>% select(from, to), merge_wt_graph_edges %>% 
+                          select(from, to)) %>% as.data.frame()
       
       
       # merge_wt_graph_edges doesn't have the assembly group name 
@@ -763,6 +765,16 @@ assemble_mt_graph = function(wt_ccm,
   return(mutant_supergraph)
 }
 
+resolution_fun = function(num_cells, min_res=5e-6, max_res=1e-5, max_num_cells=NULL) {
+  if (is.null(max_num_cells)){
+    max_num_cells =num_cells
+  }
+  resolution = approxfun(c(0, log10(max_num_cells)), c(min_res, max_res))(log10(num_cells))
+  reflected_resolution = (max_res - resolution) + min_res
+  return (reflected_resolution)
+}
+
+
 #' @export
 subcluster_cds = function(cds,
                           recursive_subcluster = FALSE,
@@ -912,6 +924,9 @@ assemble_partition_from_cds = function(cds,
                                        num_threads=1,
                                        backend="nlopt",
                                        vhat_method="bootstrap",
+                                       min_lfc = 0, 
+                                       log_abund_detection_thresh = log(1),
+                                       q_val = 0.1, 
                                        num_bootstraps=10,
                                        batch_col = "expt", 
                                        batches_excluded_from_assembly=c(),
@@ -947,9 +962,9 @@ assemble_partition_from_cds = function(cds,
 
 
   partition_results = assemble_partition(cds=cds,
-                                         partition_name=partition_name,
                                          sample_group=sample_group,
                                          cell_group=cell_group,
+                                         partition_name=partition_name,
                                          main_model_formula_str=main_model_formula_str,
                                          start_time=start_time,
                                          stop_time=stop_time,
@@ -963,7 +978,10 @@ assemble_partition_from_cds = function(cds,
                                          verbose=verbose,
                                          num_threads=num_threads,
                                          backend=backend,
+                                         q_val = q_val, 
                                          vhat_method=vhat_method,
+                                         min_lfc = min_lfc, 
+                                         log_abund_detection_thresh = log_abund_detection_thresh, 
                                          batch_col = batch_col,
                                          batches_excluded_from_assembly=batches_excluded_from_assembly,
                                          num_bootstraps=num_bootstraps,
