@@ -1,8 +1,16 @@
 #'
 #' @param res
-build_whitelist = function(res) {
+build_whitelist = function(res, graph_type = c("wt", "mt")) {
   # build a whitelist
-  edge_whitelist = do.call(igraph::union, res %>% filter(is.na(wt_graph) == FALSE) %>% pull(wt_graph))
+  
+  graph_type = match.arg(graph_type)
+  
+  if (graph_type == "wt"){
+    edge_whitelist = do.call(igraph::union, res %>% filter(is.na(wt_graph) == FALSE) %>% pull(wt_graph))
+  } else {
+    edge_whitelist = do.call(igraph::union, res %>% filter(is.na(mt_graph) == FALSE) %>% pull(mt_graph))
+  }
+  
   edge_whitelist = igraph::as_data_frame(edge_whitelist)
   edge_whitelist = edge_whitelist %>% select(from, to) %>% distinct()
   
