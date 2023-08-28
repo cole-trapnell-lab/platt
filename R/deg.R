@@ -764,6 +764,7 @@ classify_genes_over_graph <- function(ccs,
                                       state_graph,
                                       gene_ids = NULL,
                                       group_nodes_by=NULL,
+                                      assembly_group = NULL, 
                                       label_nodes_by="cell_state", 
                                       log_fc_thresh=1,
                                       abs_expr_thresh = 1e-3,
@@ -780,8 +781,21 @@ classify_genes_over_graph <- function(ccs,
     state_term = group_nodes_by
   }
   
+  # if we want to run it by assembly group
+  if (is.null(assembly_group) == FALSE) {
+    pb_cds = hooke:::add_covariate(ccs, pb_cds, "assembly_group")
+    pb_cds = pb_cds[, colData(pb_cds)$assembly_group == assembly_group]
+    
+    if (is(state_graph, "igraph")) {
+      state_graph = igraph::as_data_frame(state_graph)
+    }
+    state_graph = state_graph %>% filter(assembly_group == assembly_group)
+  }
+  
+  
   if (!is(state_graph, "igraph")){
     state_graph = state_graph %>% igraph::graph_from_data_frame()
+
   }
   
   
@@ -867,30 +881,48 @@ classify_genes_over_graph <- function(ccs,
 
 #' @export
 classify_genes_within_state_graph = function(ccs,
-                                             # state_graph,
+                                             state_graph,
                                              perturbation_col = "perturbation", 
                                              control_ids = c("Control"), 
                                              cell_groups = NULL, 
+                                             assembly_group = NULL, 
                                              perturbations = NULL, 
                                              gene_ids = NULL,
-                                             group_nodes_by=NULL,
-                                             log_fc_thresh=1,
+                                             group_nodes_by = NULL,
+                                             log_fc_thresh = 1,
                                              abs_expr_thresh = 1e-3,
-                                             sig_thresh=0.05,
+                                             sig_thresh = 0.05,
                                              min_samples_detected = 2,
                                              min_cells_per_pseudobulk = 3,
-                                             cores=1,
+                                             cores = 1,
                                              ...) {
   
   expts = unique(colData(ccs)$expt)
   
+  
   pb_cds = hooke:::pseudobulk_ccs_for_states(ccs)
   pb_cds = add_covariate(ccs, pb_cds, perturbation_col)
   
+  # if we want to run it by assembly group
+  if (is.null(assembly_group) == FALSE) {
+    pb_cds = hooke:::add_covariate(ccs, pb_cds, "assembly_group")
+    pb_cds = pb_cds[, colData(pb_cds)$assembly_group == assembly_group]
+    
+    if (is(state_graph, "igraph")) {
+      state_graph = igraph::as_data_frame(state_graph)
+    }
+    state_graph = state_graph %>% filter(assembly_group == assembly_group)
+  }
+  
+  
   if (!is.null(perturbations)) {
     pb_cds = pb_cds[, colData(pb_cds)[[perturbation_col]] %in% perturbations]
-    
+  } else {
+    vertices = igraph::V(state_graph)$name
+    pb_cds = pb_cds[, colData(pb_cds)[[perturbation_col]] %in% vertices]
   }
+  
+  
   
   # subset to genes that are expressed over a certain min value
   expr_over_thresh = normalized_counts(pb_cds, "size_only", pseudocount = 0)
@@ -909,7 +941,6 @@ classify_genes_within_state_graph = function(ccs,
     mutate(genes_within_cell_group = purrr::map(.f = classify_genes_within_node, 
                                                 .x = cell_group, 
                                                 pb_cds = pb_cds))
-  
   
   return(df)
   
