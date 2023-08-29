@@ -120,6 +120,10 @@ plot_state_graph_annotations <- function(ccs,
   }
 
   g = ggnetwork::ggnetwork(G, layout = gvizl_coords, arrow.gap = arrow.gap, scale=F)
+  
+  # add assembly group
+  bezier_df$assembly_group = vapply(strsplit(bezier_df$from, "-", fixed=T), "[", "", 1)
+  g$assembly_group = vapply(strsplit(g$name, "-", fixed=T), "[", "", 1)
 
   p <- ggplot() +
     ggplot2::geom_path(aes(x, y, group=edge_name, size=edge_thickness, linetype=unsupported_edge), colour=con_colour, data=bezier_df %>% distinct(), arrow = arrow(angle=30, length = unit(arrow_unit, "pt"), type="closed"), linejoin='mitre')
@@ -389,7 +393,10 @@ plot_state_graph_losses <- function(perturbation_ccm,
   }
 
   g = ggnetwork::ggnetwork(G, layout = gvizl_coords, arrow.gap = arrow.gap, scale=F)
-
+  # add assembly group
+  bezier_df$assembly_group = vapply(strsplit(bezier_df$from, "-", fixed=T), "[", "", 1)
+  g$assembly_group = vapply(strsplit(g$name, "-", fixed=T), "[", "", 1)
+  
   p <- ggplot() +
     ggplot2::geom_path(aes(x, y, group=edge_name, size=edge_thickness), data=bezier_df %>% distinct(), arrow = arrow(angle=30, length = unit(arrow_unit, "pt"), type="closed"), linejoin='mitre')
 
@@ -1292,7 +1299,10 @@ plot_state_graph_perturb_effects <- function(ccs,
   }
 
   g = ggnetwork::ggnetwork(G, layout = gvizl_coords, arrow.gap = arrow.gap, scale=F)
-
+  # add assembly group
+  bezier_df$assembly_group = vapply(strsplit(bezier_df$from, "-", fixed=T), "[", "", 1)
+  g$assembly_group = vapply(strsplit(g$name, "-", fixed=T), "[", "", 1)
+  
   p <- ggplot() +
     ggplot2::geom_path(aes(x, y, group=edge_name, size=edge_thickness, linetype=unsupported_edge), colour=con_colour, data=bezier_df %>% distinct(), arrow = arrow(angle=30, length = unit(arrow_unit, "pt"), type="closed"), linejoin='mitre')
 
@@ -1566,7 +1576,10 @@ plot_state_graph_marker_genes <- function(ccs,
   }
 
   g = ggnetwork::ggnetwork(G, layout = gvizl_coords, arrow.gap = arrow.gap, scale=F)
-
+  # add assembly group
+  bezier_df$assembly_group = vapply(strsplit(bezier_df$from, "-", fixed=T), "[", "", 1)
+  g$assembly_group = vapply(strsplit(g$name, "-", fixed=T), "[", "", 1)
+  
   p <- ggplot() +
     ggplot2::geom_path(aes(x, y, group=edge_name, size=edge_thickness, linetype=unsupported_edge), colour=con_colour, data=bezier_df %>% distinct(), arrow = arrow(angle=30, length = unit(arrow_unit, "pt"), type="closed"), linejoin='mitre')
 
@@ -1805,7 +1818,10 @@ plot_state_graph_key_genes <- function(ccs,
   }
 
   g = ggnetwork::ggnetwork(G, layout = gvizl_coords, arrow.gap = arrow.gap, scale=F)
-
+  # add assembly group
+  bezier_df$assembly_group = vapply(strsplit(bezier_df$from, "-", fixed=T), "[", "", 1)
+  g$assembly_group = vapply(strsplit(g$name, "-", fixed=T), "[", "", 1)
+  
   p <- ggplot() +
     ggplot2::geom_path(aes(x, y, group=edge_name, size=edge_thickness), colour=con_colour, data=bezier_df %>% distinct(), arrow = arrow(angle=30, length = unit(arrow_unit, "pt"), type="closed"), linejoin='mitre')
 
