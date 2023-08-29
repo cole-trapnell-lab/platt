@@ -17,10 +17,10 @@ setOldClass(c("PLNfit"), prototype=structure(list(), class="PLNfit"))
 #' @exportClass cell_state_graph
 setClass("cell_state_graph",
          slots = c(ccs = "cell_count_set", 
-                   graph = "igraph", 
-                   info = "SimpleList")
+                   graph = "igraph")
 )
-setMethod("is.na", "cell_state_graph", function(x) FALSE)
+# setMethod("is.na", "cell_state_graph", function(x) FALSE)
+# currently causing problems -- ask cole why need this again 
 
 
 #' Create a new cell state graph object.
@@ -35,9 +35,7 @@ new_cell_state_graph <- function(graph, ccs) {
     assertthat::assert_that(is(ccs, 'cell_count_set'))
     state_graph <- methods::new("cell_state_graph",
                                 graph = graph,
-                                ccs = ccs, 
-                                info = SimpleList(sample_group = ccs@info$sample_group,
-                                                  cell_group = ccs@info$cell_group))
+                                ccs = ccs)
     return(state_graph)
 }
 

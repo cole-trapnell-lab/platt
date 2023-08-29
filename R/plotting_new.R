@@ -356,7 +356,7 @@ plot_state_graph <- function(state_graph,
         group_outline = TRUE # for some reason cant get the geom_mark_rect to facet
     }
     
-    if (color_cells_by == "gene_expression" & is.null(genes) == FALSE) {
+    if (is.null(genes) == FALSE) {
       g <- add_gene_expression(g, state_graph@ccs, genes=genes, gene_expr=gene_expr, scale_to_range=scale_to_range)
       color_nodes_by = "mean_expression"
       expression_legend_label = "mean expression"
