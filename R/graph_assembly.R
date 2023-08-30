@@ -2420,8 +2420,13 @@ contract_state_graph <- function(ccs,
     dplyr::count(cell_group, !!sym(group_nodes_by)) %>%
     dplyr::group_by(cell_group) %>% slice_max(n, with_ties=FALSE) %>% dplyr::select(-n)
   colnames(group_by_metadata) = c("cell_group", "group_nodes_by")
-  node_metadata = left_join(node_metadata, group_by_metadata, by=c("id"="cell_group"))
-  node_metadata = node_metadata %>% mutate(id = as.numeric(id)) %>% arrange(id)
+  
+  node_metadata = igraph::as_data_frame(state_graph, what = "vertices") %>% mutate(order = row_number()) %>%
+    left_join(group_by_metadata, by = c("name" = "cell_group"))
+  
+  # node_metadata = left_join(node_metadata, group_by_metadata, by=c("id"="cell_group"))
+  # node_metadata = left_join(node_metadata, df, by = "id")%>% arrange(sort_id)
+  # node_metadata = node_metadata %>% mutate(sort_id = as.numeric(gsub("\\D", "", id))) %>% arrange(sort_id)
   contraction_mapping = as.factor(node_metadata$group_nodes_by)
   contraction_mapping_names = as.character(levels(contraction_mapping))
   contraction_mapping = as.numeric(contraction_mapping)
@@ -2433,6 +2438,4 @@ contract_state_graph <- function(ccs,
   igraph::V(contracted_state_graph)$cell_group = group_nodes_by
   return(contracted_state_graph)
 }
-
-
 
