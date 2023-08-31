@@ -52,7 +52,7 @@ fit_genotype_ccm = function(genotype,
   #subset_ccs = ccs[,colData(ccs)$gene_target == genotype | colData(ccs)$gene_target %in% ctrl_ids]
   
   subset_ccs = ccs[,replace_na(colData(ccs)[[perturbation_col]] == genotype, F)]
-  expts = unique(colData(subset_ccs)$expt)
+  expts = unique(colData(subset_ccs)[[batch_col]])
   
   if (is.null(assembly_time_start)){
     knockout_time_start = min(colData(subset_ccs)[[interval_col]])
@@ -69,7 +69,7 @@ fit_genotype_ccm = function(genotype,
   num_knockout_timepoints = length(unique(colData(subset_ccs)[[interval_col]]))
   
   message(paste("\ttime range:", knockout_time_start, "to", knockout_time_stop))
-  subset_ccs = ccs[,( replace_na(colData(ccs)[[perturbation_col]] == genotype, F) | colData(ccs)[[perturbation_col]] %in% ctrl_ids) & colData(ccs)$expt %in% expts]
+  subset_ccs = ccs[,( replace_na(colData(ccs)[[perturbation_col]] == genotype, F) | colData(ccs)[[perturbation_col]] %in% ctrl_ids) & colData(ccs)[[batch_col]] %in% expts]
   
   colData(subset_ccs)$knockout = colData(subset_ccs)[[perturbation_col]] == genotype
   subset_ccs = subset_ccs[,(colData(subset_ccs)[[interval_col]] >= knockout_time_start & colData(subset_ccs)[[interval_col]] <= knockout_time_stop)]
@@ -350,6 +350,8 @@ assemble_partition = function(cds,
                                   start_time = start_time,
                                   stop_time = stop_time,
                                   interval_col=interval_col,
+                                  perturbation_col = perturbation_col,
+                                  component_col=component_col,
                                   verbose=verbose)
 
     #partition_results$wt_ccm = list(wt_ccm)
@@ -389,9 +391,8 @@ assemble_partition = function(cds,
       perturbation_effects = perturbation_effects %>% tidyr::nest(perturb_summary_tbl= !perturb_name)
       partition_results$perturbation_effects = list(perturbation_effects)
       
-      
-      perturbation_table =  perturb_models_tbl %>% dplyr::select(perturb_name, perturbation_table) %>% tidyr::unnest(perturbation_table)
-      partition_results$partition_table = list(perturbation_table)
+      partition_table = perturb_models_tbl %>% dplyr::select(perturb_name, partition_table) %>% tidyr::unnest(perturb_summary_tbl)
+      partition_results$partition_table = list(partition_results$perturbation_table)
       # partition_results$mt_state_graph_plot = list(plot_state_graph_annotations(wt_ccm@ccs,
       #                                                                         mt_graph,
       #                                                                         label_nodes_by="cell_state",
