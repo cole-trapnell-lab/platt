@@ -7,6 +7,18 @@ get_time_window <- function(genotype, ccs, interval_col, perturbation_col = gene
   return(tibble(start_time=knockout_time_start, stop_time=knockout_time_stop))
 }
 
+#' @export
+get_perturbation_effects <- function(ccm, expt, interval_col="timepoint"){
+  timepoints = colData(ccm@ccs)[[interval_col]] %>% unique
+  df = data.frame(time = timepoints) %>%
+    mutate(genotype_eff = purrr::map(.f = make_contrast,
+                                     .x = time,
+                                     ccm = ccm,
+                                     expt = expt)) %>%
+    unnest(genotype_eff)
+  return(df)
+}
+
 #' 
 #' @param genotype
 #' @param ccs
@@ -324,6 +336,12 @@ assemble_partition = function(cds,
                                                      min_lfc=min_lfc, 
                                                      verbose=verbose,
                                                      expt=expt)
+    
+    perturb_models_tbl = perturb_models_tbl %>%
+                        mutate(perturbation_table = purrr::map(.f = purrr::possibly(get_perturbation_effects),
+                                                             .x = perturb_ccm,
+                                                             interval_col = interval_col,
+                                                             expt = expt))
 
 
     message ("Assembling mutant graphs...")
@@ -332,8 +350,6 @@ assemble_partition = function(cds,
                                   start_time = start_time,
                                   stop_time = stop_time,
                                   interval_col=interval_col,
-                                  perturbation_col = perturbation_col,
-                                  component_col=component_col,
                                   verbose=verbose)
 
     #partition_results$wt_ccm = list(wt_ccm)
@@ -372,6 +388,10 @@ assemble_partition = function(cds,
       perturbation_effects$cell_group = stringr::str_c(partition_name, perturbation_effects$cell_group, sep="-")
       perturbation_effects = perturbation_effects %>% tidyr::nest(perturb_summary_tbl= !perturb_name)
       partition_results$perturbation_effects = list(perturbation_effects)
+      
+      
+      perturbation_table =  perturb_models_tbl %>% dplyr::select(perturb_name, perturbation_table) %>% tidyr::unnest(perturbation_table)
+      partition_results$partition_table = list(perturbation_table)
       # partition_results$mt_state_graph_plot = list(plot_state_graph_annotations(wt_ccm@ccs,
       #                                                                         mt_graph,
       #                                                                         label_nodes_by="cell_state",
@@ -765,7 +785,8 @@ assemble_mt_graph = function(wt_ccm,
   return(mutant_supergraph)
 }
 
-resolution_fun = function(num_cells, min_res=5e-6, max_res=1e-5, max_num_cells=NULL) {
+
+default_resolution_fun = function(num_cells, min_res=5e-6, max_res=1e-5, max_num_cells=NULL) {
   if (is.null(max_num_cells)){
     max_num_cells =num_cells
   }
@@ -893,12 +914,9 @@ subcluster_cds = function(cds,
 }
 
 
-# recluster=T, recursive_subcluster=T, want to run clustering until reach one partition
-# recluster=T, recursive_subcluster=F, want to run clustering once
+
 #' @export
 assemble_partition_from_cds = function(cds,
-                                       recluster = TRUE,
-                                       recursive_subcluster = FALSE,
                                        partition_name = NULL,
                                        num_dim = NULL,
                                        max_components = 3,
@@ -927,38 +945,22 @@ assemble_partition_from_cds = function(cds,
                                        min_lfc = 0, 
                                        log_abund_detection_thresh = log(1),
                                        q_val = 0.1, 
-                                       num_bootstraps=10,
+                                       num_bootstraps = 10,
                                        batch_col = "expt", 
                                        batches_excluded_from_assembly=c(),
                                        component_col="partition",
-                                       embryo_size_factors=NULL, 
-                                       break_cycles = TRUE) {
-
-  # if the input cds needs new clustering
-  # important for when you are reconstructing a umap from coldata and
-  # need to rerun clustering
-  if (is.null(res_col)== FALSE & recluster) {
-    res = unique(colData(cds)[[res_col]])
-    if (length(res) > 1) {
-      stop("More than 1 resolution provided in column")
-    }
-    cds = cluster_cells(cds, resolution = res)
-
-  }
-  else if (is.null(res_col) & recluster) {
-    cds = subcluster_cds(cds,
-                         recursive_subcluster = recursive_subcluster,
-                         partition_name = partition_name,
-                         num_dim = num_dim,
-                         max_components = max_components,
-                         resolution_fun = resolution_fun,
-                         max_num_cells = max_num_cells,
-                         min_res = min_res,
-                         max_res = max_res,
-                         cluster_k=cluster_k)
+                                       embryo_size_factors=NULL) {
+  
+  # if a resolution column has been specified in column
+  if (is.null(res_col) == FALSE) {
+      res = unique(colData(cds)[[res_col]])
+      if (length(res) > 1) {
+        stop("More than 1 resolution provided in column")
+      }
   } else {
-    cell_group = "cell_state"
+    res = default_resolution_fun(ncol(cds), min_res = min_res, max_res = max_res)
   }
+  cds = cluster_cells(cds, resolution = res)
 
 
   partition_results = assemble_partition(cds=cds,
