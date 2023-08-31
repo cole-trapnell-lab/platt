@@ -897,11 +897,13 @@ classify_genes_within_state_graph = function(ccs,
                                              cores = 1,
                                              ...) {
   
+  # to do make sure that ccs and state graph match 
+  
   expts = unique(colData(ccs)$expt)
   
   
   pb_cds = hooke:::pseudobulk_ccs_for_states(ccs)
-  pb_cds = add_covariate(ccs, pb_cds, perturbation_col)
+  pb_cds = hooke:::add_covariate(ccs, pb_cds, perturbation_col)
   
   # if we want to run it by assembly group
   if (is.null(assembly_group) == FALSE) {
@@ -940,7 +942,8 @@ classify_genes_within_state_graph = function(ccs,
   df = data.frame(cell_group = cell_groups) %>% 
     mutate(genes_within_cell_group = purrr::map(.f = classify_genes_within_node, 
                                                 .x = cell_group, 
-                                                pb_cds = pb_cds))
+                                                pb_cds = pb_cds, 
+                                                cores = cores))
   
   return(df)
   
@@ -953,7 +956,8 @@ classify_genes_within_node <- function(cell_group,
                                        state_term ="cell_group",
                                        log_fc_thresh=1,
                                        abs_expr_thresh = 1e-3,
-                                       sig_thresh=0.05) {
+                                       sig_thresh=0.05, 
+                                       cores=1) {
   
   # now fit models per cell group
   
@@ -966,8 +970,6 @@ classify_genes_within_node <- function(cell_group,
                                weights=colData(cg_pb_cds)$num_cells_in_group,
                                cores=cores) %>% dplyr::select(gene_short_name, id, model, model_summary)
   
-  
-  message(paste0("fitting regression models for ", cell_group))
   
   pb_coeffs = coefficient_table(pb_group_models) %>%
     dplyr::select(gene_short_name, id, term, estimate, std_err) %>%
