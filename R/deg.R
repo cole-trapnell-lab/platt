@@ -924,6 +924,9 @@ classify_genes_within_state_graph = function(ccs,
     pb_cds = pb_cds[, colData(pb_cds)[[perturbation_col]] %in% vertices]
   }
   
+  if (is.null(gene_ids) == FALSE){
+    pb_cds = pb_cds[gene_ids,]
+  }
   
   
   # subset to genes that are expressed over a certain min value
@@ -998,28 +1001,32 @@ classify_genes_within_node <- function(ccs,
   
   # make a graph of control --> all perturbations
   cell_perturbations = tibble(perturbation = unique(colData(pb_cds)[,"perturbation"]))
-  state_graph = data.frame("from" = cell_perturbations[cell_perturbations != "Control"])
-  state_graph$to = "Control"
+  perturb_state_graph = data.frame("from" = cell_perturbations[cell_perturbations != "Control"])
+  perturb_state_graph$to = "Control"
   # igraph defaults to first col > second col, so need to reverse the direction 
-  state_graph = state_graph %>% igraph::graph_from_data_frame() %>% igraph::reverse_edges()
+  perturb_state_graph = perturb_state_graph %>% igraph::graph_from_data_frame() %>% igraph::reverse_edges()
   
   cell_perturbations = cell_perturbations %>%
     dplyr::mutate(gene_classes = purrr::map(.f = purrr::possibly(
-      classify_genes_in_cell_state, NA_real_), .x = perturbation,
-      state_graph, estimate_matrix, stderr_matrix, state_term,
-      log_fc_thresh=log_fc_thresh,
-      abs_expr_thresh = abs_expr_thresh,
-      sig_thresh=sig_thresh,
-      cores=cores))
+                                            classify_genes_in_cell_state, NA_real_), 
+                                            .x = perturbation,
+                                            perturb_state_graph, 
+                                            estimate_matrix, 
+                                            stderr_matrix, 
+                                            state_term,
+                                            log_fc_thresh=log_fc_thresh,
+                                            abs_expr_thresh = abs_expr_thresh,
+                                            sig_thresh=sig_thresh,
+                                            cores=cores))
   
   cell_perturbations = cell_perturbations %>%
-    filter(is.na(gene_classes) == FALSE) %>%
-    dplyr::mutate(gene_class_scores = purrr::map2(.f = purrr::possibly(
-      score_genes_for_expression_pattern, NA_real_),
-      .x = perturbation,
-      .y = gene_classes,
-      state_graph,
-      estimate_matrix))
+                        filter(is.na(gene_classes) == FALSE) %>%
+                        dplyr::mutate(gene_class_scores = purrr::map2(.f = purrr::possibly(
+                          score_genes_for_expression_pattern, NA_real_),
+                          .x = perturbation,
+                          .y = gene_classes,
+                          state_graph,
+                          estimate_matrix))
   
   # cell_perturbations$cell_group = cell_group
   
@@ -1072,3 +1079,72 @@ calc_pathway_enrichment_on_state_specific_genes <- function(gene_df, msigdbr_t2g
   enrich_res = clusterProfiler::enricher(gene = gene_symbols_vector, TERM2GENE = msigdbr_t2g, ...) %>% as_tibble()
   return(enrich_res)
 }
+
+
+
+get_pathway_matrix = function(gene_patterns_within_state_graph, 
+                              q_val_threshold = 0.05, 
+                              gene_set = NULL, 
+                              against_background = FALSE) {
+  
+  if (is.null(gene_set)){
+    gene_set = msigdbr(species = "Danio rerio", subcategory = "GO:BP")
+  }
+  
+  gene_set_df = gene_set %>% 
+    dplyr::distinct(gs_name, gene_short_name=gene_symbol) %>% as.data.frame()
+  
+  # if (against_background) {
+  #   gene_set = gene_patterns_within_state_graph %>% 
+  #     filter(interpretation != "Absent") %>%
+  #     pull(gene_short_name) %>% 
+  #     unique()
+  #   
+  # }
+ 
+  patterns_for_marker_genes = c("Specifically activated",
+                                "Selectively activated",
+                                "Activated",
+                                "Specifically upregulated",
+                                "Selectively upregulated",
+                                "Upregulated",
+                                "Selectively maintained",
+                                "Specifically maintained",
+                                "Precursor-specific",
+                                "Precursor-depleted")
+  
+  # set universe=gene_universe to look for pathways that are 
+  # enriched against the background of the genes detected in the CDS
+  
+  state_pattern_pathways = gene_patterns_within_state_graph %>%
+    # filter(perturbation %in% c("Shh", "Notch")) %>%
+    filter(interpretation %in%  patterns_for_marker_genes) %>%
+    select(perturbation, gene_short_name, cell_group) %>%
+    group_by(perturbation) %>% tidyr::nest(data=gene_short_name) %>%
+    dplyr::mutate(pathways = purrr::map(.f = purrr::possibly(
+      calc_gsea_enrichment_on_state_specific_genes, NA_real_),
+      .x = data,
+      gene_set_df
+    )) %>%
+    tidyr::unnest(pathways)
+  
+  pathway_df = state_pattern_pathways %>% 
+    as.data.frame() %>% 
+    dplyr::select(perturbation, pathway, cell_group, pathway, ES, assembly_group) %>% 
+    pivot_wider(names_from = cell_group, values_from = ES) %>% 
+    mutate(rowname = paste(perturbation, pathway, sep="-"))
+  
+  pathway_matrix = pathway_df %>%
+    select(-c(perturbation, pathway, assembly_group)) %>% 
+    tibble::column_to_rownames("rowname") 
+  
+  pathway_matrix[is.na(pathway_matrix)] = 0
+  
+  return(pathway_matrix)
+  
+  
+}
+
+
+
+
