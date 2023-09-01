@@ -325,7 +325,7 @@ plot_state_graph_losses <- function(perturbation_ccm,
   #edges = hooke:::distance_to_root(edges)
   edges = edges %>% dplyr::ungroup()
 
-  node_metadata = hooke:::collect_psg_node_metadata(perturbation_ccm@ccs, color_nodes_by=NULL, label_nodes_by, group_nodes_by)
+  node_metadata = collect_psg_node_metadata(perturbation_ccm@ccs, color_nodes_by=NULL, label_nodes_by, group_nodes_by)
 
   if (hide_unlinked_nodes){
     node_metadata = node_metadata %>% filter(id %in% edges$from | id %in% edges$to)
@@ -1221,7 +1221,7 @@ plot_state_graph_perturb_effects <- function(ccs,
   #edges = hooke:::distance_to_root(edges)
   edges = edges %>% dplyr::ungroup()
 
-  node_metadata = hooke:::collect_psg_node_metadata(ccs, color_nodes_by, label_nodes_by, group_nodes_by)
+  node_metadata = collect_psg_node_metadata(ccs, color_nodes_by, label_nodes_by, group_nodes_by)
 
   if (hide_unlinked_nodes){
     node_metadata = node_metadata %>% filter(id %in% edges$from | id %in% edges$to)
@@ -1476,7 +1476,7 @@ plot_state_graph_marker_genes <- function(ccs,
   #edges = hooke:::distance_to_root(edges)
   edges = edges %>% dplyr::ungroup()
 
-  node_metadata = hooke:::collect_psg_node_metadata(ccs, color_nodes_by, label_nodes_by, group_nodes_by)
+  node_metadata = collect_psg_node_metadata(ccs, color_nodes_by, label_nodes_by, group_nodes_by)
 
   if (hide_unlinked_nodes){
     node_metadata = node_metadata %>% filter(id %in% edges$from | id %in% edges$to)
@@ -1754,7 +1754,7 @@ plot_state_graph_key_genes <- function(ccs,
   #edges = hooke:::distance_to_root(edges)
   edges = edges %>% dplyr::ungroup()
 
-  node_metadata = hooke:::collect_psg_node_metadata(ccs, color_nodes_by, label_nodes_by, group_nodes_by)
+  node_metadata = collect_psg_node_metadata(ccs, color_nodes_by, label_nodes_by, group_nodes_by)
 
   if (hide_unlinked_nodes){
     node_metadata = node_metadata %>% filter(id %in% edges$from | id %in% edges$to)

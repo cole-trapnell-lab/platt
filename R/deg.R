@@ -918,7 +918,7 @@ classify_genes_within_state_graph = function(ccs,
   
   
   if (!is.null(perturbations)) {
-    pb_cds = pb_cds[, colData(pb_cds)[[perturbation_col]] %in% perturbations]
+    pb_cds = pb_cds[, colData(pb_cds)[[perturbation_col]] %in% c(control_ids, perturbations)]
   } else {
     vertices = igraph::V(state_graph)$name
     pb_cds = pb_cds[, colData(pb_cds)[[perturbation_col]] %in% vertices]
@@ -940,8 +940,9 @@ classify_genes_within_state_graph = function(ccs,
   }
   
   df = data.frame(cell_group = cell_groups) %>% 
-    mutate(genes_within_cell_group = purrr::map(.f = classify_genes_within_node, 
+    mutate(genes_within_cell_group = purrr::map(.f = purrr::possibly(classify_genes_within_node, NA_character_), 
                                                 .x = cell_group, 
+                                                ccs = ccs, 
                                                 pb_cds = pb_cds, 
                                                 cores = cores))
   
@@ -951,7 +952,8 @@ classify_genes_within_state_graph = function(ccs,
 
 #' classify each gene's pattern of expression in each node of the state transition graph
 #' @export
-classify_genes_within_node <- function(cell_group, 
+classify_genes_within_node <- function(ccs, 
+                                       cell_group, 
                                        pb_cds, 
                                        state_term ="cell_group",
                                        log_fc_thresh=1,

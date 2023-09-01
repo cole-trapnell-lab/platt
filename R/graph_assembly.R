@@ -2408,13 +2408,13 @@ contract_state_graph <- function(ccs,
   # Create simplified cell state graph just on cell type (not cluster):
   cell_groups = ccs@metadata[["cell_group_assignments"]] %>% pull(cell_group) %>% unique()
   node_metadata = tibble(id=cell_groups)
-
+  
   #G = edges %>% select(from, to, n, scaled_weight, distance_from_root)  %>% igraph::graph_from_data_frame(directed = T)
   cell_group_metadata = colData(ccs@cds) %>%
     as.data.frame %>% select(!!sym(group_nodes_by))
-
+  
   cell_group_metadata$cell_group = ccs@metadata[["cell_group_assignments"]] %>% pull(cell_group)
-
+  
   group_by_metadata = cell_group_metadata[,c("cell_group", group_nodes_by)] %>%
     as.data.frame %>%
     dplyr::count(cell_group, !!sym(group_nodes_by)) %>%
@@ -2438,4 +2438,6 @@ contract_state_graph <- function(ccs,
   igraph::V(contracted_state_graph)$cell_group = group_nodes_by
   return(contracted_state_graph)
 }
+
+
 
