@@ -1942,3 +1942,69 @@ plot_state_graph_key_genes <- function(ccs,
     theme(legend.position=legend_position)
   return(p)
 }
+
+
+
+# cell_type_ann_df = data.frame(cell_group = unique(colData(cds)[[group_cells_by]]), 
+#                               category = rep(1:7, each=2)) %>% 
+#   tibble::column_to_rownames("cell_group")
+
+#'
+#' @param cds description
+#' @param group_cells_by description
+#' @param genes description
+#' @param cell_types
+#' @param gene_ann_df one column must match genes and be called "genes" 
+#' @param cell_type_ann_df one column must match cell types and be called "cell_group" 
+plot_genes_expr_across_cell_groups = function(cds, 
+                                              group_cells_by, 
+                                              genes = NULL, 
+                                              cell_types = NULL, 
+                                              gene_ann_df = NULL, 
+                                              cell_type_ann_df = NULL, 
+                                              drop_zeroes = TRUE) {
+  
+  if (is.null(cell_types) == FALSE) {
+    cds = cds[,colData(cds)[[group_cells_by]] %in% cell_types]
+  }
+  
+  # maybe warn if this isnt null / longer than a certain length 
+  if (is.null(genes) == FALSE) {
+    cds = cds[rowData(cds)$gene_short_name %in% genes, ]
+  }
+  
+  agg_expr_data = hooke:::aggregated_expr_data(cds, group_cells_by = group_cells_by)
+  
+  
+  if (is.null(gene_ann_df)==FALSE) {
+    gene_ann_df = gene_ann_df %>% tibble::column_to_rownames("genes")
+  }
+  
+  
+  if (is.null(cell_type_ann_df)==FALSE) {
+    cell_type_ann_df = cell_type_ann_df %>% tibble::column_to_rownames("cell_group")
+  }
+  
+  agg_expr_mat = agg_expr_data %>% 
+    filter(gene_short_name %in% genes) %>% 
+    select(cell_group, gene_short_name, mean_expression) %>% 
+    pivot_wider(names_from = gene_short_name, values_from = mean_expression) %>% 
+    tibble::column_to_rownames("cell_group") %>% 
+    t()
+  
+  if (drop_zeroes) {
+    agg_expr_mat = agg_expr_mat[rowSums(agg_expr_mat) != 0,
+                                colSums(agg_expr_mat) != 0]
+  }
+  
+ 
+  p = pheatmap::pheatmap(agg_expr_mat, 
+                         cluster_rows = T, 
+                         cluster_cols = T, 
+                         color = viridis::viridis(10), 
+                         annotation_row = gene_ann_df, 
+                         annotation_col = cell_type_ann_df)
+  return(p)
+  
+  
+}
