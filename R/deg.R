@@ -908,6 +908,7 @@ classify_genes_within_state_graph = function(ccs,
   
   pb_cds = hooke:::pseudobulk_ccs_for_states(ccs)
   pb_cds = hooke:::add_covariate(ccs, pb_cds, perturbation_col)
+  colData(pb_cds)[["perturbation"]] = colData(pb_cds)[[perturbation_col]] 
   
   # to do: if we want to run it by assembly group, must provide a state graph 
   if (is.null(assembly_group) == FALSE & is.null(state_graph) == FALSE) {
