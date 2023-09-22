@@ -1024,8 +1024,8 @@ classify_genes_within_node <- function(cell_group,
   cell_perturbations = cell_perturbations %>%
     filter(is.na(gene_classes) == FALSE) %>%
     tidyr::unnest(gene_class_scores) %>% 
-    dplyr::select(perturbation, gene_id, interpretation, pattern_match_score, pattern_activity_score) %>% 
-    dplyr::filter(!interpretation %in% c("Absent", "Maintained", "Specifically maintained", "Selectively maintained"))
+    dplyr::select(perturbation, gene_id, interpretation, pattern_match_score, pattern_activity_score) #%>% 
+    # dplyr::filter(!interpretation %in% c("Absent", "Maintained", "Specifically maintained", "Selectively maintained"))
   
   
   cell_perturbations = left_join(cell_perturbations,
