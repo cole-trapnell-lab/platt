@@ -943,6 +943,7 @@ classify_genes_within_state_graph = function(ccs,
     mutate(genes_within_cell_group = purrr::map(.f = purrr:::possibly(classify_genes_within_node,NA_real_),
                                                 .x = cell_group, 
                                                 pb_cds = pb_cds, 
+                                                ccs = ccs, 
                                                 cores = cores))
   
   return(df)
@@ -952,6 +953,7 @@ classify_genes_within_state_graph = function(ccs,
 #' classify each gene's pattern of expression in each node of the state transition graph
 #' @export
 classify_genes_within_node <- function(cell_group, 
+                                       ccs, 
                                        pb_cds, 
                                        state_term ="cell_group",
                                        log_fc_thresh=1,
