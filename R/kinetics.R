@@ -1,3 +1,6 @@
+#' 
+#' @param control_ccm
+#' 
 plot_cell_type_control_kinetics = function(control_ccm,
                                            cell_groups=NULL,
                                            start_time=NULL,
@@ -10,6 +13,9 @@ plot_cell_type_control_kinetics = function(control_ccm,
                                            q_val=0.01,
                                            log_scale=TRUE,
                                            ...){
+  
+  
+  colData(control_ccm@ccs)[,interval_col] = as.numeric(colData(control_ccm@ccs)[,interval_col])
 
   if (is.null(start_time))
     start_time = min(colData(control_ccm@ccs)[,interval_col])
@@ -53,7 +59,7 @@ plot_cell_type_control_kinetics = function(control_ccm,
   #                                 embryo = colnames(sel_ccs_counts)[sel_ccs_counts_long$j],
   #                                 num_cells      = sel_ccs_counts_long$x)
 
-  cell_group_metadata = hooke:::collect_psg_node_metadata(control_ccm@ccs,
+  cell_group_metadata = collect_psg_node_metadata(control_ccm@ccs,
                                                           group_nodes_by="cell_type_broad",
                                                           color_nodes_by="cell_type_broad",
                                                           label_nodes_by="cell_type_broad") %>%
@@ -108,6 +114,8 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
                                            control_start_time=start_time,
                                            control_stop_time=control_stop_time,
                                            ...){
+  
+  colData(perturbation_ccm@ccs)[,interval_col] = as.numeric(colData(perturbation_ccm@ccs)[,interval_col])
 
   if (is.null(start_time))
     start_time = min(colData(perturbation_ccm@ccs)[,interval_col])
@@ -123,7 +131,7 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
 
   # Find the pairs of nodes that are both lost in the perturbation at the same time
   perturb_vs_wt_nodes = tibble(t1=timepoints) %>%
-    mutate(comp_abund = purrr::map(.f = hooke:::compare_ko_to_wt_at_timepoint,
+    mutate(comp_abund = purrr::map(.f = platt:::compare_ko_to_wt_at_timepoint,
                                    .x = t1,
                                    perturbation_ccm=perturbation_ccm,
                                    interval_col=interval_col,
@@ -141,7 +149,7 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
   sel_ccs_counts_long = tibble::rownames_to_column(as.matrix(sel_ccs_counts) %>% as.data.frame, var="cell_group") %>%
     pivot_longer(!cell_group, names_to="embryo", values_to="num_cells")
 
-  cell_group_metadata = hooke:::collect_psg_node_metadata(perturbation_ccm@ccs,
+  cell_group_metadata = platt:::collect_psg_node_metadata(perturbation_ccm@ccs,
                                                           group_nodes_by="cell_type_broad",
                                                           color_nodes_by="cell_type_broad",
                                                           label_nodes_by="cell_type_broad") %>%
