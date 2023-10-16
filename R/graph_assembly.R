@@ -102,6 +102,11 @@ add_cross_component_pathfinding_links = function(ccm,
                                                  type=c("strongest-pcor", "strong-pcor", "ctp"),
                                                  surprise_thresh=2,
                                                  components="partition"){
+  
+  assertthat::assert_that(
+    tryCatch(expr = components %in% colnames(colData(ccm@ccs@cds)),
+             error = function(e) FALSE),
+    msg = paste0(components, "not found in colData"))
 
   pcor_graph = tibble(cell_group = row.names(counts(ccm@ccs)))
   pcor_graph = pcor_graph %>% select(cell_group) %>% tidyr::expand(cell_group, cell_group)
