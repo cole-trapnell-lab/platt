@@ -198,13 +198,14 @@ assemble_partition = function(cds,
                               batch_col = "expt",
                               expt = "GAP16",
                               min_lfc = 0, 
+                              links_between_components=c("ctp", "none", "strongest-pcor", "strong-pcor"),
                               log_abund_detection_thresh = log(1), 
                               batches_excluded_from_assembly=c(),
                               component_col="partition",
                               embryo_size_factors=NULL){
 
   colData(cds)$subassembly_group = stringr::str_c(partition_name, colData(cds)[,cell_group], sep="-")
-  colData(cds)[["cell_state"]] = colData(cds)[[cell_group]]
+  colData(cds)[["cell_state"]] = as.character(colData(cds)[[cell_group]])
   #selected_colData = selected_colData %>% mutate(cell_state = paste0(partition_name, cell_state))
   selected_colData = colData(cds) %>% as_tibble() %>% dplyr::select(cell, embryo, cluster, cell_state, subassembly_group)
 
@@ -262,7 +263,7 @@ assemble_partition = function(cds,
 
     #FIXME: probably need to pass additional args here sometimes:
     wt_extant_cell_type_df = get_extant_cell_types(wt_ccm, start_time, stop_time, interval_col=interval_col, expt="GAP16")
-
+  
     message ("Assembling wild-type graph...")
     wt_graph = assemble_wt_graph (cds,
                                   wt_ccm,
@@ -273,6 +274,7 @@ assemble_partition = function(cds,
                                   stop_time = stop_time,
                                   interval_col=interval_col,
                                   #nuisance_model_formula_str = "~expt",
+                                  links_between_components = links_between_components,
                                   ctrl_ids = ctrl_ids,
                                   sparsity_factor = sparsity_factor,
                                   perturbation_col = perturbation_col,
@@ -281,6 +283,7 @@ assemble_partition = function(cds,
 
     if (is.null(wt_graph) == FALSE){
       #partition_results$wt_ccm = list(wt_ccm)
+      igraph::E(wt_graph)$assembly_group = partition_name
       igraph::V(wt_graph)$name = stringr::str_c(partition_name, igraph::V(wt_graph)$name, sep="-")
       partition_results$wt_graph = list(wt_graph)
 
@@ -313,6 +316,8 @@ assemble_partition = function(cds,
                                                           vhat_method=vhat_method,
                                                           num_bootstraps=num_bootstraps,
                                                           embryo_size_factors=embryo_size_factors))
+    
+    perturb_models_tbl = perturb_models_tbl %>% filter(!is.na(perturb_ccm))
 
     if (is.null(perturb_models_tbl)){
       partition_results$wt_graph = list(NA)
@@ -350,12 +355,14 @@ assemble_partition = function(cds,
                                   start_time = start_time,
                                   stop_time = stop_time,
                                   interval_col=interval_col,
+                                  links_between_components = links_between_components,
                                   perturbation_col = perturbation_col,
                                   component_col=component_col,
                                   verbose=verbose)
 
     #partition_results$wt_ccm = list(wt_ccm)
     if (is.null(mt_graph) == FALSE){
+      igraph::E(mt_graph)$assembly_group = partition_name
       igraph::V(mt_graph)$name = stringr::str_c(partition_name, igraph::V(mt_graph)$name, sep="-")
 
       merge_wt_graph_edges = igraph::as_data_frame(wt_graph)
@@ -373,7 +380,7 @@ assemble_partition = function(cds,
       
       
       # merge_wt_graph_edges doesn't have the assembly group name 
-      merge_graph_annotated = left_join(merge_wt_graph_edges, merge_mt_graph_edges, by = c("from", "to"))
+      merge_graph_annotated = left_join(merge_wt_graph_edges, merge_mt_graph_edges, by = c("from", "to", "assembly_group"))
       merge_graph_annotated = merge_graph_annotated %>% select(-support)
       
       # BREAK
@@ -391,11 +398,13 @@ assemble_partition = function(cds,
       perturbation_effects = perturbation_effects %>% tidyr::nest(perturb_summary_tbl= !perturb_name)
       partition_results$perturbation_effects = list(perturbation_effects)
       
-      partition_table = perturb_models_tbl %>% dplyr::select(perturb_name, partition_table) %>% tidyr::unnest(perturb_summary_tbl)
-      partition_results$partition_table = list(partition_results$perturbation_table)
+      perturbation_table = perturb_models_tbl %>% dplyr::select(perturb_name, perturbation_table) %>% tidyr::unnest(perturbation_table)
+      partition_results$perturbation_table = list(perturbation_table)
+      
+      # this is failing because cell state is not matching
       # partition_results$mt_state_graph_plot = list(plot_state_graph_annotations(wt_ccm@ccs,
       #                                                                         mt_graph,
-      #                                                                         label_nodes_by="cell_state",
+      #                                                                         label_nodes_by="global_cell_state",
       #                                                                         #color_nodes_by = "timepoint",
       #                                                                         group_nodes_by="cell_type_sub",
       #                                                                         label_edges_by="support_label",
@@ -407,6 +416,7 @@ assemble_partition = function(cds,
       partition_results$mt_graph = list(NA)
       partition_results$mt_state_graph_plot = list(NA)
       partition_results$perturbation_effects = list(NA)
+      partition_results$perturbation_table = list(NA)
     }
       partition_results$mt_graph_blacklist = list(NA)
       partition_results$mt_graph_blacklist_plot = list(NA)
@@ -444,12 +454,12 @@ fit_wt_model = function(cds,
                         vhat_method="bootstrap",
                         interval_col = "timepoint",
                         perturbation_col = "knockout",
+                        batch_col = "expt", 
                         start_time = NULL,
                         stop_time = NULL,
                         interval_step = 2,
                         log_abund_detection_thresh=log(1),
                         q_val = 0.1,
-                        expt = "GAP16",
                         edge_whitelist = NULL,
                         edge_blacklist = NULL,
                         base_penalty = 1,
@@ -459,6 +469,7 @@ fit_wt_model = function(cds,
                         backend="nlopt",
                         penalize_by_distance=TRUE,
                         embryo_size_factors=NULL,
+                        batches_excluded_from_assembly = c(),
                         ...) {
 
 
@@ -468,6 +479,8 @@ fit_wt_model = function(cds,
   }
 
   wt_cds = cds[, colData(cds)[[perturbation_col]] %in% ctrl_ids]
+  wt_cds = wt_cds[,colData(wt_cds)[[batch_col]] %in% batches_excluded_from_assembly == FALSE]
+  
 
   if (ncol(wt_cds) == 0){
     message("No control cells. Skipping...")
@@ -499,7 +512,13 @@ fit_wt_model = function(cds,
   if (num_cell_groups <= 1){
     stop("Only a single cell group. Skipping...")
   }
-
+  
+  
+  # # make this any column 
+  if (length(unique(colData(wt_ccs)[[batch_col]])) > 1){
+    #main_model_formula_str = paste(main_model_formula_str, "+expt")
+    nuisance_model_formula_str = paste(nuisance_model_formula_str, "+", batch_col)
+  }
 
   if (is.null(main_model_formula_str)) {
     main_model_formula_str = build_interval_formula(wt_ccs,
@@ -507,13 +526,19 @@ fit_wt_model = function(cds,
                                                     interval_start=start_time,
                                                     interval_stop=stop_time,
                                                     num_breaks=num_time_breaks)
-    message(paste("Fitting wild type model with main effects:", main_model_formula_str))
+    
+    main_model_formula_str_xxx = stringr::str_replace_all(main_model_formula_str, "~", "")
+    nuisance_model_formula_str_xxx = stringr::str_replace_all(nuisance_model_formula_str, "~", "")
+    full_model_formula_str = paste("~", nuisance_model_formula_str_xxx, "+", main_model_formula_str_xxx)
+    
+    
+    message(paste("Fitting wild type model with main effects:", full_model_formula_str))
     message(paste("Nuisance effects:", nuisance_model_formula_str))
   }
 
-  undebug(new_cell_count_model)
+  # undebug(new_cell_count_model)
   wt_ccm = new_cell_count_model(wt_ccs,
-                                main_model_formula_str = main_model_formula_str,
+                                main_model_formula_str = full_model_formula_str,
                                 nuisance_model_formula_str = nuisance_model_formula_str,
                                 #whitelist = initial_pcor_graph(wt_ccs),
                                 vhat_method = vhat_method,
@@ -540,7 +565,7 @@ fit_wt_model = function(cds,
 #' @param interval_group
 #' @param 
 #' @export
-assemble_wt_graph = function(cds,
+assemble_wt_graph = function(cds, 
                              wt_ccm,
                              sample_group,
                              cell_group,
@@ -556,6 +581,7 @@ assemble_wt_graph = function(cds,
                              start_time = NULL,
                              stop_time = NULL,
                              interval_step = 2,
+                             links_between_components=c("ctp", "none", "strongest-pcor", "strong-pcor"),
                              log_abund_detection_thresh=log(1),
                              q_val = 0.1,
                              expt = "GAP16",
@@ -599,6 +625,7 @@ assemble_wt_graph = function(cds,
                                                               interval_step = interval_step,
                                                               log_abund_detection_thresh=log_abund_detection_thresh,
                                                               q_val = q_val,
+                                                              links_between_components = links_between_components,  
                                                               edge_whitelist=edge_whitelist,
                                                               edge_blacklist=edge_blacklist,
                                                               components=component_col,
@@ -633,6 +660,7 @@ fit_mt_models = function(cds,
                          vhat_method="bootstrap",
                          interval_col = "timepoint",
                          perturbation_col = "knockout",
+                         batch_col="expt",
                          start_time = NULL,
                          stop_time = NULL,
                          interval_step = 2,
@@ -648,13 +676,17 @@ fit_mt_models = function(cds,
                          penalize_by_distance=TRUE,
                          independent_spline_for_ko=TRUE,
                          num_bootstraps=10,
-                         embryo_size_factors=NULL) {
+                         embryo_size_factors=NULL, 
+                         batches_excluded_from_assembly = c()) {
 
 
   if (!is.null(mt_ids)) {
     cds = cds[, replace_na(colData(cds)[[perturbation_col]] %in% c(ctrl_ids, mt_ids), F)]
   }
 
+  cds = cds[,colData(cds)[[batch_col]] %in% batches_excluded_from_assembly == FALSE]
+  
+  
   ccs = new_cell_count_set(cds,
                            sample_group,
                            cell_group,
@@ -702,6 +734,7 @@ fit_mt_models = function(cds,
                                            interval_col = interval_col,
                                            perturbation_col = perturbation_col,
                                            num_time_breaks = num_time_breaks,
+                                           batch_col = batch_col, 
                                            #assembly_time_start=start_time,
                                            #assembly_time_stop=stop_time,
                                            edge_whitelist = edge_whitelist,
@@ -726,6 +759,7 @@ assemble_mt_graph = function(wt_ccm,
                              start_time = NULL,
                              stop_time = NULL,
                              interval_step = 2,
+                             links_between_components = "none", 
                              log_abund_detection_thresh=log(1),
                              q_val = 0.1,
                              expt = "GAP16",
@@ -774,6 +808,7 @@ assemble_mt_graph = function(wt_ccm,
                                                                    log_abund_detection_thresh = log_abund_detection_thresh,
                                                                    q_val = q_val,
                                                                    expt = expt,
+                                                                   links_between_components = links_between_components,
                                                                    edge_whitelist=edge_whitelist,
                                                                    edge_blacklist=edge_blacklist,
                                                                    components=component_col,
@@ -944,6 +979,7 @@ assemble_partition_from_cds = function(cds,
                                        backend="nlopt",
                                        vhat_method="bootstrap",
                                        min_lfc = 0, 
+                                       links_between_components = "none",
                                        log_abund_detection_thresh = log(1),
                                        q_val = 0.1, 
                                        num_bootstraps = 10,
@@ -953,15 +989,15 @@ assemble_partition_from_cds = function(cds,
                                        embryo_size_factors=NULL) {
   
   # if a resolution column has been specified in column
-  if (is.null(res_col) == FALSE) {
-      res = unique(colData(cds)[[res_col]])
-      if (length(res) > 1) {
-        stop("More than 1 resolution provided in column")
-      }
-  } else {
-    res = default_resolution_fun(ncol(cds), min_res = min_res, max_res = max_res)
-  }
-  cds = cluster_cells(cds, resolution = res)
+  # if (is.null(res_col) == FALSE) {
+  #     res = unique(colData(cds)[[res_col]])
+  #     if (length(res) > 1) {
+  #       stop("More than 1 resolution provided in column")
+  #     }
+  # } else {
+  #   res = default_resolution_fun(ncol(cds), min_res = min_res, max_res = max_res)
+  # }
+  # cds = cluster_cells(cds, resolution = res)
 
 
   partition_results = assemble_partition(cds=cds,
@@ -984,6 +1020,7 @@ assemble_partition_from_cds = function(cds,
                                          q_val = q_val, 
                                          vhat_method=vhat_method,
                                          min_lfc = min_lfc, 
+                                         links_between_components = links_between_components,
                                          log_abund_detection_thresh = log_abund_detection_thresh, 
                                          batch_col = batch_col,
                                          batches_excluded_from_assembly=batches_excluded_from_assembly,
