@@ -12,6 +12,7 @@ plot_cell_type_control_kinetics = function(control_ccm,
                                            batch_col=NULL,
                                            q_val=0.01,
                                            log_scale=TRUE,
+                                           group_nodes_by = "cell_type",
                                            ...){
   
   
@@ -60,10 +61,10 @@ plot_cell_type_control_kinetics = function(control_ccm,
   #                                 num_cells      = sel_ccs_counts_long$x)
 
   cell_group_metadata = collect_psg_node_metadata(control_ccm@ccs,
-                                                          group_nodes_by="cell_type_broad",
-                                                          color_nodes_by="cell_type_broad",
-                                                          label_nodes_by="cell_type_broad") %>%
-    select(id, cell_type_broad = group_nodes_by)
+                                                          group_nodes_by=group_nodes_by,
+                                                          color_nodes_by=group_nodes_by,
+                                                          label_nodes_by=group_nodes_by) %>%
+    select(id, cell_group = group_nodes_by)
 
   sel_ccs_counts_long = left_join(sel_ccs_counts_long,
                                   cell_group_metadata,
@@ -78,7 +79,10 @@ plot_cell_type_control_kinetics = function(control_ccm,
     wt_timepoint_pred_df = wt_timepoint_pred_df %>% filter(cell_group %in% cell_groups)
     sel_ccs_counts_long = sel_ccs_counts_long %>% filter(cell_group %in% cell_groups)
   }
-
+  
+  if (is.null(cell_groups)){
+    cell_groups = unique(as.character(wt_timepoint_pred_df$cell_group)) %>% sort()
+  }
   wt_timepoint_pred_df$cell_group = factor(as.character(wt_timepoint_pred_df$cell_group), levels=cell_groups)
   sel_ccs_counts_long$cell_group = factor(as.character(sel_ccs_counts_long$cell_group), levels=cell_groups)
 
@@ -113,6 +117,7 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
                                            control_ccm=perturbation_ccm,
                                            control_start_time=start_time,
                                            control_stop_time=control_stop_time,
+                                           group_nodes_by = "cell_type",
                                            ...){
   
   colData(perturbation_ccm@ccs)[,interval_col] = as.numeric(colData(perturbation_ccm@ccs)[,interval_col])
@@ -150,10 +155,10 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
     pivot_longer(!cell_group, names_to="embryo", values_to="num_cells")
 
   cell_group_metadata = platt:::collect_psg_node_metadata(perturbation_ccm@ccs,
-                                                          group_nodes_by="cell_type_broad",
-                                                          color_nodes_by="cell_type_broad",
-                                                          label_nodes_by="cell_type_broad") %>%
-    select(id, cell_type_broad = group_nodes_by)
+                                                          group_nodes_by=group_nodes_by,
+                                                          color_nodes_by=group_nodes_by,
+                                                          label_nodes_by=group_nodes_by) %>%
+    select(id, cell_group = group_nodes_by)
 
   sel_ccs_counts_long = left_join(sel_ccs_counts_long,
                                   cell_group_metadata,
@@ -171,7 +176,10 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
 
   perturb_vs_wt_nodes = left_join(perturb_vs_wt_nodes,
                                   extant_wt_tbl %>% select(cell_group, !!sym(interval_col), present_above_thresh), by=c("cell_group" = "cell_group", "t1" = "timepoint"))
-
+  
+  if (is.null(cell_groups)){
+    cell_groups = unique(as.character(perturb_vs_wt_nodes$cell_group)) %>% sort()
+  }
   perturb_vs_wt_nodes$cell_group = factor(as.character(perturb_vs_wt_nodes$cell_group), levels=cell_groups)
   sel_ccs_counts_long$cell_group = factor(as.character(sel_ccs_counts_long$cell_group), levels=cell_groups)
 

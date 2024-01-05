@@ -46,13 +46,18 @@ fit_genotype_ccm = function(genotype,
                             num_threads=1,
                             backend="nlopt",
                             sparsity_factor=0.01, 
-                            num_bootstraps=10
+                            num_bootstraps=10, 
+                            ftol_rel = 1e-06
 ){
   message(paste("Fitting knockout model for", genotype))
   #subset_ccs = ccs[,colData(ccs)$gene_target == genotype | colData(ccs)$gene_target %in% ctrl_ids]
   
+  if (!is.null(ccs@cds@metadata$umap_space)){
+    print(paste0("You are running this in ", ccs@cds@metadata$umap_space))
+  }
+  
   subset_ccs = ccs[,replace_na(colData(ccs)[[perturbation_col]] == genotype, F)]
-  expts = unique(colData(subset_ccs)[[batch_col]])
+  # expts = unique(colData(subset_ccs)[[batch_col]])
   
   if (is.null(assembly_time_start)){
     knockout_time_start = min(colData(subset_ccs)[[interval_col]])
@@ -69,7 +74,9 @@ fit_genotype_ccm = function(genotype,
   num_knockout_timepoints = length(unique(colData(subset_ccs)[[interval_col]]))
   
   message(paste("\ttime range:", knockout_time_start, "to", knockout_time_stop))
-  subset_ccs = ccs[,( replace_na(colData(ccs)[[perturbation_col]] == genotype, F) | colData(ccs)[[perturbation_col]] %in% ctrl_ids) & colData(ccs)[[batch_col]] %in% expts]
+  # subset_ccs = ccs[,( replace_na(colData(ccs)[[perturbation_col]] == genotype, F) | colData(ccs)[[perturbation_col]] %in% ctrl_ids) & colData(ccs)[[batch_col]] %in% expts]
+  subset_ccs = ccs[,( replace_na(colData(ccs)[[perturbation_col]] == genotype, F) | colData(ccs)[[perturbation_col]] %in% ctrl_ids)]
+  expts = unique(colData(subset_ccs)[[batch_col]])
   
   colData(subset_ccs)$knockout = colData(subset_ccs)[[perturbation_col]] == genotype
   subset_ccs = subset_ccs[,(colData(subset_ccs)[[interval_col]] >= knockout_time_start & colData(subset_ccs)[[interval_col]] <= knockout_time_stop)]
@@ -147,12 +154,21 @@ fit_genotype_ccm = function(genotype,
                                                                         num_threads = num_threads,
                                                                         num_bootstraps=num_bootstraps,
                                                                         backend = backend,
-                                                                        ftol_rel=1e-6,
+                                                                        ftol_rel=ftol_rel,
                                                                         verbose=FALSE
   )))
   # FIXME: we should maybe be pulling out the sparsity_factor used for the WT prior model and using that here rather
   # than hardcoding?
   genotype_ccm = select_model(genotype_ccm, sparsity_factor = sparsity_factor)
+  
+  # save the control ids
+  genotype_ccm@info$perturbation_col = perturbation_col
+  genotype_ccm@info$ctrl_ids = ctrl_ids
+  genotype_ccm@info$batch_col = batch_col
+  genotype_ccm@info$interval_col = interval_col
+  genotype_ccm@info$assembly_time_start = assembly_time_start
+  genotype_ccm@info$assembly_time_stop = assembly_time_stop
+  
   return(genotype_ccm)
 }
 
@@ -181,7 +197,7 @@ assemble_partition = function(cds,
                               partition_name = NULL,
                               main_model_formula_str = NULL,
                               start_time = 18,
-                              stop_time = 48,
+                              stop_time = 72,
                               interval_col = "timepoint",
                               nuisance_model_formula_str = "~1",
                               ctrl_ids = NULL,
@@ -199,7 +215,7 @@ assemble_partition = function(cds,
                               expt = "GAP16",
                               min_lfc = 0, 
                               links_between_components=c("ctp", "none", "strongest-pcor", "strong-pcor"),
-                              log_abund_detection_thresh = log(1), 
+                              log_abund_detection_thresh = -5, 
                               batches_excluded_from_assembly=c(),
                               component_col="partition",
                               embryo_size_factors=NULL){
@@ -342,6 +358,8 @@ assemble_partition = function(cds,
                                                      verbose=verbose,
                                                      expt=expt)
     
+    # this makes a prediction for every measured timepoint
+    # this is for useful to save for plotting later 
     perturb_models_tbl = perturb_models_tbl %>%
                         mutate(perturbation_table = purrr::map(.f = purrr::possibly(get_perturbation_effects),
                                                              .x = perturb_ccm,
@@ -458,7 +476,7 @@ fit_wt_model = function(cds,
                         start_time = NULL,
                         stop_time = NULL,
                         interval_step = 2,
-                        log_abund_detection_thresh=log(1),
+                        log_abund_detection_thresh=-5,
                         q_val = 0.1,
                         edge_whitelist = NULL,
                         edge_blacklist = NULL,
@@ -582,7 +600,7 @@ assemble_wt_graph = function(cds,
                              stop_time = NULL,
                              interval_step = 2,
                              links_between_components=c("ctp", "none", "strongest-pcor", "strong-pcor"),
-                             log_abund_detection_thresh=log(1),
+                             log_abund_detection_thresh=-5,
                              q_val = 0.1,
                              expt = "GAP16",
                              break_cycles = TRUE,
@@ -664,7 +682,7 @@ fit_mt_models = function(cds,
                          start_time = NULL,
                          stop_time = NULL,
                          interval_step = 2,
-                         log_abund_detection_thresh=log(1),
+                         log_abund_detection_thresh=-5,
                          q_val = 0.1,
                          edge_whitelist = NULL,
                          edge_blacklist = NULL,
@@ -760,7 +778,7 @@ assemble_mt_graph = function(wt_ccm,
                              stop_time = NULL,
                              interval_step = 2,
                              links_between_components = "none", 
-                             log_abund_detection_thresh=log(1),
+                             log_abund_detection_thresh=-5,
                              q_val = 0.1,
                              expt = "GAP16",
                              break_cycles = TRUE,
@@ -966,7 +984,7 @@ assemble_partition_from_cds = function(cds,
                                        cell_group = "cluster",
                                        main_model_formula_str = NULL,
                                        start_time = 18,
-                                       stop_time = 48,
+                                       stop_time = 72,
                                        interval_col="timepoint",
                                        nuisance_model_formula_str = "~1",
                                        ctrl_ids = NULL,
@@ -980,7 +998,7 @@ assemble_partition_from_cds = function(cds,
                                        vhat_method="bootstrap",
                                        min_lfc = 0, 
                                        links_between_components = "none",
-                                       log_abund_detection_thresh = log(1),
+                                       log_abund_detection_thresh = -5,
                                        q_val = 0.1, 
                                        num_bootstraps = 10,
                                        batch_col = "expt", 
