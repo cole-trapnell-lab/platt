@@ -161,7 +161,8 @@ fit_genotype_ccm = function(genotype,
   # than hardcoding?
   genotype_ccm = select_model(genotype_ccm, sparsity_factor = sparsity_factor)
   
-  # save the control ids
+  # save information
+  genotype_ccm@info$genotype = genotype
   genotype_ccm@info$perturbation_col = perturbation_col
   genotype_ccm@info$ctrl_ids = ctrl_ids
   genotype_ccm@info$batch_col = batch_col
@@ -1340,6 +1341,28 @@ get_perturb_ccm = function(perturb_models_tbl, perturb_name) {
 
 }
 
+#' @param ccm 
+#' @param umap_space
+#' @param ... ways to filter the cds
+fit_subset_genotype_ccm = function(ccm, umap_space = NULL, ... ) {
+  
+  # if i didn't specify a umap space, try to find one
+  if (is.null(umap_space)){
+    umap_space = ccm@ccs@cds@metadata$umap_space
+  }
+  # if it exists, switch 
+  if (is.null(umap_space) == FALSE){
+    ccm = switch_ccm_space(ccm, umap_space = umap_space) 
+  }
+  
+  sub_ccs = subset_ccs(ccm@ccs, ...)
+  sub_ccm = fit_genotype_ccm(ccm@info$genotype, 
+                             sub_ccs, 
+                             perturbation_col = ccm@info$perturbation_col, 
+                             ctrl_ids = ccm@info$ctrl_ids)
+  
+  return(sub_ccm)
+}
 
 
 
