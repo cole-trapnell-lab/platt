@@ -9,7 +9,7 @@ subcds_from_coldata = function(cds, coldata, partiton_id) {
   return(sub_cds)
 }
 
-detect_outlier_cells = function(cds, prefix , k=10) {
+detect_outlier_cells = function(cds, k=10) {
   
   # build annoy index
   cds = make_cds_nn_index(cds, reduction_method = "UMAP")
@@ -138,4 +138,32 @@ clean_up_labels = function(cds,
   
   colData(cds)[[new_colname]] = new_labels
   return(cds)
+}
+
+
+detect_outlier_cells_from_reference = function(ref_cds, 
+                                               query_cds, 
+                                               prefix ,
+                                               k=10) {
+  
+  ref_cds = make_cds_nn_index(ref_cds, reduction_method = "UMAP")
+  
+  query_ann = ref_cds@reduce_dim_aux$UMAP$nn_index$annoy$nn_index$annoy_index
+  query_dims = reducedDims(query_cds)[["UMAP"]]
+  query_res = uwot:::annoy_search(query_dims, k = k + 1, ann = query_ann)
+  
+  df = lapply(1:nrow(query_dims), function(i) {
+    # remember to ignore first index
+    neighbor_indices = query_res$idx[i,2:(k+1)]
+    neighbor_dists = query_res$dist[i,2:(k+1)]
+    data.frame("idx"=i,
+               "max_nn_dist" = max(neighbor_dists),
+               "min_nn_dist" = min(neighbor_dists)
+    )
+  }) %>% bind_rows()
+  
+  colData(query_cds)$max_nn_dist = df$max_nn_dist
+  colData(query_cds)$min_nn_dist = df$min_nn_dist
+  return(query_cds) 
+  
 }
