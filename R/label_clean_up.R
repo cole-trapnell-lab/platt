@@ -142,8 +142,7 @@ clean_up_labels = function(cds,
 
 
 detect_outlier_cells_from_reference = function(ref_cds, 
-                                               query_cds, 
-                                               prefix ,
+                                               query_cds,
                                                k=10) {
   
   ref_cds = make_cds_nn_index(ref_cds, reduction_method = "UMAP")
