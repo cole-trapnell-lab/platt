@@ -166,3 +166,9 @@ detect_outlier_cells_from_reference = function(ref_cds,
   return(query_cds) 
   
 }
+
+
+downsample_cds = function(cds, n=1e5) {
+  cds = cds[,sample(ncol(cds), n)]
+  return(cds)
+}
