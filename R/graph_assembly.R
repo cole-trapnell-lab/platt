@@ -40,7 +40,8 @@ get_extant_cell_types <- function(ccm,
            percent_max_abund = exp(log_abund) / max_abundance,
            cell_type_prediction_range = max(log_abund)-(min(log_abund)),
            percent_cell_type_range = (log_abund - min(log_abund)) / cell_type_prediction_range,
-           above_log_abund_thresh = (log_abund - 2*log_abund_se > log_abund_detection_thresh & log_abund - 2*log_abund_se > log(cell_group_pct_range_detection_thresh)) | cell_type_prediction_range < min_cell_range,
+           # above_log_abund_thresh = (log_abund - 2*log_abund_se > log_abund_detection_thresh & log_abund - 2*log_abund_se > log(cell_group_pct_range_detection_thresh)) | cell_type_prediction_range < min_cell_range,
+           above_log_abund_thresh = log_abund  > log_abund_detection_thresh, 
            present_flag = ifelse(above_log_abund_thresh, TRUE, NA)) %>%
     ungroup()
   
@@ -546,7 +547,8 @@ get_discordant_loss_pairs <- function(perturbation_ccm,
 #' @export
 get_perturbation_paths <- function(perturbation_ccm,
                                    perturb_summary_tbl,
-                                   pathfinding_graph){
+                                   pathfinding_graph, 
+                                   delta_log_abund_loss_thresh = 0 ){
 
   # Temporarily set the number of threads OpenMP & the BLAS library can use to be 1
   # old_omp_num_threads = single_thread_omp()
@@ -555,10 +557,15 @@ get_perturbation_paths <- function(perturbation_ccm,
   Sys.setenv("OPENBLAS_NUM_THREADS" = 1)
 
   tryCatch({
+    
+    
 
-    lost_cell_groups = perturb_summary_tbl %>% filter(is_lost_when_present) %>% pull(cell_group) %>% unique
-    gained_cell_groups = perturb_summary_tbl %>% filter(is_gained_when_present) %>% pull(cell_group) %>% unique
+    lost_cell_groups = perturb_summary_tbl %>% filter(loss_when_present < -delta_log_abund_loss_thresh) %>% pull(cell_group) %>% unique
+    gained_cell_groups = perturb_summary_tbl %>% filter(gain_when_present > delta_log_abund_loss_thresh) %>% pull(cell_group) %>% unique
 
+    # lost_cell_groups = perturb_summary_tbl %>% filter(is_lost_when_present) %>% pull(cell_group) %>% unique
+    # gained_cell_groups = perturb_summary_tbl %>% filter(is_gained_when_present) %>% pull(cell_group) %>% unique
+    
     perturbed_cell_groups = union(lost_cell_groups, gained_cell_groups)
     lost_subgraph = igraph::subgraph(pathfinding_graph, lost_cell_groups)
     nodes_without_lost_parent = igraph::V(lost_subgraph)[igraph::degree(lost_subgraph, mode="in") == 0]$name
@@ -1325,16 +1332,67 @@ get_pcor_between_pair <- function(perturb_model_pcor_matrix, from, to){
   return(pcor_vals)
 }
 
+
+# score_path_for_loss = function(path, loss_tbl, effect_threshold=1){
+#   cell_groups_on_path = tibble(cell_group=unique(c(path$from, path$to)))
+#   cell_groups_on_path = inner_join(cell_groups_on_path, loss_tbl, by="cell_group")
+#   
+#   # FIXME: we should find a way to incorporate effects from all the nodes along the path.
+#   # cell_groups_on_path = cell_groups_on_path %>% filter(is_lost_when_present)
+#   
+#   # except for the first node, find any cells that are above threshold of one
+#   # even if they have a loss value, consider these positive
+#   pos_cells = cell_groups_on_path[-1,] %>% filter(gain_when_present > effect_threshold) 
+#   
+#   
+#   
+#   cell_groups_on_path = cell_groups_on_path[-1,] #%>%
+#   # group_by(cell_group) %>%
+#   # mutate(when_present = sum(loss_when_present,  gain_when_present,na.rm=T),
+#   #        when_present_tvalue = sum(loss_when_present_tvalue, gain_when_present_tvalue,na.rm=T))
+#   
+#   # if there are lost cells, calculate the significance of the loss path 
+#   # should this be above 1 ? 
+#   if (nrow(cell_groups_on_path) > 1 & nrow(pos_cells) == 0){
+#     cell_loss_stats_on_path = cell_groups_on_path %>%
+#       summarize(perturb_dist_effect = sum(loss_when_present, na.rm=TRUE),
+#                 perturb_dist_effect_pval = pnorm(sum(loss_when_present_tvalue, na.rm=TRUE), mean = 0,
+#                                                  sd = nrow(cell_groups_on_path)),
+#                 perturb_dist_model_adj_rsq = NA,
+#                 perturb_dist_model_ncells = NA)
+#   }else{
+#     cell_loss_stats_on_path = tibble(perturb_dist_effect = NA,
+#                                      perturb_dist_effect_pval = 1,
+#                                      perturb_dist_model_adj_rsq = NA,
+#                                      perturb_dist_model_ncells = NA)
+#   }
+#   
+#   
+#   return(cell_loss_stats_on_path)
+# }
+
+
 score_path_for_loss = function(path, loss_tbl){
   cell_groups_on_path = tibble(cell_group=unique(c(path$from, path$to)))
   cell_groups_on_path = inner_join(cell_groups_on_path, loss_tbl, by="cell_group")
 
   # FIXME: we should find a way to incorporate effects from all the nodes along the path.
-  cell_groups_on_path = cell_groups_on_path %>% filter(is_lost_when_present)
-  if (nrow(cell_groups_on_path) > 0){
+  # cell_groups_on_path = cell_groups_on_path %>% filter(is_lost_when_present)
+  
+  # except for the first node, make sure it isnt significantly positive
+  # pos_cells = cell_groups_on_path[-1,] %>% filter(is_gain_when_present) 
+  pos_cells = cell_groups_on_path[-1,] %>% filter(!is.na(gain_when_present)) 
+  # print('hi')
+  cell_groups_on_path = cell_groups_on_path[-1,] %>%
+    group_by(cell_group) %>%
+    mutate(when_present = sum(loss_when_present, gain_when_present,na.rm=T),
+           when_present_tvalue = sum(loss_when_present_tvalue, gain_when_present_tvalue,na.rm=T))
+  
+  if (nrow(cell_groups_on_path) > 0 & nrow(pos_cells) == 0){
     cell_loss_stats_on_path = cell_groups_on_path %>%
-      summarize(perturb_dist_effect = mean(loss_when_present, na.rm=TRUE),
-                perturb_dist_effect_pval = mean(loss_when_present_q_val, na.rm=TRUE),
+      summarize(perturb_dist_effect = sum(when_present, na.rm=TRUE),
+                perturb_dist_effect_pval = pnorm(sum(when_present_tvalue, na.rm=TRUE), mean = 0,
+                                                 sd = nrow(cell_groups_on_path)),
                 perturb_dist_model_adj_rsq = NA,
                 perturb_dist_model_ncells = NA)
   }else{

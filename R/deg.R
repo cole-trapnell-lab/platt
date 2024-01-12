@@ -1384,3 +1384,30 @@ calc_pathway_enrichment_on_state_specific_genes <- function(gene_df, msigdbr_t2g
   enrich_res = clusterProfiler::enricher(gene = gene_symbols_vector, TERM2GENE = msigdbr_t2g, ...) %>% as_tibble()
   return(enrich_res)
 }
+
+
+#' Function to find degs within a cell type 
+#' @param ccm output from fit_genotype_ccm 
+#' @param ... filtering criteria for
+fit_genotype_deg = function(ccm, 
+                            cores = 1, 
+                            ...) {
+  
+  # filter by cell types 
+  sub_ccs = subset_ccs(ccm@ccs, ...)
+  sub_pb_cds = pseudobulk_ccs_for_states(sub_ccs)
+  sub_pb_cds = add_covariate(sub_ccs, 
+                             sub_pb_cds, 
+                             ccm@info$perturbation_col)
+  # filter by perturbation 
+  sub_pb_cds = sub_pb_cds[, colData(sub_pb_cds)[[ccm@info$perturbation_col]] %in% c(ccm@info$genotype, ccm@info$ctrl_ids)]
+  colData(sub_pb_cds)$knockout = ifelse(colData(sub_pb_cds)[[ccm@info$perturbation_col]] %in% ccm@info$ctrl_ids, F, T)
+  
+  gene_fits <- fit_models(sub_pb_cds, 
+                          model_formula_str = "~ knockout", 
+                          weights=colData(sub_pb_cds)$num_cells_in_group, 
+                          cores = cores)
+  
+  return(gene_fits)
+  
+}
