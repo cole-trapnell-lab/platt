@@ -906,7 +906,9 @@ classify_genes_within_state_graph = function(ccs,
   
   expts = unique(colData(ccs)$expt)
   
-  pb_cds = hooke:::pseudobulk_ccs_for_states(ccs)
+  pb_cds = hooke:::pseudobulk_ccs_for_states(ccs, cell_agg_fun="sum")
+  colData(pb_cds)$Size_Factor = colData(pb_cds)$num_cells_in_group
+  
   pb_cds = hooke:::add_covariate(ccs, pb_cds, perturbation_col)
   colData(pb_cds)[["perturbation"]] = colData(pb_cds)[[perturbation_col]] 
   
@@ -950,6 +952,295 @@ classify_genes_within_state_graph = function(ccs,
   
 }
 
+collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh){
+  
+  model_tbl = model_tbl %>% dplyr::mutate(dispersion = purrr::map2(.f = purrr::possibly(
+    extract_dispersion_helper, NA_real_), .x = model,
+    .y = model_summary)) %>% tidyr::unnest(dispersion)
+  
+  mean_expr_helper <- function(model, new_data, type="response"){
+    res = tryCatch({
+      mean(stats::predict(model, newdata=new_data, type=type))
+    }, error = function(e){
+      NA
+    })
+    return(res)
+  }
+  
+  model_tbl <- model_tbl %>%
+    dplyr::mutate(mean_expr = purrr::map(model, mean_expr_helper, new_data=colData(cds
+    )%>% as.data.frame)) %>% tidyr::unnest(mean_expr)
+  
+  disp_fit = mgcv::gam(log(dispersion)~s(log(mean_expr), bs="cs"), data=model_tbl)
+  model_tbl$disp_fit = exp(predict(disp_fit))
+  #model_tbl$disp_fit = 1
+  
+  model_tbl = update_summary(model_tbl, dispersion_type="fitted")
+  
+  
+  raw_coefficient_table = coefficient_table(model_tbl)
+  
+  extract_extra_model_stats = function(model, newdata){
+    if (class(model)[1] == "speedglm") {
+      extra_stats = tibble(RSS=model$RSS, df.residual=model$df, mean_expr=mean(predict(model, newdata=newdata)))
+      return(extra_stats)
+    }else{
+      extra_stats = tibble(RSS=NA_real_, df.residual=NA_real_, mean_expr=NA_real_)
+      return(extra_stats)
+    }
+  }
+  
+  extra_model_stats = model_tbl %>%
+    dplyr::mutate(extra_stats = purrr::map(.f = purrr::possibly(
+      extract_extra_model_stats, NA_real_), .x = model, newdata=colData(cds) %>% as.data.frame)) %>%
+    select(id, extra_stats) %>%
+    tidyr::unnest(extra_stats)
+  
+  raw_coefficient_table = left_join(raw_coefficient_table, extra_model_stats) %>%
+    left_join(model_tbl %>% select(id, disp_fit, dispersion)) %>%
+    #coefficient_table(pb_group_models) %>%
+    #dplyr::select(gene_short_name, id, term, estimate, std_err, p_value, status) %>%
+    mutate(term = stringr::str_replace_all(term, "perturbation", ""))
+  
+  estimate_matrix = raw_coefficient_table %>% dplyr::select(id, term, estimate)
+  estimate_matrix = estimate_matrix %>% mutate(term = factor(term, levels=unique(colData(cds)[,"perturbation"])))
+  estimate_matrix = estimate_matrix %>% tidyr::pivot_wider(names_from=term, values_from=estimate, values_fill=0)
+  
+  gene_ids = estimate_matrix$id
+  estimate_matrix$id = NULL
+  estimate_matrix = as.matrix(estimate_matrix)
+  row.names(estimate_matrix) = gene_ids
+  colnames(estimate_matrix) = as.character(colnames(estimate_matrix))
+  
+  stderr_matrix = raw_coefficient_table %>% dplyr::select(id, term, std_err)
+  stderr_matrix = stderr_matrix %>% mutate(term = factor(term, levels=unique(colData(cds)[,"perturbation"])))
+  stderr_matrix = stderr_matrix %>% tidyr::pivot_wider(names_from=term, values_from=std_err, values_fill=0)
+  
+  gene_ids = stderr_matrix$id
+  stderr_matrix$id = NULL
+  stderr_matrix = as.matrix(stderr_matrix)
+  row.names(stderr_matrix) = gene_ids
+  colnames(stderr_matrix) = as.character(colnames(stderr_matrix))
+  
+  # collect the ids of any genes that threw an exception in fit_models and
+  # set their estimates and std_errors to NA
+  fail_gene_ids = model_tbl %>% filter(status == "FAIL") %>% pull(id)
+  if (length(fail_gene_ids) > 0){
+   estimate_matrix[fail_gene_ids,] = log(abs_expr_thresh)
+   stderr_matrix[fail_gene_ids,] = Inf
+  }
+
+  sigma_df = raw_coefficient_table %>% dplyr::select(id, RSS, df.residual, mean_expr, disp_fit, dispersion) %>% distinct() %>% as.data.frame
+  row.names(sigma_df) = sigma_df$id
+  sigma_df$id = NULL
+  sigma_df = sigma_df[row.names(estimate_matrix),]
+  sigma_df$sigma = sigma_df$RSS / sigma_df$df.residual
+  
+  std_dev.unscaled = stderr_matrix^2 /  sigma_df$sigma
+  
+  coefs_for_shrinkage = list(coefficients = estimate_matrix,
+                             stdev.unscaled = stderr_matrix,
+                         sigma = sigma_df$sigma,
+                         df.residual = sigma_df$df.residual,
+                         trend=sigma_df$mean_expr,
+                         est_dispersion=sigma_df$dispersion,
+                         disp_fit = sigma_df$disp_fit)
+  
+  return(coefs_for_shrinkage)
+}
+
+compare_genes_within_state_graph = function(ccs,
+                                             perturbation_col = "perturbation", 
+                                             control_ids = c("Control"), 
+                                             cell_groups = NULL, 
+                                             assembly_group = NULL, 
+                                             state_graph = NULL,
+                                             perturbations = NULL, 
+                                             gene_ids = NULL,
+                                             group_nodes_by = NULL,
+                                             log_fc_thresh = 1,
+                                             abs_expr_thresh = 1e-3,
+                                             sig_thresh = 0.05,
+                                             min_samples_detected = 2,
+                                             min_cells_per_pseudobulk = 3,
+                                             cores = 1,
+                                             ...) {
+  
+  # to do make sure that ccs and state graph match 
+  # check if all nodes in the state graph exist in the cds
+  
+  # if (is.null(state_graph) == FALSE) {
+  #   
+  # }
+  
+  expts = unique(colData(ccs)$expt)
+  
+  pb_cds = hooke:::pseudobulk_ccs_for_states(ccs, cell_agg_fun="sum")
+  colData(pb_cds)$Size_Factor = colData(pb_cds)$num_cells_in_group
+  
+  pb_cds = hooke:::add_covariate(ccs, pb_cds, perturbation_col)
+  colData(pb_cds)[["perturbation"]] = colData(pb_cds)[[perturbation_col]] 
+  
+  # to do: if we want to run it by assembly group, must provide a state graph 
+  if (is.null(assembly_group) == FALSE & is.null(state_graph) == FALSE) {
+    pb_cds = hooke:::add_covariate(ccs, pb_cds, "assembly_group")
+    pb_cds = pb_cds[, colData(pb_cds)$assembly_group == assembly_group]
+    
+    if (is(state_graph, "igraph")) {
+      state_graph = igraph::as_data_frame(state_graph)
+    }
+    state_graph = state_graph %>% filter(assembly_group == assembly_group)
+  }
+  
+  # ability to subset by perturbation 
+  if (!is.null(perturbations)) {
+    pb_cds = pb_cds[, colData(pb_cds)[[perturbation_col]] %in% c(control_ids, perturbations)]
+  } 
+  
+  # subset to genes that are expressed over a certain min value
+  expr_over_thresh = normalized_counts(pb_cds, "size_only", pseudocount = 0)
+  genes_to_test = which(Matrix::rowSums(expr_over_thresh) >= min_samples_detected)
+  pb_cds = pb_cds[genes_to_test,]
+  
+  pseudobulks_to_test = which(colData(pb_cds)$num_cells_in_group >= min_cells_per_pseudobulk)
+  pb_cds = pb_cds[,pseudobulks_to_test]
+  
+  
+  if (is.null(cell_groups)) {
+    cell_groups = rownames(counts(ccs))
+  }
+  
+  df = data.frame(cell_group = cell_groups) %>% 
+    mutate(genes_within_cell_group = purrr::map(.f = purrr:::possibly(compare_gene_expression_within_node,NA_real_),
+                                                .x = cell_group, 
+                                                pb_cds = pb_cds, 
+                                                ccs = ccs,
+                                                control_ids = control_ids,
+                                                cores = cores))
+  
+  return(df)
+  
+}
+
+
+
+extract_dispersion_helper = function(model, model_summary) {
+  disp_res = if (class(model)[1] == "speedglm") {
+    model_summary$dispersion
+  } else if (class(model)[1] == "negbin"){
+    model_summary$dispersion
+  } else if (class(model) == "zeroinfl"){
+    model_summary$dispersion
+  } else {
+    model_summary$dispersion
+  }
+}
+
+
+update_summary <- function(model_tbl, dispersion_type=c("max", "fitted", "estimated"), min_dispersion=1){
+  dispersion_type = match.arg(dispersion_type)
+  model_tbl = model_tbl %>% mutate(
+    disp_for_test = case_when(
+      dispersion_type == "estimated" ~ dispersion,
+      dispersion_type == "fitted" ~ disp_fit,
+      dispersion_type == "max" ~ pmax(disp_fit, dispersion, min_dispersion),
+      .default = dispersion),
+    model_summary = purrr::map2(model, .y=disp_for_test, .f=summary))
+  return(model_tbl)
+}
+
+
+compare_gene_expression_within_node <- function(cell_group, 
+                                                ccs, 
+                                                pb_cds,
+                                                control_ids,
+                                                perturbation_ids = NULL,
+                                                state_term ="cell_group",
+                                                log_fc_thresh=1,
+                                                abs_expr_thresh = 1e-3,
+                                                sig_thresh=0.05, 
+                                                cores=1) {
+  
+  # now fit models per cell group
+  
+  cg_pb_cds = pb_cds[, colData(pb_cds)[[state_term]] == cell_group]
+  message(paste0("fitting regression models for ", cell_group))
+  
+  colData(cg_pb_cds)$Size_Factor = weights=colData(cg_pb_cds)$num_cells_in_group
+  pb_group_models = fit_models(cg_pb_cds,
+                               model_formula_str=paste(paste0("~ 0 + perturbation")),
+                               #weights=colData(cg_pb_cds)$num_cells_in_group,
+                               cores=cores) %>% 
+    dplyr::select(gene_short_name, id, model, model_summary, status)
+  
+  #pb_coeffs = collect_coefficients_for_limma(cg_pb_cds, pb_group_models, abs_expr_thresh) #coefficient_table(pb_group_models) %>%
+  
+  pb_coeffs = collect_coefficients_for_shrinkage(cg_pb_cds, pb_group_models, abs_expr_thresh) #coefficient_table(pb_group_models) %>%
+  
+  estimates_for_controls = Matrix::rowSums(pb_coeffs$coefficients[,control_ids, drop=F])
+  stderrs_for_controls = sqrt(Matrix::rowSums(pb_coeffs$stdev.unscaled[,control_ids, drop=F]^2))
+  
+  if (is.null(perturbation_ids)){
+    perturbation_ids = setdiff(colnames(pb_coeffs$coefficients), control_ids)
+  }else{
+    perturbation_ids = intersect(perturbation_ids, colnames(pb_coeffs$coefficients))
+  }
+  
+  #perturbation_ids = setdiff(colnames(estimate_matrix))
+  cell_perturbations = tibble(term = unique(perturbation_ids))
+  
+  contrast_helper = function(perturb_id, 
+           PEM, 
+           PSEM, 
+           control_effects, 
+           control_effects_se){
+
+    # ### Debugging:
+    # to_include = control_effects > -10 & PEM[,perturb_id] > -10 
+    # #to_include = row.names(PEM)
+    # effect_est = PEM[to_include,perturb_id] - control_effects[to_include]
+    # se_est = sqrt(PSEM[to_include,perturb_id]^2 + control_effects_se[to_include]^2)
+    # #se_est[se_est > 2] = 2
+    # #se_est[se_est < 0.5] = 0.5
+    # shrunkren_res = ashr::ash(effect_est, se_est)
+    # contrast_res = tibble(id = row.names(PEM[to_include,]),
+    #                       raw_lfc = effect_est,
+    #                       raw_lfc_se = se_est,
+    #                       shrunken_lfc = shrunkren_res$result$PosteriorMean,
+    #                       shrunken_lfc_se = shrunkren_res$result$PosteriorSD,
+    #                       p_value = shrunkren_res$result$lfsr)
+    # qplot(PSEM[to_include,perturb_id], control_effects_se[to_include], color=contrast_res$shrunken_lfc) + geom_abline()
+    # qplot(raw_lfc, shrunken_lfc, data=contrast_res,color=contrast_res$p_value < 0.05) + geom_abline()
+    # #qplot(effect_est, se_est)
+    # ### end debugging
+    
+    
+    effect_est = PEM[,perturb_id] - control_effects
+    se_est = sqrt(PSEM[,perturb_id]^2 + control_effects_se^2)
+    shrunkren_res = ashr::ash(effect_est, se_est,  method="fdr")
+    
+    contrast_res = tibble(id = row.names(PEM),
+                          raw_lfc = effect_est,
+                          raw_lfc_se = se_est,
+                          shrunken_lfc = shrunkren_res$result$PosteriorMean,
+                          shrunken_lfc_se = shrunkren_res$result$PosteriorSD,
+                          p_value = shrunkren_res$result$lfsr)
+    return(contrast_res)
+  }
+  #debug(contrast_helper)
+  cell_perturbations = cell_perturbations %>% 
+    mutate(perturb_effects = purrr:::map(.f = contrast_helper, 
+    .x = term,
+    control_effects = estimates_for_controls,
+    control_effects_se = stderrs_for_controls,
+    PEM = pb_coeffs$coefficients, 
+    PSEM = pb_coeffs$stdev.unscaled))
+  
+  return(cell_perturbations) 
+  
+}
+
+
 #' classify each gene's pattern of expression in each node of the state transition graph
 #' @export
 classify_genes_within_node <- function(cell_group, 
@@ -970,11 +1261,12 @@ classify_genes_within_node <- function(cell_group,
   pb_group_models = fit_models(cg_pb_cds,
                                model_formula_str=paste(paste0("~ 0 + perturbation")),
                                weights=colData(cg_pb_cds)$num_cells_in_group,
-                               cores=cores) %>% dplyr::select(gene_short_name, id, model, model_summary)
+                               cores=cores) %>% 
+    dplyr::select(gene_short_name, id, model, model_summary, status)
   
   
-  pb_coeffs = coefficient_table(pb_group_models) %>%
-    dplyr::select(gene_short_name, id, term, estimate, std_err, p_value) %>%
+  pb_coeffs = shrunken_coefficient_table(cg_pb_cds, pb_group_models, abs_expr_thresh) #coefficient_table(pb_group_models) %>%
+    dplyr::select(gene_short_name, id, term, estimate, std_err, p_value, status) %>%
     mutate(term = stringr::str_replace_all(term, "perturbation", ""))
   estimate_matrix = pb_coeffs %>% dplyr::select(id, term, estimate)
   estimate_matrix = estimate_matrix %>% mutate(term = factor(term, levels=unique(colData(cg_pb_cds)[,"perturbation"])))
@@ -995,6 +1287,19 @@ classify_genes_within_node <- function(cell_group,
   stderr_matrix = as.matrix(stderr_matrix)
   row.names(stderr_matrix) = gene_ids
   colnames(stderr_matrix) = as.character(colnames(stderr_matrix))
+  
+  # collect the ids of any genes that threw an exception in fit_models and
+  # set their estimates and std_errors to NA
+  fail_gene_ids = pb_group_models %>% filter(status == "FAIL") %>% pull(id)
+  if (length(fail_gene_ids) > 0){
+   estimate_matrix[fail_gene_ids,] = log(abs_expr_thresh)
+   stderr_matrix[fail_gene_ids,] = Inf
+  }
+
+  # Now shrink the std errors with limma
+  # FIXME: this needs read degrees of freedom
+  stderr_matrix[estimate_matrix < log(abs_expr_thresh)] = Inf
+  estimate_matrix[estimate_matrix < log(abs_expr_thresh)] = log(abs_expr_thresh)
   
   # make a graph of control --> all perturbations
   cell_perturbations = tibble(perturbation = unique(colData(pb_cds)[,"perturbation"]))
