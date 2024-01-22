@@ -894,7 +894,7 @@ plot_state_graph_gene_expression <- function(ccs,
   gene_ids = rowData(ccs@cds) %>% as.data.frame %>% filter(gene_short_name %in% genes) %>% rownames()
 
   if (is.null(gene_expr)) {
-    gene_expr = aggregated_expr_data(ccs@cds[gene_ids,], group_cells_by = ccs@info$cell_group)
+    gene_expr = hooke:::aggregated_expr_data(ccs@cds[gene_ids,], group_cells_by = ccs@info$cell_group)
   }
 
   sub_gene_expr = gene_expr %>%
