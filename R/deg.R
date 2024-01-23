@@ -1200,6 +1200,12 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   return(coefs_for_shrinkage)
 }
 
+#' @param ccs
+#' @param perturbation_col
+#' @param control_ids
+#' @param nuisance_model_formula_str
+#' @param cell_groups
+#' @export
 compare_genes_within_state_graph = function(ccs,
                                             perturbation_col = "perturbation", 
                                             control_ids = c("Control"), 
@@ -1720,7 +1726,7 @@ compare_genes_in_cell_state <- function(cell_state,
     
     # lower_than_siblings_pval = pnorm(-higher_than_siblings_stat,
     #                                  sd = sqrt(sweep(t(stderr_matrix[,siblings, drop=F]^2), 2, as.numeric(stderr_matrix[,cell_state, drop=F]^2), `+`)), lower.tail=FALSE)
-    higher_than_siblings_pval = res[,"p_value"] = res[,"p_value"]
+    lower_than_siblings_pval = res[,"p_value"]
     lower_than_siblings_pval = apply(lower_than_siblings_pval, 2, p.adjust, method="BH")
     
     lower_than_siblings_mat = abs(higher_than_siblings_stat) > log_fc_thresh & lower_than_siblings_pval < sig_thresh
