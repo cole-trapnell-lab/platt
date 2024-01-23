@@ -953,7 +953,7 @@ compare_genes_over_graph <- function(ccs,
   
   colData(pb_cds)$Size_Factor = colData(pb_cds)$num_cells_in_group
   
-  full_model_str = paste0("~ 0 + perturbation")
+  full_model_str = paste0("~ 0 + cell_group")
   nuisance_model_formula_str = stringr::str_replace_all(nuisance_model_formula_str, "~", "")
   
   if (nuisance_model_formula_str != "0") {
@@ -1576,8 +1576,12 @@ fit_genotype_deg = function(ccm,
 }
 
 
-compare_genes_in_cell_state <- function(cell_state, state_graph, estimate_matrix, stderr_matrix,
-                                        state_term="cell_group", log_fc_thresh=1, abs_expr_thresh = 1e-3, sig_thresh=0.05, cores=1) {
+compare_genes_in_cell_state <- function(cell_state, 
+                                        state_graph, 
+                                        estimate_matrix, 
+                                        stderr_matrix,
+                                        state_term="cell_group", log_fc_thresh=1, 
+                                        abs_expr_thresh = 1e-3, sig_thresh=0.05, cores=1) {
   
   
   #expr_self = expr_mat[,cell_state]
