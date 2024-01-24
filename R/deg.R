@@ -1275,7 +1275,7 @@ compare_genes_within_state_graph = function(ccs,
                                                 .x = cell_group, 
                                                 pb_cds = pb_cds, 
                                                 ccs = ccs,
-                                                control_ids = control_ids,
+                                                control_ids = c("Control"),
                                                 cores = cores, 
                                                 nuisance_model_formula_str = nuisance_model_formula_str))
   
