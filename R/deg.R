@@ -951,6 +951,12 @@ compare_genes_over_graph <- function(ccs,
   message("fitting regression models")
   pb_cds = pb_cds[,pseudobulks_to_test]
   
+  # Collect background estimate 
+  pb_ambient = fit_models(pb_cds,
+                          model_formula_str="~ 1",
+                          cores=cores)
+  ambient_coeffs = collect_coefficients_for_shrinkage(pb_cds, pb_ambient, abs_expr_thresh, term_to_keep = "(Intercept)") 
+  
   colData(pb_cds)$Size_Factor = colData(pb_cds)$num_cells_in_group
   
   full_model_str = paste0("~ 0 + cell_group")
@@ -973,37 +979,13 @@ compare_genes_over_graph <- function(ccs,
   states_to_assess = intersect(as.character(unique(colData(pb_cds)[,state_term])), unlist(igraph::V(state_graph)$name))
   cell_states = tibble(cell_state = states_to_assess)
   
-  
-  # cell_states = tibble(term = states_in_contrast)
-  # cell_states = cell_states %>% 
-  #   mutate(perturb_effects = purrr:::map(.f = contrast_helper, 
-  #                                        .x = term,
-  #                                        control_effects = estimates_for_parents,
-  #                                        control_effects_se = stderrs_for_parents,
-  #                                        PEM = pb_coeffs$coefficients, 
-  #                                        PSEM = pb_coeffs$stdev.unscaled))
-  # 
-  # new_estimate_matrix = cell_states %>% tidyr::unnest(perturb_effects) %>%
-  #   select(id, term, shrunken_lfc) %>% 
-  #   pivot_wider(names_from = term, values_from = shrunken_lfc) %>% 
-  #   column_to_rownames("id")
-  # 
-  # new_stderr_matrix = cell_states %>% tidyr::unnest(perturb_effects) %>% 
-  #   select(id, term, shrunken_lfc_se) %>% 
-  #   pivot_wider(names_from = term, values_from = shrunken_lfc_se) %>% 
-  #   column_to_rownames("id")
-  # 
-  # p_value_matrix = cell_states %>% tidyr::unnest(perturb_effects) %>% 
-  #   select(id, term, p_value) %>% 
-  #   pivot_wider(names_from = term, values_from = p_value) %>% 
-  #   column_to_rownames("id")
-  
-  
   cell_states = cell_states %>%
     dplyr::mutate(gene_classes = purrr::map(.f = purrr::possibly(
       compare_genes_in_cell_state, NA_real_), 
       .x = cell_state,
       state_graph = state_graph, 
+      ambient_estimate_matrix = ambient_coeffs$coefficients, 
+      ambient_stderr_matrix = ambient_coeffs$stdev.unscaled, 
       estimate_matrix = pb_coeffs$coefficients, 
       stderr_matrix = pb_coeffs$stdev.unscaled,
       state_term = state_term,
@@ -1151,10 +1133,13 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
     #coefficient_table(pb_group_models) %>%
     #dplyr::select(gene_short_name, id, term, estimate, std_err, p_value, status) %>%
     filter(grepl(term_to_keep, term)) %>% 
-    mutate(term = stringr::str_replace_all(term, term_to_keep, ""))
+    mutate(term = stringr::str_replace_all(term, term_to_keep, "")) %>% 
+    mutate(term = str_replace(term,"\\(\\)","Intercept"))
   
   estimate_matrix = raw_coefficient_table %>% dplyr::select(id, term, estimate)
-  estimate_matrix = estimate_matrix %>% mutate(term = factor(term, levels=unique(colData(cds)[,term_to_keep])))
+  if (term_to_keep != "(Intercept)"){
+    estimate_matrix = estimate_matrix %>% mutate(term = factor(term, levels=unique(colData(cds)[,term_to_keep])))
+  }
   estimate_matrix = estimate_matrix %>% tidyr::pivot_wider(names_from=term, values_from=estimate, values_fill=0)
   
   gene_ids = estimate_matrix$id
@@ -1164,7 +1149,9 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   colnames(estimate_matrix) = as.character(colnames(estimate_matrix))
   
   stderr_matrix = raw_coefficient_table %>% dplyr::select(id, term, std_err)
-  stderr_matrix = stderr_matrix %>% mutate(term = factor(term, levels=unique(colData(cds)[,term_to_keep])))
+  if (term_to_keep != "(Intercept)"){
+    stderr_matrix = stderr_matrix %>% mutate(term = factor(term, levels=unique(colData(cds)[,term_to_keep])))
+  }
   stderr_matrix = stderr_matrix %>% tidyr::pivot_wider(names_from=term, values_from=std_err, values_fill=0)
   
   gene_ids = stderr_matrix$id
@@ -1584,6 +1571,8 @@ fit_genotype_deg = function(ccm,
 
 compare_genes_in_cell_state <- function(cell_state, 
                                         state_graph, 
+                                        ambient_estimate_matrix, 
+                                        ambient_stderr_matrix, 
                                         estimate_matrix, 
                                         stderr_matrix,
                                         state_term="cell_group", log_fc_thresh=1, 
@@ -1607,7 +1596,40 @@ compare_genes_in_cell_state <- function(cell_state,
   
   message("      examining coefficients ", cell_state)
   
-  expr_df$expr_self = pnorm(estimate_matrix[,cell_state] - log(abs_expr_thresh), sd = stderr_matrix[,cell_state], lower.tail=FALSE)
+  # state 1 - state 2
+  # is state 1 higher
+  contrast_helper = function(state_1, 
+                             state_2, 
+                             PEM_1, 
+                             PSEM_1,
+                             PEM_2 = PEM_1,
+                             PSEM_2 = PSEM_1){
+    
+    
+    state_1_effects = Matrix::rowSums(PEM_1[,state_1, drop=F])
+    state_1_effects_se = sqrt(Matrix::rowSums(PEM_1[,state_1, drop=F]^2))
+    
+    state_2_effects = Matrix::rowSums(PEM_2[,state_2, drop=F])
+    state_2_effects_se = sqrt(Matrix::rowSums(PSEM_2[,state_2, drop=F]^2))
+    
+    effect_est = state_1_effects - state_2_effects
+    se_est = sqrt(state_1_effects_se^2 + state_2_effects_se^2)
+    shrunkren_res = ashr::ash(effect_est, se_est,  method="fdr")
+    
+    contrast_res = tibble(id = row.names(PEM_1),
+                          raw_lfc = effect_est,
+                          raw_lfc_se = se_est,
+                          shrunken_lfc = shrunkren_res$result$PosteriorMean,
+                          shrunken_lfc_se = shrunkren_res$result$PosteriorSD,
+                          p_value = shrunkren_res$result$lfsr)
+    
+  }
+  
+  
+  cell_state_to_ambient = contrast_helper(cell_state, "Intercept", estimate_matrix, stderr_matrix, 
+                                          ambient_estimate_matrix, ambient_stderr_matrix)
+  expr_df$expr_self = cell_state_to_ambient$p_value
+  # expr_df$expr_self = pnorm(estimate_matrix[,cell_state] - log(abs_expr_thresh), sd = stderr_matrix[,cell_state], lower.tail=FALSE)
   expr_df$expr_self = p.adjust(expr_df$expr_self, method="BH") < sig_thresh
   
   expr_df$expressed_in_parents = NA
@@ -1625,38 +1647,43 @@ compare_genes_in_cell_state <- function(cell_state,
   expr_df$lower_than_children = NA
   
   
-  contrast_helper = function(parents, 
-                             children, 
-                             PEM, 
-                             PSEM){
-    
-    
-    parent_effects = Matrix::rowSums(PEM[,parents, drop=F])
-    parent_effects_se = sqrt(Matrix::rowSums(PSEM[,parents, drop=F]^2))
-    
-    child_effects = Matrix::rowSums(PEM[,children, drop=F])
-    child_effects_se = sqrt(Matrix::rowSums(PSEM[,children, drop=F]^2))
-    
-    # effect_est = PEM[,perturb_id] - parent_effects
-    # se_est = sqrt(PSEM[,perturb_id]^2 + parent_effects_se^2)
-    effect_est = child_effects - parent_effects
-    se_est = sqrt(child_effects_se^2 + parent_effects_se^2)
-    shrunkren_res = ashr::ash(effect_est, se_est,  method="fdr")
-    
-    contrast_res = tibble(id = row.names(PEM),
-                          raw_lfc = effect_est,
-                          raw_lfc_se = se_est,
-                          shrunken_lfc = shrunkren_res$result$PosteriorMean,
-                          shrunken_lfc_se = shrunkren_res$result$PosteriorSD,
-                          p_value = shrunkren_res$result$lfsr)
-    return(contrast_res)
-  }
+  
+  
+  # contrast_helper = function(parents, 
+  #                            children, 
+  #                            PEM, 
+  #                            PSEM){
+  #   
+  #   
+  #   parent_effects = Matrix::rowSums(PEM[,parents, drop=F])
+  #   parent_effects_se = sqrt(Matrix::rowSums(PSEM[,parents, drop=F]^2))
+  #   
+  #   child_effects = Matrix::rowSums(PEM[,children, drop=F])
+  #   child_effects_se = sqrt(Matrix::rowSums(PSEM[,children, drop=F]^2))
+  #   
+  #   # effect_est = PEM[,perturb_id] - parent_effects
+  #   # se_est = sqrt(PSEM[,perturb_id]^2 + parent_effects_se^2)
+  #   effect_est = child_effects - parent_effects
+  #   se_est = sqrt(child_effects_se^2 + parent_effects_se^2)
+  #   shrunkren_res = ashr::ash(effect_est, se_est,  method="fdr")
+  #   
+  #   contrast_res = tibble(id = row.names(PEM),
+  #                         raw_lfc = effect_est,
+  #                         raw_lfc_se = se_est,
+  #                         shrunken_lfc = shrunkren_res$result$PosteriorMean,
+  #                         shrunken_lfc_se = shrunkren_res$result$PosteriorSD,
+  #                         p_value = shrunkren_res$result$lfsr)
+  #   return(contrast_res)
+  # }
   
   
   if (length(parents) > 0){
     
+    parents_to_ambient = contrast_helper(parents, "Intercept", estimate_matrix, stderr_matrix, 
+                                         ambient_estimate_matrix, ambient_stderr_matrix)
     
-    expressed_in_parents_mat = pnorm(estimate_matrix[,parents, drop=F] - log(abs_expr_thresh), sd = stderr_matrix[,parents, drop=F], lower.tail=FALSE)
+    # expressed_in_parents_mat = pnorm(estimate_matrix[,parents, drop=F] - log(abs_expr_thresh), sd = stderr_matrix[,parents, drop=F], lower.tail=FALSE)
+    expressed_in_parents_mat = parents_to_ambient[, "p_value"]
     expressed_in_parents_mat = apply(expressed_in_parents_mat, 2, p.adjust, method="BH")
     
     expressed_in_parents_mat = expressed_in_parents_mat < sig_thresh
@@ -1670,9 +1697,9 @@ compare_genes_in_cell_state <- function(cell_state,
     
     # higher_than_parents_stat = new_estimate_matrix[,cell_state]
     # higher_than_parents_pval = p_value_matrix[, cell_state]
-    res = contrast_helper(parents, children, estimate_matrix, stderr_matrix)
-    higher_than_parents_stat = res[, "shrunken_lfc"]
-    higher_than_parents_pval = res[,"p_value"]
+    cell_state_to_parents = contrast_helper(cell_state, parents, estimate_matrix, stderr_matrix)
+    higher_than_parents_stat = cell_state_to_parents[, "shrunken_lfc"]
+    higher_than_parents_pval = cell_state_to_parents[,"p_value"]
     higher_than_parents_pval = apply(higher_than_parents_pval, 2, p.adjust, method="BH")
     
     higher_than_parents_mat = abs(higher_than_parents_stat) > log_fc_thresh & higher_than_parents_pval < sig_thresh
@@ -1681,7 +1708,7 @@ compare_genes_in_cell_state <- function(cell_state,
     # lower_than_parents_pval = pnorm(-higher_than_parents_stat,
     #                                 sd = sqrt(sweep(t(stderr_matrix[,parents, drop=F]^2), 2, as.numeric(stderr_matrix[,cell_state, drop=F]^2), `+`)), lower.tail=FALSE)
     # lower_than_parents_pval = p_value_matrix[,cell_state]
-    lower_than_parents_pval = res[,"p_value"]
+    lower_than_parents_pval = cell_state_to_parents[,"p_value"]
     lower_than_parents_pval = apply(lower_than_parents_pval, 2, p.adjust, method="BH")
     
     lower_than_parents_mat = abs(higher_than_parents_stat) > log_fc_thresh & lower_than_parents_pval < sig_thresh
@@ -1704,9 +1731,12 @@ compare_genes_in_cell_state <- function(cell_state,
   
   if (length(siblings) > 0){
     
-    res = contrast_helper(cell_state, siblings, estimate_matrix, stderr_matrix)
     
-    expressed_in_siblings_mat = pnorm(estimate_matrix[,siblings, drop=F] - log(abs_expr_thresh), sd = stderr_matrix[,siblings, drop=F], lower.tail=FALSE)
+    siblings_to_ambient = contrast_helper(siblings, "Intercept", estimate_matrix, stderr_matrix, 
+                                          ambient_estimate_matrix, ambient_stderr_matrix)
+    
+    # expressed_in_siblings_mat = pnorm(estimate_matrix[,siblings, drop=F] - log(abs_expr_thresh), sd = stderr_matrix[,siblings, drop=F], lower.tail=FALSE)
+    expressed_in_siblings_mat = siblings_to_ambient[, "p_value"]
     expressed_in_siblings_mat = apply(expressed_in_siblings_mat, 2, p.adjust, method="BH")
     
     expressed_in_siblings_mat = expressed_in_siblings_mat < sig_thresh
@@ -1716,8 +1746,10 @@ compare_genes_in_cell_state <- function(cell_state,
     # higher_than_siblings_pval = pnorm(higher_than_siblings_stat,
     #                                   sd = sqrt(sweep(t(stderr_matrix[,siblings, drop=F]^2), 2, as.numeric(stderr_matrix[,cell_state, drop=F]^2), `+`)), lower.tail=FALSE)
     
-    higher_than_siblings_stat = res[, "shrunken_lfc"]
-    higher_than_siblings_pval = res[,"p_value"]
+    cell_state_to_siblings = contrast_helper(cell_state, siblings, estimate_matrix, stderr_matrix)
+    
+    higher_than_siblings_stat = cell_state_to_siblings[, "shrunken_lfc"]
+    higher_than_siblings_pval = cell_state_to_siblings[,"p_value"]
     higher_than_siblings_pval = apply(higher_than_siblings_pval, 2, p.adjust, method="BH")
     
     higher_than_siblings_mat = abs(higher_than_siblings_stat) > log_fc_thresh & higher_than_siblings_pval < sig_thresh
@@ -1726,7 +1758,7 @@ compare_genes_in_cell_state <- function(cell_state,
     
     # lower_than_siblings_pval = pnorm(-higher_than_siblings_stat,
     #                                  sd = sqrt(sweep(t(stderr_matrix[,siblings, drop=F]^2), 2, as.numeric(stderr_matrix[,cell_state, drop=F]^2), `+`)), lower.tail=FALSE)
-    lower_than_siblings_pval = res[,"p_value"]
+    lower_than_siblings_pval = cell_state_to_siblings[,"p_value"]
     lower_than_siblings_pval = apply(lower_than_siblings_pval, 2, p.adjust, method="BH")
     
     lower_than_siblings_mat = abs(higher_than_siblings_stat) > log_fc_thresh & lower_than_siblings_pval < sig_thresh
@@ -1744,10 +1776,11 @@ compare_genes_in_cell_state <- function(cell_state,
   
   if (length(children) > 0){
     
-    res = contrast_helper(cell_state, children, estimate_matrix, stderr_matrix)
+    children_to_ambient = contrast_helper(children, "Intercept", estimate_matrix, stderr_matrix, 
+                                          ambient_estimate_matrix, ambient_stderr_matrix)
     
-    
-    expressed_in_children_mat = pnorm(estimate_matrix[,children, drop=F] - log(abs_expr_thresh), sd = stderr_matrix[,children, drop=F], lower.tail=FALSE)
+    expressed_in_children_mat = children_to_ambient[,"p_value"]
+    # expressed_in_children_mat = pnorm(estimate_matrix[,children, drop=F] - log(abs_expr_thresh), sd = stderr_matrix[,children, drop=F], lower.tail=FALSE)
     expressed_in_children_mat = apply(expressed_in_children_mat, 2, p.adjust, method="BH")
     
     expressed_in_children_mat = expressed_in_children_mat < sig_thresh
@@ -1756,8 +1789,11 @@ compare_genes_in_cell_state <- function(cell_state,
     # higher_than_children_stat = -t(sweep(t(estimate_matrix[,children, drop=F]), 2, as.numeric(estimate_matrix[,cell_state]) , `-`))
     # higher_than_children_pval = pnorm(higher_than_children_stat,
     #                                   sd = sqrt(sweep(t(stderr_matrix[,children, drop=F]^2), 2, as.numeric(stderr_matrix[,cell_state, drop=F]^2), `+`)), lower.tail=FALSE)
-    higher_than_children_stat = res[, "shrunken_lfc"]
-    higher_than_children_pval = res[,"p_value"]
+    
+    cell_state_to_children = contrast_helper(cell_state, children, estimate_matrix, stderr_matrix)
+    
+    higher_than_children_stat = cell_state_to_children[, "shrunken_lfc"]
+    higher_than_children_pval = cell_state_to_children[, "p_value"]
     higher_than_children_pval = apply(higher_than_children_pval, 2, p.adjust, method="BH")
     
     higher_than_children_mat = abs(higher_than_children_stat) > log_fc_thresh & higher_than_children_pval < sig_thresh
@@ -1766,7 +1802,7 @@ compare_genes_in_cell_state <- function(cell_state,
     
     # lower_than_children_pval = pnorm(-higher_than_children_stat,
     # sd = sqrt(sweep(t(stderr_matrix[,children, drop=F]^2), 2, as.numeric(stderr_matrix[,cell_state, drop=F]^2), `+`)), lower.tail=FALSE)
-    lower_than_children_pval = res[,"p_value"]
+    lower_than_children_pval = cell_state_to_children[, "p_value"]
     # lower_than_children_pval = apply(lower_than_children_pval, 2, p.adjust, method="BH")
     
     lower_than_children_mat = abs(higher_than_children_stat) > log_fc_thresh & lower_than_children_pval < sig_thresh
