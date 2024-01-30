@@ -12,6 +12,7 @@ compare_genes_over_graph(
   assembly_group = NULL,
   label_nodes_by = "cell_state",
   nuisance_model_formula_str = "0",
+  ambient_coeffs = NULL,
   log_fc_thresh = 1,
   abs_expr_thresh = 0.001,
   sig_thresh = 0.05,
