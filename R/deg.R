@@ -837,7 +837,7 @@ compare_genes_in_cell_state <- function(cell_state,
   message("      examining coefficients ", cell_state)
   
   
-  if (is.null(ambien_estimate_matrix)) {
+  if (is.null(ambient_estimate_matrix)) {
     expr_df$expr_self = pnorm(estimate_matrix[,cell_state] - log(abs_expr_thresh), sd = stderr_matrix[,cell_state], lower.tail=FALSE)
   } else {
     cell_state_to_ambient = contrast_helper(cell_state, "Intercept", estimate_matrix, stderr_matrix, 
@@ -865,7 +865,7 @@ compare_genes_in_cell_state <- function(cell_state,
   if (length(parents) > 0){
     
     
-    if (is.null(ambien_estimate_matrix)) {
+    if (is.null(ambient_estimate_matrix)) {
       expressed_in_parents_mat = pnorm(estimate_matrix[,parents, drop=F] - log(abs_expr_thresh), sd = stderr_matrix[,parents, drop=F], lower.tail=FALSE)
     } else {
       parents_to_ambient = contrast_helper(parents, "Intercept", estimate_matrix, stderr_matrix, 
@@ -919,7 +919,7 @@ compare_genes_in_cell_state <- function(cell_state,
   
   if (length(siblings) > 0){
     
-    if (is.null(ambien_estimate_matrix)) {
+    if (is.null(ambient_estimate_matrix)) {
       expressed_in_siblings_mat = pnorm(estimate_matrix[,siblings, drop=F] - log(abs_expr_thresh), sd = stderr_matrix[,siblings, drop=F], lower.tail=FALSE)
     } else {
       siblings_to_ambient = contrast_helper(siblings, "Intercept", estimate_matrix, stderr_matrix, 
@@ -967,7 +967,7 @@ compare_genes_in_cell_state <- function(cell_state,
   if (length(children) > 0){
     
     
-    if (is.null(ambien_estimate_matrix)) {
+    if (is.null(ambient_estimate_matrix)) {
       expressed_in_children_mat = pnorm(estimate_matrix[,children, drop=F] - log(abs_expr_thresh), sd = stderr_matrix[,children, drop=F], lower.tail=FALSE)
     } else {
       children_to_ambient = contrast_helper(children, "Intercept", estimate_matrix, stderr_matrix, 
