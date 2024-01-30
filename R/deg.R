@@ -172,408 +172,6 @@ compare_genes_within_cell_state <- function(cell_state, state_graph){
   
 }
 
-#' @noRd
-classify_genes_in_cell_state <- function(cell_state, state_graph, estimate_matrix, stderr_matrix, state_term="cell_group", log_fc_thresh=1, abs_expr_thresh = 1e-3, sig_thresh=0.05, cores=1){
-  #expr_self = expr_mat[,cell_state]
-  
-  parents = get_parents(state_graph, cell_state) #igraph::neighbors(state_graph, cell_state, mode="in")
-  parents = intersect(parents, colnames(estimate_matrix))
-  
-  children = get_children(state_graph, cell_state)#igraph::neighbors(state_graph, cell_state, mode="out")
-  children = intersect(children, colnames(estimate_matrix))
-  
-  siblings = get_siblings(state_graph, cell_state)#igraph::neighbors(state_graph, parents, mode="out")
-  siblings = intersect(siblings, colnames(estimate_matrix))
-  
-  states_in_contrast = c(cell_state, parents, children, siblings) %>% unique()
-  
-  expr_df = tibble(gene_id=row.names(estimate_matrix))
-  
-  message("      examining coefficients ", cell_state)
-  
-  expr_df$expr_self = pnorm(estimate_matrix[,cell_state] - log(abs_expr_thresh), sd = stderr_matrix[,cell_state], lower.tail=FALSE)
-  expr_df$expr_self = p.adjust(expr_df$expr_self, method="BH") < sig_thresh
-  
-  expr_df$expressed_in_parents = NA
-  expr_df$expressed_in_siblings = NA
-  expr_df$higher_than_parents = NA
-  expr_df$lower_than_parents = NA
-  expr_df$higher_than_all_siblings = NA
-  expr_df$lower_than_all_siblings = NA
-  expr_df$higher_than_siblings = NA
-  expr_df$lower_than_siblings = NA
-  expr_df$expressed_in_children = NA
-  expr_df$higher_than_all_children = NA
-  expr_df$lower_than_all_children = NA
-  expr_df$higher_than_children = NA
-  expr_df$lower_than_children = NA
-  
-  if (length(parents) > 0){
-    expressed_in_parents_mat = pnorm(estimate_matrix[,parents, drop=F] - log(abs_expr_thresh), sd = stderr_matrix[,parents, drop=F], lower.tail=FALSE)
-    expressed_in_parents_mat = apply(expressed_in_parents_mat, 2, p.adjust, method="BH")
-    
-    expressed_in_parents_mat = expressed_in_parents_mat < sig_thresh
-    expr_df$expressed_in_parents = Matrix::rowSums(expressed_in_parents_mat) > 0
-    
-    higher_than_parents_stat = -t(sweep(t(estimate_matrix[,parents, drop=F]), 2, as.numeric(estimate_matrix[,cell_state]) , `-`))
-    higher_than_parents_pval = pnorm(higher_than_parents_stat,
-                                     sd = sqrt(sweep(t(stderr_matrix[,parents, drop=F]^2), 2, as.numeric(stderr_matrix[,cell_state, drop=F]^2), `+`)), lower.tail=FALSE)
-    higher_than_parents_pval = apply(higher_than_parents_pval, 2, p.adjust, method="BH")
-    
-    higher_than_parents_mat = abs(higher_than_parents_stat) > log_fc_thresh & higher_than_parents_pval < sig_thresh
-    expr_df$higher_than_parents = Matrix::rowSums(higher_than_parents_mat) > 0
-    
-    lower_than_parents_pval = pnorm(-higher_than_parents_stat,
-                                    sd = sqrt(sweep(t(stderr_matrix[,parents, drop=F]^2), 2, as.numeric(stderr_matrix[,cell_state, drop=F]^2), `+`)), lower.tail=FALSE)
-    lower_than_parents_pval = apply(lower_than_parents_pval, 2, p.adjust, method="BH")
-    
-    lower_than_parents_mat = abs(higher_than_parents_stat) > log_fc_thresh & lower_than_parents_pval < sig_thresh
-    expr_df$lower_than_parents = Matrix::rowSums(lower_than_parents_mat) > 0
-  }else{
-    expr_df$expressed_in_parents = NA
-    expr_df$expressed_in_siblings = NA
-    expr_df$higher_than_parents = NA
-    expr_df$lower_than_parents = NA
-    expr_df$higher_than_all_siblings = NA
-    expr_df$lower_than_all_siblings = NA
-    expr_df$higher_than_siblings = NA
-    expr_df$lower_than_siblings = NA
-    expr_df$expressed_in_children = NA
-    expr_df$higher_than_all_children = NA
-    expr_df$lower_than_all_children = NA
-    expr_df$higher_than_children = NA
-    expr_df$lower_than_children = NA
-  }
-  
-  if (length(siblings) > 0){
-    expressed_in_siblings_mat = pnorm(estimate_matrix[,siblings, drop=F] - log(abs_expr_thresh), sd = stderr_matrix[,siblings, drop=F], lower.tail=FALSE)
-    expressed_in_siblings_mat = apply(expressed_in_siblings_mat, 2, p.adjust, method="BH")
-    
-    expressed_in_siblings_mat = expressed_in_siblings_mat < sig_thresh
-    expr_df$expressed_in_siblings = Matrix::rowSums(expressed_in_siblings_mat) > 0
-    
-    higher_than_siblings_stat = -t(sweep(t(estimate_matrix[,siblings, drop=F]), 2, as.numeric(estimate_matrix[,cell_state]) , `-`))
-    higher_than_siblings_pval = pnorm(higher_than_siblings_stat,
-                                      sd = sqrt(sweep(t(stderr_matrix[,siblings, drop=F]^2), 2, as.numeric(stderr_matrix[,cell_state, drop=F]^2), `+`)), lower.tail=FALSE)
-    higher_than_siblings_pval = apply(higher_than_siblings_pval, 2, p.adjust, method="BH")
-    
-    higher_than_siblings_mat = abs(higher_than_siblings_stat) > log_fc_thresh & higher_than_siblings_pval < sig_thresh
-    expr_df$higher_than_all_siblings = Matrix::rowSums(higher_than_siblings_mat) == ncol(higher_than_siblings_pval)
-    expr_df$higher_than_siblings = Matrix::rowSums(higher_than_siblings_mat) > 0
-    
-    lower_than_siblings_pval = pnorm(-higher_than_siblings_stat,
-                                     sd = sqrt(sweep(t(stderr_matrix[,siblings, drop=F]^2), 2, as.numeric(stderr_matrix[,cell_state, drop=F]^2), `+`)), lower.tail=FALSE)
-    lower_than_siblings_pval = apply(lower_than_siblings_pval, 2, p.adjust, method="BH")
-    
-    lower_than_siblings_mat = abs(higher_than_siblings_stat) > log_fc_thresh & lower_than_siblings_pval < sig_thresh
-    expr_df$lower_than_all_siblings = Matrix::rowSums(lower_than_siblings_mat) == ncol(lower_than_siblings_mat)
-    expr_df$lower_than_siblings = Matrix::rowSums(lower_than_siblings_mat) > 0
-    
-    
-  }else{
-    expr_df$expressed_in_siblings = NA
-    expr_df$higher_than_all_siblings = NA
-    expr_df$lower_than_all_siblings = NA
-    expr_df$higher_than_siblings = NA
-    expr_df$lower_than_siblings = NA
-  }
-  
-  if (length(children) > 0){
-    expressed_in_children_mat = pnorm(estimate_matrix[,children, drop=F] - log(abs_expr_thresh), sd = stderr_matrix[,children, drop=F], lower.tail=FALSE)
-    expressed_in_children_mat = apply(expressed_in_children_mat, 2, p.adjust, method="BH")
-    
-    expressed_in_children_mat = expressed_in_children_mat < sig_thresh
-    expr_df$expressed_in_children = Matrix::rowSums(expressed_in_children_mat) > 0
-    
-    higher_than_children_stat = -t(sweep(t(estimate_matrix[,children, drop=F]), 2, as.numeric(estimate_matrix[,cell_state]) , `-`))
-    higher_than_children_pval = pnorm(higher_than_children_stat,
-                                      sd = sqrt(sweep(t(stderr_matrix[,children, drop=F]^2), 2, as.numeric(stderr_matrix[,cell_state, drop=F]^2), `+`)), lower.tail=FALSE)
-    higher_than_children_pval = apply(higher_than_children_pval, 2, p.adjust, method="BH")
-    
-    higher_than_children_mat = abs(higher_than_children_stat) > log_fc_thresh & higher_than_children_pval < sig_thresh
-    expr_df$higher_than_all_children = Matrix::rowSums(higher_than_children_mat) == ncol(higher_than_children_pval)
-    expr_df$higher_than_children = Matrix::rowSums(higher_than_children_mat) > 0
-    
-    lower_than_children_pval = pnorm(-higher_than_children_stat,
-                                     sd = sqrt(sweep(t(stderr_matrix[,children, drop=F]^2), 2, as.numeric(stderr_matrix[,cell_state, drop=F]^2), `+`)), lower.tail=FALSE)
-    lower_than_children_pval = apply(lower_than_children_pval, 2, p.adjust, method="BH")
-    
-    lower_than_children_mat = abs(higher_than_children_stat) > log_fc_thresh & lower_than_children_pval < sig_thresh
-    expr_df$lower_than_all_children = Matrix::rowSums(lower_than_children_mat) == ncol(lower_than_children_mat)
-    expr_df$lower_than_children = Matrix::rowSums(lower_than_children_mat) > 0
-    
-    
-  }else{
-    expr_df$expressed_in_children = NA
-    expr_df$higher_than_all_children = NA
-    expr_df$lower_than_all_children = NA
-    expr_df$higher_than_children = NA
-    expr_df$lower_than_children = NA
-  }
-  
-  expr_df = expr_df %>% tidyr::nest(data = !gene_id)
-  
-  message("      interpreting patterns")
-  interpret_expression_pattern = function(pat_df){
-    if (pat_df$expr_self){
-      if (is.na(pat_df$expressed_in_parents)){
-        # no parents, therefore no siblings
-        #return ("Maintained")
-        if (is.na(pat_df$expressed_in_children)){
-          return("Maintained")
-        } else {
-          # no parent, but there are children
-          if (pat_df$expressed_in_children == FALSE | pat_df$higher_than_all_children){
-            # Higher than parent, and higher than children
-            return("Precursor-specific")
-          }
-          else if (pat_df$higher_than_children){
-            # no parent, higher than children
-            return("Precursor-specific")
-          }
-          else if(pat_df$lower_than_children){
-            # no parent, but lower than children
-            return("Precursor-depleted")
-          }
-          else { # no parent same as children
-            return("Maintained")
-          }
-        }
-      }else if (pat_df$expressed_in_parents){
-        # Expressed in self and parent
-        if (is.na(pat_df$expressed_in_siblings)){
-          # Expressed in self and parent and there are no siblings
-          if (pat_df$higher_than_parents){
-            if (is.na(pat_df$expressed_in_children)){
-              return("Upregulated")
-            } else {
-              # there are children
-              if (pat_df$expressed_in_children == FALSE | pat_df$higher_than_all_children){
-                # Higher than parent, and higher than siblings
-                return("Transiently upregulated")
-              }
-              else if(pat_df$lower_than_all_children){
-                # lower than children
-                return("Increasingly upregulated")
-              }
-              else { # same as children
-                return("Upregulated")
-              }
-            }
-          }
-          else if(pat_df$lower_than_parents){
-            if (is.na(pat_df$expressed_in_children)){
-              return("Downregulated")
-            } else {
-              # there are children
-              if (pat_df$lower_than_all_children){
-                # Lower than parent, and lower than children
-                return("Decreasingly downregulated")
-              }
-              else if(pat_df$lower_than_all_children){
-                # lower than children
-                return("Transiently downregulated")
-              }
-              else { # same as children
-                return("Downregulated")
-              }
-            }
-          }else{
-            if (is.na(pat_df$expressed_in_children)){
-              return("Maintained")
-            } else {
-              # same as parent, and there are children
-              if (pat_df$expressed_in_children == FALSE | pat_df$higher_than_all_children){
-                # Higher than parent, and higher than children
-                return("Precursor-specific")
-              }
-              else if(pat_df$lower_than_all_children){
-                # no parent, but lower than children
-                return("Precursor-depleted")
-              }
-              else { # no parent same as children
-                return("Maintained")
-              }
-            }
-          }
-        } else {
-          # Expressed in self and parent and there are siblings
-          if (pat_df$higher_than_parents){
-            if (pat_df$expressed_in_siblings == FALSE | pat_df$higher_than_all_siblings){
-              # Higher than parent, and higher than siblings
-              return("Specifically upregulated")
-            }
-            else if (pat_df$higher_than_siblings){
-              # Higher than parent, and higher than siblings
-              return("Selectively upregulated")
-            }
-            else if(pat_df$lower_than_siblings){
-              # Higher than parent, but lower than siblings
-              return("Upregulated")
-            }
-            else { # higher than parent, same as siblings
-              return("Upregulated")
-            }
-          }
-          else if(pat_df$lower_than_parents){
-            if (pat_df$expressed_in_siblings == TRUE & pat_df$lower_than_all_siblings){
-              # Lower than parent, and higher than siblings
-              return("Specifically downregulated")
-            }
-            else if (pat_df$expressed_in_siblings == TRUE & pat_df$lower_than_siblings){
-              # Lower than parent, and higher than some siblings
-              return("Selectively downregulated")
-            }
-            else { # lower than parent, same as or higher than siblings
-              return("Downregulated")
-            }
-          }
-          else { # same as parent
-            if (pat_df$expressed_in_siblings == FALSE | pat_df$higher_than_all_siblings){
-              # Same as parent, and higher than all siblings
-              return("Specifically maintained")
-            }
-            else if (pat_df$higher_than_siblings){
-              # Same as parent, and higher than some siblings
-              return("Selectively maintained")
-            }
-            else if(pat_df$lower_than_all_siblings){
-              # Same as parent, but lower than siblings
-              return("Maintained")
-            }
-            else { # same as parent, same as siblings
-              return("Maintained")
-            }
-          }
-        }
-        
-      }else{
-        # expressed in self but not in parent
-        if (is.na(pat_df$expressed_in_siblings)){
-          # Expressed in self, not in parent and there are no siblings
-          if (pat_df$higher_than_parents)
-            return("Activated")
-          else if(pat_df$lower_than_parents)
-            return("Downregulated") # shouldn't happen
-          else
-            return("Activated") # might happen if its above threshold but not significantly above parent (and parent is below thresh)
-        } else {
-          # expressed in self, not in parent, and there are siblings
-          if (pat_df$higher_than_parents){ # Expressed in self and higher than parent and there are siblings
-            if (pat_df$expressed_in_siblings == FALSE | pat_df$higher_than_all_siblings){
-              # Higher than parent, and higher than all siblings
-              return("Specifically activated")
-            } else if (pat_df$higher_than_siblings){
-              # Higher than parent, and higher than some siblings
-              return("Selectively activated")
-            }
-            else if(pat_df$lower_than_all_siblings){
-              # Higher than parent (which is off), but lower than all siblings
-              return("Activated")
-            }
-            if(pat_df$lower_than_siblings){
-              # Higher than parent (which is off), but lower than some siblings
-              return("Activated")
-            }
-            else { # Higher than parent (which is off), same as siblings
-              return("Activated")
-            }
-          }
-          else if(pat_df$lower_than_parents){
-            # gene is expressed, lower in the parent (which is off)
-            if (pat_df$higher_than_all_siblings){
-              # Lower than parent, and higher than all siblings
-              return("Absent") # shouldn't happen
-            }
-            else if (pat_df$higher_than_siblings){
-              # Lower than parent, and higher than some siblings
-              return("Absent") # shouldn't happen
-            }
-            else if(pat_df$lower_than_all_siblings){
-              # Lower than parent and  lower than all siblings
-              return("Absent")
-            }
-            else if(pat_df$lower_than_siblings){
-              # Lower than parent and  lower than some siblings
-              return("Absent")
-            }
-            else { # Lower than parent, same as siblings
-              return("Absent")
-            }
-          }
-          else { # same as parent (which is off)
-            if (pat_df$higher_than_all_siblings){
-              # Same as parent, and higher than all siblings
-              return("Absent")
-            }
-            else if (pat_df$higher_than_siblings){
-              # Same as parent, and higher than some siblings
-              return("Absent")
-            }
-            else if(pat_df$lower_than_all_siblings){
-              # Same as parent, but lower than all siblings
-              return("Absent")
-            }
-            else if(pat_df$lower_than_siblings){
-              # Same as parent, but lower than some siblings
-              return("Absent")
-            }
-            else { # same as parent, same as siblings
-              return("Absent")
-            }
-          }
-        }
-      }
-      return ("Expressed")
-    }else{
-      # Not expressed in self
-      if (is.na(pat_df$expressed_in_parents)){
-        # no parents, therefore no siblings
-        return ("Absent")
-      }else if (pat_df$expressed_in_parents){
-        # Not expressed in self, but expressed in parents
-        if (is.na(pat_df$expressed_in_siblings)){
-          # Not expressed in self, expressed parent and there are no siblings
-          if(pat_df$lower_than_parents)
-            return("Deactivated")
-          else
-            return("Absent") # shouldn't happen
-        } else {
-          # Not expressed in self, expressed in parent and there are siblings
-          if(pat_df$lower_than_parents){
-            # Lower than parent
-            if(pat_df$lower_than_all_siblings){
-              # Lower than parent and  lower than siblings
-              return("Specifically deactivated")
-            }
-            else if(pat_df$lower_than_siblings){
-              # Lower than parent and  lower than siblings
-              return("Selectively deactivated")
-            }
-            return("Deactivated")
-          }
-          else {
-            #Not expressed in self, not lower than parent
-            return ("Absent")
-          }
-        }
-      }else{
-        # Not expressed in self or parents
-        return ("Absent")
-      }
-      return ("Absent")
-    }
-    return ("Absent")
-    #match_row = match(data.frame(t(pat_df)), data.frame(t(interp_table)))
-    #interpetation[match_row]
-  }
-  #debug(interpret_expression_pattern)
-  expr_df = expr_df %>% mutate(interpretation = purrr::map(.f = purrr::possibly(
-    interpret_expression_pattern, NA_character_), .x = data))
-  message("      completed ", cell_state)
-  return(expr_df)
-}
-#debug(classify_genes_in_cell_state)
 
 
 
@@ -604,185 +202,21 @@ unnest_degs = function(ccs,
 }
 
 
-#' #' similar to fit_genotype_ccm
-#' #' @param ccs
-#' #' @param genotype
-#' #' @param ctrl_ids
-#' #' @param perturbation_col
-#' #' @param interval_col
-#' #' @param cell_groups
-#' fit_genotype_deg = function(ccs,
-#'                             genotype,
-#'                             ctrl_ids = c("Control"),
-#'                             perturbation_col = "perturbation",
-#'                             interval_col = "timepoint",
-#'                             assembly_time_start = 18,
-#'                             assembly_time_stop= 72,
-#'                             cell_groups = NULL,
-#'                             cores = 1,
-#'                             min_samples_detected = 2,
-#'                             min_cells_per_pseudobulk = 3,
-#'                             ... ) {
-#'   
-#'   expts = unique(colData(ccs)$expt)
-#'   
-#'   if (is.null(assembly_time_start)){
-#'     knockout_time_start = min(colData(ccs)[[interval_col]])
-#'   }else{
-#'     knockout_time_start = assembly_time_start
-#'   }
-#'   
-#'   if (is.null(assembly_time_stop)){
-#'     knockout_time_stop = max(colData(subset_ccs)[[interval_col]])
-#'   }else{
-#'     knockout_time_stop = assembly_time_stop
-#'   }
-#'   
-#'   num_knockout_timepoints = length(unique(colData(subset_ccs)[[interval_col]]))
-#'   
-#'   message(paste("\ttime range:", knockout_time_start, "to", knockout_time_stop))
-#'   subset_ccs = ccs[,( replace_na(colData(ccs)[[perturbation_col]] == genotype, F) | colData(ccs)[[perturbation_col]] %in% ctrl_ids) & colData(ccs)$expt %in% expts]
-#'   
-#'   colData(subset_ccs)$knockout = colData(subset_ccs)[[perturbation_col]] == genotype
-#'   subset_ccs = subset_ccs[,(colData(subset_ccs)[[interval_col]] >= knockout_time_start & colData(subset_ccs)[[interval_col]] <= knockout_time_stop)]
-#'   
-#'   colData(subset_ccs@cds)$knockout = colData(subset_ccs@cds)[[perturbation_col]] == genotype
-#'   
-#'   pb_cds = hooke:::pseudobulk_ccs_for_states(subset_ccs)
-#'   
-#'   # subset to genes that are expressed over a certain min value
-#'   expr_over_thresh = normalized_counts(pb_cds, "size_only", pseudocount = 0)
-#'   genes_to_test = which(Matrix::rowSums(expr_over_thresh) >= min_samples_detected)
-#'   pb_cds = pb_cds[genes_to_test,]
-#'   
-#'   pseudobulks_to_test = which(colData(pb_cds)$num_cells_in_group >= min_cells_per_pseudobulk)
-#'   pb_cds = pb_cds[,pseudobulks_to_test]
-#'   
-#'   
-#'   pb_cds = hooke:::add_covariate(subset_ccs, pb_cds, "knockout")
-#'   
-#'   
-#'   if (is.null(cell_groups)) {
-#'     cell_groups = rownames(counts(ccs))
-#'   }
-#'   
-#'   if (is.null(perturbations)) {
-#'     perturbations = unique(colData(pb_cds)[[perturbation_col]])
-#'   }
-#'   
-#'   # cell_group_models = lapply(perturbations, function(perturbation) {
-#'   cell_group_models = lapply(cell_groups, function(cell_group) {
-#'     
-#'     # perturb_pb_cds = pb_cds[, colData(pb_cds)[[perturbation_col]] == perturbation]
-#'     cg_pb_cds = pb_cds[, colData(pb_cds)[[state_term]] == cell_group]
-#'   
-#'     # message(paste0("fitting regression models for ", perturbation))
-#'     message(paste0("fitting regression models for ", cell_group))
-#'   
-#'     pb_group_models = fit_models(cg_pb_cds,
-#'                                  model_formula_str=paste("~ 0 + knockout", ),
-#'                                  weights=colData(pb_cds)$num_cells_in_group,
-#'                                  cores=cores) %>% dplyr::select(gene_short_name, id, model, model_summary)
-#'   
-#'     message(paste0("fitting regression models for ", cell_group))
-#'     
-#'     pb_group_models = coefficient_table(pb_group_models) %>%
-#'       dplyr::select(gene_short_name, id, term, estimate, std_err) %>%
-#'       mutate(term = stringr::str_replace_all(term, state_term, ""))
-#'     estimate_matrix = pb_group_models %>% dplyr::select(id, term, estimate)
-#'     estimate_matrix = estimate_matrix %>% mutate(term = factor(term, levels=unique(colData(cg_pb_cds)[,"knockout"])))
-#'     estimate_matrix = estimate_matrix %>% tidyr::pivot_wider(names_from=term, values_from=estimate, values_fill=0)
-#'   
-#'     gene_ids = estimate_matrix$id
-#'     estimate_matrix$id = NULL
-#'     estimate_matrix = as.matrix(estimate_matrix)
-#'     row.names(estimate_matrix) = gene_ids
-#'     colnames(estimate_matrix) = as.character(colnames(estimate_matrix))
-#'   
-#'     stderr_matrix = pb_group_models %>% dplyr::select(id, term, std_err)
-#'     estimate_matrix = estimate_matrix %>% mutate(term = factor(term, levels=unique(colData(cg_pb_cds)[,"knockout"])))
-#'     stderr_matrix = stderr_matrix %>% tidyr::pivot_wider(names_from=term, values_from=std_err, values_fill=0)
-#'   
-#'     gene_ids = stderr_matrix$id
-#'     stderr_matrix$id = NULL
-#'     stderr_matrix = as.matrix(stderr_matrix)
-#'     row.names(stderr_matrix) = gene_ids
-#'     colnames(stderr_matrix) = as.character(colnames(stderr_matrix))
-#'   
-#'     # states_to_assess = intersect(as.character(unique(colData(pb_cds)[,state_term])), unlist(igraph::V(state_graph)$name))
-#'     # cell_states = tibble(cell_state = states_to_assess)
-#'   
-#'     # cell_states = cell_states %>%
-#'     #   dplyr::mutate(gene_classes = purrr::map(.f = purrr::possibly(
-#'     #     classify_genes_in_cell_state, NA_real_), .x = cell_state,
-#'     #     state_graph, estimate_matrix, stderr_matrix, state_term,
-#'     #     log_fc_thresh=log_fc_thresh,
-#'     #     abs_expr_thresh = abs_expr_thresh,
-#'     #     sig_thresh=sig_thresh,
-#'     #     cores=cores))
-#'     # 
-#'     # cell_states = cell_states %>%
-#'     #   filter(is.na(gene_classes) == FALSE) %>%
-#'     #   dplyr::mutate(gene_class_scores = purrr::map2(.f = purrr::possibly(
-#'     #     score_genes_for_expression_pattern, NA_real_),
-#'     #     .x = cell_state,
-#'     #     .y = gene_classes,
-#'     #     state_graph,
-#'     #     estimate_matrix))
-#'       
-#'     # cell_states
 #' 
-#'   })
-#'   
-#'   return(perturb_group_models)
-#'   
-#' }
-#' 
-#' #' to do: do i want to subset by time or do i not care
-#' #' @param ccs
-#' #' @param perturbation_col
-#' #' @param control_ids
-#' #' @param cell_groups
-#' fit_mt_deg_models = function(ccs,
-#'                              perturbation_col,
-#'                              control_ids,
-#'                              cell_groups = NULL,
-#'                              num_threads = 1) {
-#'   
-#'   ccs@cds_coldata[["perturb_name"]] = ccs@cds_coldata[[perturbation_col]]
-#'   
-#'   perturb_df = ccs@cds_coldata %>%
-#'     as_tibble() %>%
-#'     dplyr::select(perturb_name) %>%
-#'     filter(!perturb_name %in% ctrl_ids) %>%
-#'     distinct()
-#'   
-#'   perturb_models_tbl = perturb_df %>%
-#'     purrr::map(.f = fit_genotype_deg,
-#'                .x = perturb_name,
-#'                control_ids = control_ids,
-#'                cell_groups = cell_groups)
-#'   
-#'   return(perturb_models_tbl)
-#' }
-
-
-
-#' Classify each gene's pattern of expression in each state in a state transition graph
-#' @export
-classify_genes_over_graph <- function(ccs,
-                                      state_graph,
-                                      gene_ids = NULL,
-                                      group_nodes_by=NULL,
-                                      assembly_group = NULL, 
-                                      label_nodes_by="cell_state", 
-                                      log_fc_thresh=1,
-                                      abs_expr_thresh = 1e-3,
-                                      sig_thresh=0.05,
-                                      min_samples_detected = 2,
-                                      min_cells_per_pseudobulk = 3,
-                                      cores=1,
-                                      ...){
+#' @param ccs 
+#' @param 
+estimate_ambient_rna <- function(ccs, 
+                                 log_fc_thresh=1,
+                                 abs_expr_thresh = 1e-3,
+                                 sig_thresh=0.05,
+                                 min_samples_detected = 2,
+                                 min_cells_per_pseudobulk = 3,
+                                 cores=1,
+                                 gene_ids = NULL,
+                                 group_nodes_by=NULL, 
+                                 ...) {
+  
+  
   if (is.null(group_nodes_by)){
     pb_cds = hooke:::pseudobulk_ccs_for_states(ccs, cell_agg_fun="sum")
     state_term = "cell_group"
@@ -791,30 +225,7 @@ classify_genes_over_graph <- function(ccs,
     state_term = group_nodes_by
   }
   
-  # if we want to run it by assembly group
-  if (is.null(assembly_group) == FALSE) {
-    pb_cds = hooke:::add_covariate(ccs, pb_cds, "assembly_group")
-    pb_cds = pb_cds[, colData(pb_cds)$assembly_group == assembly_group]
-    
-    if (is(state_graph, "igraph")) {
-      state_graph = igraph::as_data_frame(state_graph)
-    }
-    state_graph = state_graph[state_graph$assembly_group == assembly_group,]
-  }
-  
-  
-  if (!is(state_graph, "igraph")){
-    state_graph = state_graph %>% igraph::graph_from_data_frame()
-    
-  }
-  
-  
-  #cds_to_test = pb_cds[,as.character(colData(pb_cds)[,state_term]) %in% states_in_model]
-  
-  #colData(cds_to_test)[,state_term] = factor(as.character(colData(cds_to_test)[,state_term]), levels=states_in_model) # set the "self" state as the reference level
-  
-  #norm_expr_mat = normalized_counts(pb_cds, "size_only", pseudocount = 0)
-  
+
   if (is.null(gene_ids) == FALSE){
     pb_cds = pb_cds[gene_ids,]
   }
@@ -829,67 +240,14 @@ classify_genes_over_graph <- function(ccs,
   message("fitting regression models")
   pb_cds = pb_cds[,pseudobulks_to_test]
   
-  colData(pb_cds)$Size_Factor = colData(pb_cds)$num_cells_in_group
-  pb_group_models = fit_models(pb_cds,
-                               model_formula_str=paste("~ 0 + ", state_term),
-                               # weights=colData(pb_cds)$num_cells_in_group,
-                               cores=cores) %>% dplyr::select(gene_short_name, id, model, model_summary, status)
+  # Collect background estimate 
+  pb_ambient = fit_models(pb_cds,
+                          model_formula_str="~ 1",
+                          cores=cores)
+  ambient_coeffs = collect_coefficients_for_shrinkage(pb_cds, pb_ambient, abs_expr_thresh, term_to_keep = "(Intercept)") 
   
-  message("      collecting coefficients")
+  return(ambient_coeffs)
   
-  # pb_group_models = coefficient_table(pb_group_models) %>%
-  #   dplyr::select(gene_short_name, id, term, estimate, std_err) %>%
-  #   mutate(term = stringr::str_replace_all(term, state_term, ""))
-  pb_group_models = collect_coefficients_for_shrinkage(pb_cds, pb_group_models, abs_expr_thresh)
-  
-  
-  estimate_matrix = pb_group_models %>% dplyr::select(id, term, estimate)
-  estimate_matrix = estimate_matrix %>% mutate(term = factor(term, levels=unique(colData(pb_cds)[,state_term])))
-  estimate_matrix = estimate_matrix %>% tidyr::pivot_wider(names_from=term, values_from=estimate, values_fill=0)
-  
-  gene_ids = estimate_matrix$id
-  estimate_matrix$id = NULL
-  estimate_matrix = as.matrix(estimate_matrix)
-  row.names(estimate_matrix) = gene_ids
-  colnames(estimate_matrix) = as.character(colnames(estimate_matrix))
-  
-  stderr_matrix = pb_group_models %>% dplyr::select(id, term, std_err)
-  stderr_matrix = stderr_matrix %>% mutate(term = factor(term, levels=unique(colData(pb_cds)[,state_term])))
-  stderr_matrix = stderr_matrix %>% tidyr::pivot_wider(names_from=term, values_from=std_err, values_fill=0)
-  
-  gene_ids = stderr_matrix$id
-  stderr_matrix$id = NULL
-  stderr_matrix = as.matrix(stderr_matrix)
-  row.names(stderr_matrix) = gene_ids
-  colnames(stderr_matrix) = as.character(colnames(stderr_matrix))
-  
-  #p_val_matrix = pnorm(estimate_matrix - log(abs_expr_thresh), sd = stderr_matrix, lower.tail=FALSE)
-  
-  #expr_thresh_mat = p_val_matrix < sig_thresh
-  
-  #cell_states = tibble(cell_state = unlist(igraph::V(state_graph)$name))
-  states_to_assess = intersect(as.character(unique(colData(pb_cds)[,state_term])), unlist(igraph::V(state_graph)$name))
-  cell_states = tibble(cell_state = states_to_assess)
-  
-  cell_states = cell_states %>%
-    dplyr::mutate(gene_classes = purrr::map(.f = purrr::possibly(
-      classify_genes_in_cell_state, NA_real_), .x = cell_state,
-      state_graph, estimate_matrix, stderr_matrix, state_term,
-      log_fc_thresh=log_fc_thresh,
-      abs_expr_thresh = abs_expr_thresh,
-      sig_thresh=sig_thresh,
-      cores=cores))
-  
-  cell_states = cell_states %>%
-    filter(is.na(gene_classes) == FALSE) %>%
-    dplyr::mutate(gene_class_scores = purrr::map2(.f = purrr::possibly(
-      score_genes_for_expression_pattern, NA_real_),
-      .x = cell_state,
-      .y = gene_classes,
-      state_graph,
-      estimate_matrix))
-  
-  return(cell_states)
 }
 
 
@@ -905,6 +263,9 @@ compare_genes_over_graph <- function(ccs,
                                     assembly_group = NULL, 
                                     label_nodes_by="cell_state", 
                                     nuisance_model_formula_str = "0",
+                                    # ambient_estimate_matrix = NULL, 
+                                    # ambient_stderr_matrix = NULL, 
+                                    ambient_coeffs = NULL, 
                                     log_fc_thresh=1,
                                     abs_expr_thresh = 1e-3,
                                     sig_thresh=0.05,
@@ -951,11 +312,11 @@ compare_genes_over_graph <- function(ccs,
   message("fitting regression models")
   pb_cds = pb_cds[,pseudobulks_to_test]
   
-  # Collect background estimate 
-  pb_ambient = fit_models(pb_cds,
-                          model_formula_str="~ 1",
-                          cores=cores)
-  ambient_coeffs = collect_coefficients_for_shrinkage(pb_cds, pb_ambient, abs_expr_thresh, term_to_keep = "(Intercept)") 
+  # # Collect background estimate 
+  # pb_ambient = fit_models(pb_cds,
+  #                         model_formula_str="~ 1",
+  #                         cores=cores)
+  # ambient_coeffs = collect_coefficients_for_shrinkage(pb_cds, pb_ambient, abs_expr_thresh, term_to_keep = "(Intercept)") 
   
   colData(pb_cds)$Size_Factor = colData(pb_cds)$num_cells_in_group
   
@@ -1011,79 +372,11 @@ compare_genes_over_graph <- function(ccs,
 
 
 
-#' #' @export
-#' classify_genes_within_state_graph = function(ccs,
-#'                                              perturbation_col = "perturbation", 
-#'                                              control_ids = c("Control"), 
-#'                                              cell_groups = NULL, 
-#'                                              assembly_group = NULL, 
-#'                                              state_graph = NULL,
-#'                                              perturbations = NULL, 
-#'                                              gene_ids = NULL,
-#'                                              group_nodes_by = NULL,
-#'                                              log_fc_thresh = 1,
-#'                                              abs_expr_thresh = 1e-3,
-#'                                              sig_thresh = 0.05,
-#'                                              min_samples_detected = 2,
-#'                                              min_cells_per_pseudobulk = 3,
-#'                                              cores = 1,
-#'                                              ...) {
-#'   
-#'   # to do make sure that ccs and state graph match 
-#'   # check if all nodes in the state graph exist in the cds
-#'   
-#'   # if (is.null(state_graph) == FALSE) {
-#'   #   
-#'   # }
-#'   
-#'   expts = unique(colData(ccs)$expt)
-#'   
-#'   pb_cds = hooke:::pseudobulk_ccs_for_states(ccs, cell_agg_fun="sum")
-#'   colData(pb_cds)$Size_Factor = colData(pb_cds)$num_cells_in_group
-#'   
-#'   pb_cds = hooke:::add_covariate(ccs, pb_cds, perturbation_col)
-#'   colData(pb_cds)[["perturbation"]] = colData(pb_cds)[[perturbation_col]] 
-#'   
-#'   # to do: if we want to run it by assembly group, must provide a state graph 
-#'   if (is.null(assembly_group) == FALSE & is.null(state_graph) == FALSE) {
-#'     pb_cds = hooke:::add_covariate(ccs, pb_cds, "assembly_group")
-#'     pb_cds = pb_cds[, colData(pb_cds)$assembly_group == assembly_group]
-#'     
-#'     if (is(state_graph, "igraph")) {
-#'       state_graph = igraph::as_data_frame(state_graph)
-#'     }
-#'     state_graph = state_graph %>% filter(assembly_group == assembly_group)
-#'   }
-#'   
-#'   # ability to subset by perturbation 
-#'   if (!is.null(perturbations)) {
-#'     pb_cds = pb_cds[, colData(pb_cds)[[perturbation_col]] %in% c(control_ids, perturbations)]
-#'   } 
-#'   
-#'   # subset to genes that are expressed over a certain min value
-#'   expr_over_thresh = normalized_counts(pb_cds, "size_only", pseudocount = 0)
-#'   genes_to_test = which(Matrix::rowSums(expr_over_thresh) >= min_samples_detected)
-#'   pb_cds = pb_cds[genes_to_test,]
-#'   
-#'   pseudobulks_to_test = which(colData(pb_cds)$num_cells_in_group >= min_cells_per_pseudobulk)
-#'   pb_cds = pb_cds[,pseudobulks_to_test]
-#'   
-#'   
-#'   if (is.null(cell_groups)) {
-#'     cell_groups = rownames(counts(ccs))
-#'   }
-#'   
-#'   df = data.frame(cell_group = cell_groups) %>% 
-#'     mutate(genes_within_cell_group = purrr::map(.f = purrr:::possibly(classify_genes_within_node,NA_real_),
-#'                                                 .x = cell_group, 
-#'                                                 pb_cds = pb_cds, 
-#'                                                 ccs = ccs, 
-#'                                                 cores = cores))
-#'   
-#'   return(df)
-#'   
-#' }
-
+#' 
+#' @param cds
+#' @param model_tbl
+#' @param abs_expr_thresh
+#' @param term_to_keep 
 collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, term_to_keep){
   
   model_tbl = model_tbl %>% dplyr::mutate(dispersion = purrr::map2(.f = purrr::possibly(
@@ -1197,6 +490,7 @@ compare_genes_within_state_graph = function(ccs,
                                             perturbation_col = "perturbation", 
                                             control_ids = c("Control"), 
                                             nuisance_model_formula_str = "0", 
+                                            ambient_coeffs = NULL, 
                                             cell_groups = NULL, 
                                             assembly_group = NULL, 
                                             state_graph = NULL,
@@ -1253,6 +547,14 @@ compare_genes_within_state_graph = function(ccs,
   pb_cds = pb_cds[,pseudobulks_to_test]
   
   
+  # # Collect background estimate 
+  # pb_ambient = fit_models(pb_cds,
+  #                         model_formula_str="~ 1",
+  #                         cores=cores)
+  # ambient_coeffs = collect_coefficients_for_shrinkage(pb_cds, pb_ambient, abs_expr_thresh, term_to_keep = "(Intercept)") 
+  
+  
+  
   if (is.null(cell_groups)) {
     cell_groups = rownames(counts(ccs))
   }
@@ -1263,6 +565,8 @@ compare_genes_within_state_graph = function(ccs,
                                                 pb_cds = pb_cds, 
                                                 ccs = ccs,
                                                 control_ids = c("Control"),
+                                                ambient_estimate_matrix = ambient_coeffs$coefficients, 
+                                                ambient_stderr_matrix = ambient_coeffs$stdev.unscaled, 
                                                 cores = cores, 
                                                 nuisance_model_formula_str = nuisance_model_formula_str))
   
@@ -1297,11 +601,19 @@ update_summary <- function(model_tbl, dispersion_type=c("max", "fitted", "estima
   return(model_tbl)
 }
 
-
+#' called in compare_genes_within_state_graph
+#' @param cell_group
+#' @param ccs
+#' @param pb_cds
+#' @param control_ids
+#' @param nuisance_model_formula_str
+#' 
 compare_gene_expression_within_node <- function(cell_group, 
                                                 ccs, 
                                                 pb_cds,
                                                 control_ids,
+                                                ambient_estimate_matrix = NULL, 
+                                                ambient_stderr_matrix = NULL, 
                                                 nuisance_model_formula_str = "0",
                                                 perturbation_ids = NULL,
                                                 state_term ="cell_group",
@@ -1333,8 +645,8 @@ compare_gene_expression_within_node <- function(cell_group,
   
   pb_coeffs = collect_coefficients_for_shrinkage(cg_pb_cds, pb_group_models, abs_expr_thresh, term_to_keep = "perturbation") #coefficient_table(pb_group_models) %>%
   
-  estimates_for_controls = Matrix::rowSums(pb_coeffs$coefficients[,control_ids, drop=F])
-  stderrs_for_controls = sqrt(Matrix::rowSums(pb_coeffs$stdev.unscaled[,control_ids, drop=F]^2))
+  # estimates_for_controls = Matrix::rowSums(pb_coeffs$coefficients[,control_ids, drop=F])
+  # stderrs_for_controls = sqrt(Matrix::rowSums(pb_coeffs$stdev.unscaled[,control_ids, drop=F]^2))
   
   if (is.null(perturbation_ids)){
     perturbation_ids = setdiff(colnames(pb_coeffs$coefficients), control_ids)
@@ -1345,50 +657,53 @@ compare_gene_expression_within_node <- function(cell_group,
   #perturbation_ids = setdiff(colnames(estimate_matrix))
   cell_perturbations = tibble(term = unique(perturbation_ids))
   
-  contrast_helper = function(perturb_id, 
-                             PEM, 
-                             PSEM, 
-                             control_effects, 
-                             control_effects_se){
+  
+  if (is.null(ambient_estimate_matrix) == FALSE) {
+    compare_perturb_to_ambient = function(perturb_name, 
+                                          estimate_matrix, 
+                                          stderr_matrix, 
+                                          ambient_estimate_matrix, 
+                                          ambient_stderr_matrix, 
+                                          sig_thresh)  {
+      
+      ids = intersect(rownames(estimate_matrix), rownames(ambient_estimate_matrix))
+      
+      ambient_estimate_matrix = as.matrix(ambient_estimate_matrix[ids,])
+      colnames(ambient_estimate_matrix) = "Intercept"
+      
+      ambient_stderr_matrix = as.matrix(ambient_stderr_matrix[ids,])
+      colnames(ambient_stderr_matrix) = "Intercept"
+      
+      perturb_to_ambient = contrast_helper(perturb_name, "Intercept", 
+                                           PEM = estimate_matrix, 
+                                           PSEM = stderr_matrix, 
+                                           PEM_2 = ambient_estimate_matrix, 
+                                           PSEM_2 = ambient_stderr_matrix)
+      expressed_in_perturb_mat = perturb_to_ambient[, "p_value"]
+      expressed_in_perturb_mat = apply(expressed_in_perturb_mat, 2, p.adjust, method="BH")
+      expressed_in_perturb_mat = expressed_in_perturb_mat < sig_thresh
+      
+      expressed_in_perturbation = Matrix::rowSums(expressed_in_perturb_mat) > 0
+      names(expressed_in_perturbation) = rownames(estimate_matrix)
+      data.frame(expressed_in_perturbation) %>% rownames_to_column("id")
+      
+    }
     
-    # ### Debugging:
-    # to_include = control_effects > -10 & PEM[,perturb_id] > -10 
-    # #to_include = row.names(PEM)
-    # effect_est = PEM[to_include,perturb_id] - control_effects[to_include]
-    # se_est = sqrt(PSEM[to_include,perturb_id]^2 + control_effects_se[to_include]^2)
-    # #se_est[se_est > 2] = 2
-    # #se_est[se_est < 0.5] = 0.5
-    # shrunkren_res = ashr::ash(effect_est, se_est)
-    # contrast_res = tibble(id = row.names(PEM[to_include,]),
-    #                       raw_lfc = effect_est,
-    #                       raw_lfc_se = se_est,
-    #                       shrunken_lfc = shrunkren_res$result$PosteriorMean,
-    #                       shrunken_lfc_se = shrunkren_res$result$PosteriorSD,
-    #                       p_value = shrunkren_res$result$lfsr)
-    # qplot(PSEM[to_include,perturb_id], control_effects_se[to_include], color=contrast_res$shrunken_lfc) + geom_abline()
-    # qplot(raw_lfc, shrunken_lfc, data=contrast_res,color=contrast_res$p_value < 0.05) + geom_abline()
-    # #qplot(effect_est, se_est)
-    # ### end debugging
-    
-    
-    effect_est = PEM[,perturb_id] - control_effects
-    se_est = sqrt(PSEM[,perturb_id]^2 + control_effects_se^2)
-    shrunkren_res = ashr::ash(effect_est, se_est,  method="fdr")
-    
-    contrast_res = tibble(id = row.names(PEM),
-                          raw_lfc = effect_est,
-                          raw_lfc_se = se_est,
-                          shrunken_lfc = shrunkren_res$result$PosteriorMean,
-                          shrunken_lfc_se = shrunkren_res$result$PosteriorSD,
-                          p_value = shrunkren_res$result$lfsr)
-    return(contrast_res)
+    cell_perturbations = cell_perturbations %>% 
+      mutate(perturb_to_ambient = purrr::map(.f = compare_perturb_to_ambient,
+                                             .x = term, 
+                                             estimate_matrix = pb_coeffs$coefficients, 
+                                             stderr_matrix = pb_coeffs$stdev.unscaled,
+                                             ambient_estimate_matrix = ambient_estimate_matrix, 
+                                             ambient_stderr_matrix = ambient_stderr_matrix, 
+                                             sig_thresh = sig_thresh))
   }
-  #debug(contrast_helper)
+  
+
   cell_perturbations = cell_perturbations %>% 
     mutate(perturb_effects = purrr:::map(.f = contrast_helper, 
                                          .x = term,
-                                         control_effects = estimates_for_controls,
-                                         control_effects_se = stderrs_for_controls,
+                                         state_2 = control_ids, 
                                          PEM = pb_coeffs$coefficients, 
                                          PSEM = pb_coeffs$stdev.unscaled))
   
@@ -1397,129 +712,6 @@ compare_gene_expression_within_node <- function(cell_group,
 }
 
 
-#' #' classify each gene's pattern of expression in each node of the state transition graph
-#' #' @export
-#' classify_genes_within_node <- function(cell_group, 
-#'                                        ccs, 
-#'                                        pb_cds, 
-#'                                        state_term ="cell_group",
-#'                                        log_fc_thresh=1,
-#'                                        abs_expr_thresh = 1e-3,
-#'                                        sig_thresh=0.05, 
-#'                                        cores=1) {
-#'   
-#'   # now fit models per cell group
-#'   
-#'   cg_pb_cds = pb_cds[, colData(pb_cds)[[state_term]] == cell_group]
-#'   message(paste0("fitting regression models for ", cell_group))
-#'   
-#'   
-#'   pb_group_models = fit_models(cg_pb_cds,
-#'                                model_formula_str=paste(paste0("~ 0 + perturbation")),
-#'                                weights=colData(cg_pb_cds)$num_cells_in_group,
-#'                                cores=cores) %>% 
-#'     dplyr::select(gene_short_name, id, model, model_summary, status)
-#'   
-#'   
-#'   pb_coeffs = shrunken_coefficient_table(cg_pb_cds, pb_group_models, abs_expr_thresh) #coefficient_table(pb_group_models) %>%
-#'   dplyr::select(gene_short_name, id, term, estimate, std_err, p_value, status) %>%
-#'     mutate(term = stringr::str_replace_all(term, "perturbation", ""))
-#'   estimate_matrix = pb_coeffs %>% dplyr::select(id, term, estimate)
-#'   estimate_matrix = estimate_matrix %>% mutate(term = factor(term, levels=unique(colData(cg_pb_cds)[,"perturbation"])))
-#'   estimate_matrix = estimate_matrix %>% tidyr::pivot_wider(names_from=term, values_from=estimate, values_fill=0)
-#'   
-#'   gene_ids = estimate_matrix$id
-#'   estimate_matrix$id = NULL
-#'   estimate_matrix = as.matrix(estimate_matrix)
-#'   row.names(estimate_matrix) = gene_ids
-#'   colnames(estimate_matrix) = as.character(colnames(estimate_matrix))
-#'   
-#'   stderr_matrix = pb_coeffs %>% dplyr::select(id, term, std_err)
-#'   stderr_matrix = stderr_matrix %>% mutate(term = factor(term, levels=unique(colData(cg_pb_cds)[,"perturbation"])))
-#'   stderr_matrix = stderr_matrix %>% tidyr::pivot_wider(names_from=term, values_from=std_err, values_fill=0)
-#'   
-#'   gene_ids = stderr_matrix$id
-#'   stderr_matrix$id = NULL
-#'   stderr_matrix = as.matrix(stderr_matrix)
-#'   row.names(stderr_matrix) = gene_ids
-#'   colnames(stderr_matrix) = as.character(colnames(stderr_matrix))
-#'   
-#'   # collect the ids of any genes that threw an exception in fit_models and
-#'   # set their estimates and std_errors to NA
-#'   fail_gene_ids = pb_group_models %>% filter(status == "FAIL") %>% pull(id)
-#'   if (length(fail_gene_ids) > 0){
-#'     estimate_matrix[fail_gene_ids,] = log(abs_expr_thresh)
-#'     stderr_matrix[fail_gene_ids,] = Inf
-#'   }
-#'   
-#'   # Now shrink the std errors with limma
-#'   # FIXME: this needs read degrees of freedom
-#'   stderr_matrix[estimate_matrix < log(abs_expr_thresh)] = Inf
-#'   estimate_matrix[estimate_matrix < log(abs_expr_thresh)] = log(abs_expr_thresh)
-#'   
-#'   # make a graph of control --> all perturbations
-#'   cell_perturbations = tibble(perturbation = unique(colData(pb_cds)[,"perturbation"]))
-#'   state_graph = data.frame("from" = cell_perturbations[cell_perturbations != "Control"])
-#'   state_graph$to = "Control"
-#'   # igraph defaults to first col > second col, so need to reverse the direction 
-#'   state_graph = state_graph %>% igraph::graph_from_data_frame() %>% igraph::reverse_edges()
-#'   
-#'   cell_perturbations = cell_perturbations %>%
-#'     dplyr::mutate(gene_classes = purrr::map(.f = purrr::possibly(
-#'       classify_genes_in_cell_state, NA_real_), .x = perturbation,
-#'       state_graph, estimate_matrix, stderr_matrix, state_term,
-#'       log_fc_thresh=log_fc_thresh,
-#'       abs_expr_thresh = abs_expr_thresh,
-#'       sig_thresh=sig_thresh,
-#'       cores=cores))
-#'   
-#'   cell_perturbations = cell_perturbations %>%
-#'     filter(is.na(gene_classes) == FALSE) %>%
-#'     dplyr::mutate(gene_class_scores = purrr::map2(.f = purrr::possibly(
-#'       score_genes_for_expression_pattern, NA_real_),
-#'       .x = perturbation,
-#'       .y = gene_classes,
-#'       state_graph,
-#'       estimate_matrix))
-#'   
-#'   # cell_perturbations$cell_group = cell_group
-#'   
-#'   cell_perturbations = cell_perturbations %>%
-#'     filter(is.na(gene_classes) == FALSE) %>%
-#'     tidyr::unnest(gene_class_scores) %>% 
-#'     dplyr::select(perturbation, gene_id, interpretation, pattern_match_score, pattern_activity_score) #%>% 
-#'   # dplyr::filter(!interpretation %in% c("Absent", "Maintained", "Specifically maintained", "Selectively maintained"))
-#'   
-#'   
-#'   cell_perturbations = left_join(cell_perturbations,
-#'                                  rowData(ccs@cds) %>%
-#'                                    as_tibble %>%
-#'                                    select(id, gene_short_name), 
-#'                                  by=c("gene_id"="id")) %>% 
-#'     mutate(group = case_when(
-#'       grepl(pattern ="down", interpretation) | grepl(pattern = "de", interpretation)  ~ "Down",
-#'       grepl(pattern ="aintain", interpretation) ~ "Maintained",
-#'       T ~ "Up"
-#'     )) %>% 
-#'     mutate(broad_interpretation = case_when(
-#'       (grepl(pattern = "ly", interpretation) & group == "Up")  ~ "Sp/Sel Up",
-#'       (grepl(pattern ="ly", interpretation) & group == "Down") ~ "Sp/Sel Down",
-#'       (!grepl(pattern ="ly", interpretation) & group == "Up") ~ "Up",
-#'       (!grepl(pattern ="ly", interpretation) & group == "Down") ~ "Down",
-#'       (grepl(pattern = "ly", interpretation) & group == "Maintained")  ~ "Sp/Sel Maintained",
-#'       (!grepl(pattern ="ly", interpretation) & group == "Maintained") ~ "Maintained",
-#'     )) %>% 
-#'     select(-group)
-#'   
-#'   cell_perturbations = left_join(cell_perturbations, pb_coeffs, 
-#'                                  by = c("perturbation" = "term", 
-#'                                         "gene_short_name", 
-#'                                         "gene_id" = "id"))
-#'   
-#'   
-#'   return(cell_perturbations) 
-#'   
-#' }
 
 
 calc_gsea_enrichment_on_state_specific_genes <- function(gene_patterns_within_state_graph, 
@@ -1569,14 +761,62 @@ fit_genotype_deg = function(ccm,
 }
 
 
+
+# state 1 - state 2
+# is state 1 higher
+#' function to help run an ashr comparison 
+#' @param state_1 list of states to 
+#' @param state_2 list of states compare to state_1
+#' @param PEM estimate matrix for state 1
+#' @param PSEM standard error matrix for state 1
+#' @param PEM_2 estimate matrix for state 2, defaults to PEM if not specified 
+#' @param PSEM_2 standard error matrix for state 2, defaults to PSEM if not specified 
+contrast_helper = function(state_1, 
+                           state_2, 
+                           PEM, 
+                           PSEM,
+                           PEM_2 = PEM,
+                           PSEM_2 = PSEM){
+  
+  
+  state_1_effects = Matrix::rowSums(PEM[,state_1, drop=F])
+  state_1_effects_se = sqrt(Matrix::rowSums(PEM[,state_1, drop=F]^2))
+  
+  state_2_effects = Matrix::rowSums(PEM_2[,state_2, drop=F])
+  state_2_effects_se = sqrt(Matrix::rowSums(PSEM_2[,state_2, drop=F]^2))
+  
+  effect_est = state_1_effects - state_2_effects
+  se_est = sqrt(state_1_effects_se^2 + state_2_effects_se^2)
+  shrunkren_res = ashr::ash(effect_est, se_est,  method="fdr")
+  
+  contrast_res = tibble(id = row.names(PEM),
+                        raw_lfc = effect_est,
+                        raw_lfc_se = se_est,
+                        shrunken_lfc = shrunkren_res$result$PosteriorMean,
+                        shrunken_lfc_se = shrunkren_res$result$PosteriorSD,
+                        p_value = shrunkren_res$result$lfsr)
+  
+}
+
+
+#' 
+#' @param cell_state
+#' @param state_graph
+#' @param estimate_matrix
+#' @param stderr_matrix
+#' @param ambient_estimate_matrix if not specified, based off a threshold
+#' @param ambient_stderr_matrix
 compare_genes_in_cell_state <- function(cell_state, 
                                         state_graph, 
-                                        ambient_estimate_matrix, 
-                                        ambient_stderr_matrix, 
                                         estimate_matrix, 
                                         stderr_matrix,
-                                        state_term="cell_group", log_fc_thresh=1, 
-                                        abs_expr_thresh = 1e-3, sig_thresh=0.05, cores=1) {
+                                        ambient_estimate_matrix = NULL, 
+                                        ambient_stderr_matrix = NULL, 
+                                        state_term="cell_group", 
+                                        log_fc_thresh=1, 
+                                        abs_expr_thresh = 1e-3, 
+                                        sig_thresh=0.05, 
+                                        cores=1) {
   
   
   #expr_self = expr_mat[,cell_state]
@@ -1596,40 +836,15 @@ compare_genes_in_cell_state <- function(cell_state,
   
   message("      examining coefficients ", cell_state)
   
-  # state 1 - state 2
-  # is state 1 higher
-  contrast_helper = function(state_1, 
-                             state_2, 
-                             PEM_1, 
-                             PSEM_1,
-                             PEM_2 = PEM_1,
-                             PSEM_2 = PSEM_1){
-    
-    
-    state_1_effects = Matrix::rowSums(PEM_1[,state_1, drop=F])
-    state_1_effects_se = sqrt(Matrix::rowSums(PEM_1[,state_1, drop=F]^2))
-    
-    state_2_effects = Matrix::rowSums(PEM_2[,state_2, drop=F])
-    state_2_effects_se = sqrt(Matrix::rowSums(PSEM_2[,state_2, drop=F]^2))
-    
-    effect_est = state_1_effects - state_2_effects
-    se_est = sqrt(state_1_effects_se^2 + state_2_effects_se^2)
-    shrunkren_res = ashr::ash(effect_est, se_est,  method="fdr")
-    
-    contrast_res = tibble(id = row.names(PEM_1),
-                          raw_lfc = effect_est,
-                          raw_lfc_se = se_est,
-                          shrunken_lfc = shrunkren_res$result$PosteriorMean,
-                          shrunken_lfc_se = shrunkren_res$result$PosteriorSD,
-                          p_value = shrunkren_res$result$lfsr)
-    
+  
+  if (is.null(ambien_estimate_matrix)) {
+    expr_df$expr_self = pnorm(estimate_matrix[,cell_state] - log(abs_expr_thresh), sd = stderr_matrix[,cell_state], lower.tail=FALSE)
+  } else {
+    cell_state_to_ambient = contrast_helper(cell_state, "Intercept", estimate_matrix, stderr_matrix, 
+                                            ambient_estimate_matrix, ambient_stderr_matrix)
+    expr_df$expr_self = cell_state_to_ambient$p_value
   }
   
-  
-  cell_state_to_ambient = contrast_helper(cell_state, "Intercept", estimate_matrix, stderr_matrix, 
-                                          ambient_estimate_matrix, ambient_stderr_matrix)
-  expr_df$expr_self = cell_state_to_ambient$p_value
-  # expr_df$expr_self = pnorm(estimate_matrix[,cell_state] - log(abs_expr_thresh), sd = stderr_matrix[,cell_state], lower.tail=FALSE)
   expr_df$expr_self = p.adjust(expr_df$expr_self, method="BH") < sig_thresh
   
   expr_df$expressed_in_parents = NA
@@ -1647,43 +862,18 @@ compare_genes_in_cell_state <- function(cell_state,
   expr_df$lower_than_children = NA
   
   
-  
-  
-  # contrast_helper = function(parents, 
-  #                            children, 
-  #                            PEM, 
-  #                            PSEM){
-  #   
-  #   
-  #   parent_effects = Matrix::rowSums(PEM[,parents, drop=F])
-  #   parent_effects_se = sqrt(Matrix::rowSums(PSEM[,parents, drop=F]^2))
-  #   
-  #   child_effects = Matrix::rowSums(PEM[,children, drop=F])
-  #   child_effects_se = sqrt(Matrix::rowSums(PSEM[,children, drop=F]^2))
-  #   
-  #   # effect_est = PEM[,perturb_id] - parent_effects
-  #   # se_est = sqrt(PSEM[,perturb_id]^2 + parent_effects_se^2)
-  #   effect_est = child_effects - parent_effects
-  #   se_est = sqrt(child_effects_se^2 + parent_effects_se^2)
-  #   shrunkren_res = ashr::ash(effect_est, se_est,  method="fdr")
-  #   
-  #   contrast_res = tibble(id = row.names(PEM),
-  #                         raw_lfc = effect_est,
-  #                         raw_lfc_se = se_est,
-  #                         shrunken_lfc = shrunkren_res$result$PosteriorMean,
-  #                         shrunken_lfc_se = shrunkren_res$result$PosteriorSD,
-  #                         p_value = shrunkren_res$result$lfsr)
-  #   return(contrast_res)
-  # }
-  
-  
   if (length(parents) > 0){
     
-    parents_to_ambient = contrast_helper(parents, "Intercept", estimate_matrix, stderr_matrix, 
-                                         ambient_estimate_matrix, ambient_stderr_matrix)
     
-    # expressed_in_parents_mat = pnorm(estimate_matrix[,parents, drop=F] - log(abs_expr_thresh), sd = stderr_matrix[,parents, drop=F], lower.tail=FALSE)
-    expressed_in_parents_mat = parents_to_ambient[, "p_value"]
+    if (is.null(ambien_estimate_matrix)) {
+      expressed_in_parents_mat = pnorm(estimate_matrix[,parents, drop=F] - log(abs_expr_thresh), sd = stderr_matrix[,parents, drop=F], lower.tail=FALSE)
+    } else {
+      parents_to_ambient = contrast_helper(parents, "Intercept", estimate_matrix, stderr_matrix, 
+                                           ambient_estimate_matrix, ambient_stderr_matrix)
+      expressed_in_parents_mat = parents_to_ambient[, "p_value"]
+      
+    }
+    
     expressed_in_parents_mat = apply(expressed_in_parents_mat, 2, p.adjust, method="BH")
     
     expressed_in_parents_mat = expressed_in_parents_mat < sig_thresh
@@ -1692,8 +882,6 @@ compare_genes_in_cell_state <- function(cell_state,
     # higher_than_parents_stat = -t( sweep( t(estimate_matrix[,parents, drop=F]), 2, as.numeric(estimate_matrix[,cell_state]) , `-`) )
     # higher_than_parents_pval = pnorm(higher_than_parents_stat,
     #                                  sd = sqrt(sweep(t(stderr_matrix[,parents, drop=F]^2), 2, as.numeric(stderr_matrix[,cell_state, drop=F]^2), `+`)), lower.tail=FALSE)
-    
-    
     
     # higher_than_parents_stat = new_estimate_matrix[,cell_state]
     # higher_than_parents_pval = p_value_matrix[, cell_state]
@@ -1731,14 +919,16 @@ compare_genes_in_cell_state <- function(cell_state,
   
   if (length(siblings) > 0){
     
+    if (is.null(ambien_estimate_matrix)) {
+      expressed_in_siblings_mat = pnorm(estimate_matrix[,siblings, drop=F] - log(abs_expr_thresh), sd = stderr_matrix[,siblings, drop=F], lower.tail=FALSE)
+    } else {
+      siblings_to_ambient = contrast_helper(siblings, "Intercept", estimate_matrix, stderr_matrix, 
+                                            ambient_estimate_matrix, ambient_stderr_matrix)
+      expressed_in_siblings_mat = siblings_to_ambient[, "p_value"]
+  
+    }
     
-    siblings_to_ambient = contrast_helper(siblings, "Intercept", estimate_matrix, stderr_matrix, 
-                                          ambient_estimate_matrix, ambient_stderr_matrix)
-    
-    # expressed_in_siblings_mat = pnorm(estimate_matrix[,siblings, drop=F] - log(abs_expr_thresh), sd = stderr_matrix[,siblings, drop=F], lower.tail=FALSE)
-    expressed_in_siblings_mat = siblings_to_ambient[, "p_value"]
     expressed_in_siblings_mat = apply(expressed_in_siblings_mat, 2, p.adjust, method="BH")
-    
     expressed_in_siblings_mat = expressed_in_siblings_mat < sig_thresh
     expr_df$expressed_in_siblings = Matrix::rowSums(expressed_in_siblings_mat) > 0
     
@@ -1776,13 +966,15 @@ compare_genes_in_cell_state <- function(cell_state,
   
   if (length(children) > 0){
     
-    children_to_ambient = contrast_helper(children, "Intercept", estimate_matrix, stderr_matrix, 
-                                          ambient_estimate_matrix, ambient_stderr_matrix)
     
-    expressed_in_children_mat = children_to_ambient[,"p_value"]
-    # expressed_in_children_mat = pnorm(estimate_matrix[,children, drop=F] - log(abs_expr_thresh), sd = stderr_matrix[,children, drop=F], lower.tail=FALSE)
+    if (is.null(ambien_estimate_matrix)) {
+      expressed_in_children_mat = pnorm(estimate_matrix[,children, drop=F] - log(abs_expr_thresh), sd = stderr_matrix[,children, drop=F], lower.tail=FALSE)
+    } else {
+      children_to_ambient = contrast_helper(children, "Intercept", estimate_matrix, stderr_matrix, 
+                                            ambient_estimate_matrix, ambient_stderr_matrix)
+      expressed_in_children_mat = children_to_ambient[,"p_value"]
+    }
     expressed_in_children_mat = apply(expressed_in_children_mat, 2, p.adjust, method="BH")
-    
     expressed_in_children_mat = expressed_in_children_mat < sig_thresh
     expr_df$expressed_in_children = Matrix::rowSums(expressed_in_children_mat) > 0
     
