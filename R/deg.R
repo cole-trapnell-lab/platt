@@ -686,13 +686,6 @@ compare_gene_expression_within_node <- function(cell_group,
                                            PSEM_2 = ambient_stderr_matrix)
       
       perturb_to_ambient
-      # expressed_in_perturb_mat = perturb_to_ambient[, "p_value"]
-      # expressed_in_perturb_mat = apply(expressed_in_perturb_mat, 2, p.adjust, method="BH")
-      # expressed_in_perturb_mat = expressedhead_in_perturb_mat < sig_thresh
-      # 
-      # expr_in_perturb = Matrix::rowSums(expressed_in_perturb_mat) > 0
-      # names(expr_in_perturb) = rownames(estimate_matrix)
-      # data.frame(expr_in_perturb) %>% rownames_to_column("id")
       
     }
     
@@ -705,22 +698,7 @@ compare_gene_expression_within_node <- function(cell_group,
                                                  PSEM_2 = ambient_stderr_matrix, 
                                       prefix = "ctrl_to_ambient")
     
-    # ctrl_to_ambient = compare_perturb_to_ambient("Control", 
-    #                                              estimate_matrix = pb_coeffs$coefficients, 
-    #                                              stderr_matrix = pb_coeffs$stdev.unscaled,
-    #                                              ambient_estimate_matrix = ambient_estimate_matrix, 
-    #                                              ambient_stderr_matrix = ambient_stderr_matrix, 
-    #                                              sig_thresh = sig_thresh)
-    # colnames(ctrl_to_ambient)[2:6] = paste0("ctrl_", colnames(ctrl_to_ambient)[2:6])
-    # 
     cell_perturbations = cell_perturbations %>% 
-      # mutate(perturb_to_ambient = purrr::map(.f = compare_perturb_to_ambient,
-      #                                        .x = term,
-      #                                        estimate_matrix = pb_coeffs$coefficients,
-      #                                        stderr_matrix = pb_coeffs$stdev.unscaled,
-      #                                        ambient_estimate_matrix = ambient_estimate_matrix,
-      #                                        ambient_stderr_matrix = ambient_stderr_matrix,
-      #                                        sig_thresh = sig_thresh))
       mutate(perturb_to_ambient = purrr:::map(.f = contrast_helper, 
                                            .x = term,
                                            state_2 = "Intercept", 
@@ -887,9 +865,12 @@ compare_genes_in_cell_state <- function(cell_state,
   if (is.null(ambient_estimate_matrix)) {
     expr_df$expr_self = pnorm(estimate_matrix[,cell_state] - log(abs_expr_thresh), sd = stderr_matrix[,cell_state], lower.tail=FALSE)
   } else {
-    cell_state_to_ambient = contrast_helper(cell_state, "Intercept", estimate_matrix, stderr_matrix, 
-                                            ambient_estimate_matrix, ambient_stderr_matrix)
+    cell_state_to_ambient = contrast_helper(cell_state, "Intercept", 
+                                            PEM = estimate_matrix, PSEM = stderr_matrix, 
+                                            PEM_2 = ambient_estimate_matrix, PSEM_2 = ambient_stderr_matrix, 
+                                            prefix = "cell_state")
     expr_df$expr_self = cell_state_to_ambient$p_value
+    expr_df = left_join(expr_df,cell_state_to_ambient, by = c("gene_id" = "id"))
   }
   
   expr_df$expr_self = p.adjust(expr_df$expr_self, method="BH") < sig_thresh
@@ -915,10 +896,12 @@ compare_genes_in_cell_state <- function(cell_state,
     if (is.null(ambient_estimate_matrix)) {
       expressed_in_parents_mat = pnorm(estimate_matrix[,parents, drop=F] - log(abs_expr_thresh), sd = stderr_matrix[,parents, drop=F], lower.tail=FALSE)
     } else {
-      parents_to_ambient = contrast_helper(parents, "Intercept", estimate_matrix, stderr_matrix, 
-                                           ambient_estimate_matrix, ambient_stderr_matrix)
+      parents_to_ambient = contrast_helper(parents, "Intercept", 
+                                           PEM = estimate_matrix, PSEM = stderr_matrix, 
+                                           PEM_2 = ambient_estimate_matrix, PSEM_2 = ambient_stderr_matrix, 
+                                           prefix = "parents")
       expressed_in_parents_mat = parents_to_ambient[, "p_value"]
-      
+      expr_df = left_join(expr_df, parents_to_ambient, by = c("gene_id" = "id"))
     }
     
     expressed_in_parents_mat = apply(expressed_in_parents_mat, 2, p.adjust, method="BH")
@@ -932,7 +915,9 @@ compare_genes_in_cell_state <- function(cell_state,
     
     # higher_than_parents_stat = new_estimate_matrix[,cell_state]
     # higher_than_parents_pval = p_value_matrix[, cell_state]
-    cell_state_to_parents = contrast_helper(cell_state, parents, estimate_matrix, stderr_matrix)
+    cell_state_to_parents = contrast_helper(cell_state, parents, 
+                                            PEM = estimate_matrix, PSEM = stderr_matrix, 
+                                            prefix = "cell_state_to_parents")
     higher_than_parents_stat = cell_state_to_parents[, "shrunken_lfc"]
     higher_than_parents_pval = cell_state_to_parents[,"p_value"]
     higher_than_parents_pval = apply(higher_than_parents_pval, 2, p.adjust, method="BH")
@@ -948,6 +933,8 @@ compare_genes_in_cell_state <- function(cell_state,
     
     lower_than_parents_mat = abs(higher_than_parents_stat) > log_fc_thresh & lower_than_parents_pval < sig_thresh
     expr_df$lower_than_parents = Matrix::rowSums(lower_than_parents_mat) > 0
+    expr_df = left_join(expr_df, cell_state_to_parents, by = c("gene_id" = "id"))
+    
   }else{
     expr_df$expressed_in_parents = NA
     expr_df$expressed_in_siblings = NA
@@ -969,8 +956,10 @@ compare_genes_in_cell_state <- function(cell_state,
     if (is.null(ambient_estimate_matrix)) {
       expressed_in_siblings_mat = pnorm(estimate_matrix[,siblings, drop=F] - log(abs_expr_thresh), sd = stderr_matrix[,siblings, drop=F], lower.tail=FALSE)
     } else {
-      siblings_to_ambient = contrast_helper(siblings, "Intercept", estimate_matrix, stderr_matrix, 
-                                            ambient_estimate_matrix, ambient_stderr_matrix)
+      siblings_to_ambient = contrast_helper(siblings, "Intercept", 
+                                            PEM = estimate_matrix, PSEM = stderr_matrix, 
+                                            PEM_2 = ambient_estimate_matrix, PSEM_2 = ambient_stderr_matrix, 
+                                            prefix = "siblings")
       expressed_in_siblings_mat = siblings_to_ambient[, "p_value"]
   
     }
@@ -983,7 +972,9 @@ compare_genes_in_cell_state <- function(cell_state,
     # higher_than_siblings_pval = pnorm(higher_than_siblings_stat,
     #                                   sd = sqrt(sweep(t(stderr_matrix[,siblings, drop=F]^2), 2, as.numeric(stderr_matrix[,cell_state, drop=F]^2), `+`)), lower.tail=FALSE)
     
-    cell_state_to_siblings = contrast_helper(cell_state, siblings, estimate_matrix, stderr_matrix)
+    cell_state_to_siblings = contrast_helper(cell_state, siblings, 
+                                             PEM = estimate_matrix, PSEM = stderr_matrix, 
+                                             prefix = "cell_state_to_siblings")
     
     higher_than_siblings_stat = cell_state_to_siblings[, "shrunken_lfc"]
     higher_than_siblings_pval = cell_state_to_siblings[,"p_value"]
@@ -1001,7 +992,7 @@ compare_genes_in_cell_state <- function(cell_state,
     lower_than_siblings_mat = abs(higher_than_siblings_stat) > log_fc_thresh & lower_than_siblings_pval < sig_thresh
     expr_df$lower_than_all_siblings = Matrix::rowSums(lower_than_siblings_mat) == ncol(lower_than_siblings_mat)
     expr_df$lower_than_siblings = Matrix::rowSums(lower_than_siblings_mat) > 0
-    
+    expr_df = left_join(expr_df, cell_state_to_siblings, by = c("gene_id" = "id"))
     
   }else{
     expr_df$expressed_in_siblings = NA
@@ -1017,8 +1008,10 @@ compare_genes_in_cell_state <- function(cell_state,
     if (is.null(ambient_estimate_matrix)) {
       expressed_in_children_mat = pnorm(estimate_matrix[,children, drop=F] - log(abs_expr_thresh), sd = stderr_matrix[,children, drop=F], lower.tail=FALSE)
     } else {
-      children_to_ambient = contrast_helper(children, "Intercept", estimate_matrix, stderr_matrix, 
-                                            ambient_estimate_matrix, ambient_stderr_matrix)
+      children_to_ambient = contrast_helper(children, "Intercept", 
+                                            PEM = estimate_matrix, PSEM = stderr_matrix, 
+                                            PEM_2 = ambient_estimate_matrix, PSEM_2 = ambient_stderr_matrix, 
+                                            prefix = "children")
       expressed_in_children_mat = children_to_ambient[,"p_value"]
     }
     expressed_in_children_mat = apply(expressed_in_children_mat, 2, p.adjust, method="BH")
@@ -1029,7 +1022,9 @@ compare_genes_in_cell_state <- function(cell_state,
     # higher_than_children_pval = pnorm(higher_than_children_stat,
     #                                   sd = sqrt(sweep(t(stderr_matrix[,children, drop=F]^2), 2, as.numeric(stderr_matrix[,cell_state, drop=F]^2), `+`)), lower.tail=FALSE)
     
-    cell_state_to_children = contrast_helper(cell_state, children, estimate_matrix, stderr_matrix)
+    cell_state_to_children = contrast_helper(cell_state, children, 
+                                             PEM = estimate_matrix, PSEM = stderr_matrix, 
+                                             prefix = "cell_state_to_children")
     
     higher_than_children_stat = cell_state_to_children[, "shrunken_lfc"]
     higher_than_children_pval = cell_state_to_children[, "p_value"]
@@ -1047,7 +1042,7 @@ compare_genes_in_cell_state <- function(cell_state,
     lower_than_children_mat = abs(higher_than_children_stat) > log_fc_thresh & lower_than_children_pval < sig_thresh
     expr_df$lower_than_all_children = Matrix::rowSums(lower_than_children_mat) == ncol(lower_than_children_mat)
     expr_df$lower_than_children = Matrix::rowSums(lower_than_children_mat) > 0
-    
+    expr_df = left_join(expr_df, cell_state_to_children, by = c("gene_id" = "id"))
     
   }else{
     expr_df$expressed_in_children = NA
