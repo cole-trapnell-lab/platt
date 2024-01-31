@@ -684,33 +684,51 @@ compare_gene_expression_within_node <- function(cell_group,
                                            PSEM = stderr_matrix, 
                                            PEM_2 = ambient_estimate_matrix, 
                                            PSEM_2 = ambient_stderr_matrix)
-      expressed_in_perturb_mat = perturb_to_ambient[, "p_value"]
-      expressed_in_perturb_mat = apply(expressed_in_perturb_mat, 2, p.adjust, method="BH")
-      expressed_in_perturb_mat = expressedhead_in_perturb_mat < sig_thresh
       
-      expr_in_perturb = Matrix::rowSums(expressed_in_perturb_mat) > 0
-      names(expr_in_perturb) = rownames(estimate_matrix)
-      data.frame(expr_in_perturb) %>% rownames_to_column("id")
+      perturb_to_ambient
+      # expressed_in_perturb_mat = perturb_to_ambient[, "p_value"]
+      # expressed_in_perturb_mat = apply(expressed_in_perturb_mat, 2, p.adjust, method="BH")
+      # expressed_in_perturb_mat = expressedhead_in_perturb_mat < sig_thresh
+      # 
+      # expr_in_perturb = Matrix::rowSums(expressed_in_perturb_mat) > 0
+      # names(expr_in_perturb) = rownames(estimate_matrix)
+      # data.frame(expr_in_perturb) %>% rownames_to_column("id")
       
     }
     
     # add ctrl comparison 
-    ctrl_to_ambient = compare_perturb_to_ambient("Control", 
-                                                 estimate_matrix = pb_coeffs$coefficients, 
-                                                 stderr_matrix = pb_coeffs$stdev.unscaled,
-                                                 ambient_estimate_matrix = ambient_estimate_matrix, 
-                                                 ambient_stderr_matrix = ambient_stderr_matrix, 
-                                                 sig_thresh = sig_thresh)
-    colnames(ctrl_to_ambient)[2] = "expr_in_ctrl"
+    ctrl_to_ambient = contrast_helper("Control", 
+                                                 "Intercept",
+                                                 PEM = pb_coeffs$coefficients, 
+                                                 PSEM = pb_coeffs$stdev.unscaled,
+                                                 PEM_2 = ambient_estimate_matrix, 
+                                                 PSEM_2 = ambient_stderr_matrix, 
+                                      prefix = "ctrl_to_ambient")
     
+    # ctrl_to_ambient = compare_perturb_to_ambient("Control", 
+    #                                              estimate_matrix = pb_coeffs$coefficients, 
+    #                                              stderr_matrix = pb_coeffs$stdev.unscaled,
+    #                                              ambient_estimate_matrix = ambient_estimate_matrix, 
+    #                                              ambient_stderr_matrix = ambient_stderr_matrix, 
+    #                                              sig_thresh = sig_thresh)
+    # colnames(ctrl_to_ambient)[2:6] = paste0("ctrl_", colnames(ctrl_to_ambient)[2:6])
+    # 
     cell_perturbations = cell_perturbations %>% 
-      mutate(perturb_to_ambient = purrr::map(.f = compare_perturb_to_ambient,
-                                             .x = term, 
-                                             estimate_matrix = pb_coeffs$coefficients, 
-                                             stderr_matrix = pb_coeffs$stdev.unscaled,
-                                             ambient_estimate_matrix = ambient_estimate_matrix, 
-                                             ambient_stderr_matrix = ambient_stderr_matrix, 
-                                             sig_thresh = sig_thresh))
+      # mutate(perturb_to_ambient = purrr::map(.f = compare_perturb_to_ambient,
+      #                                        .x = term,
+      #                                        estimate_matrix = pb_coeffs$coefficients,
+      #                                        stderr_matrix = pb_coeffs$stdev.unscaled,
+      #                                        ambient_estimate_matrix = ambient_estimate_matrix,
+      #                                        ambient_stderr_matrix = ambient_stderr_matrix,
+      #                                        sig_thresh = sig_thresh))
+      mutate(perturb_to_ambient = purrr:::map(.f = contrast_helper, 
+                                           .x = term,
+                                           state_2 = "Intercept", 
+                                           PEM = pb_coeffs$coefficients, 
+                                           PSEM = pb_coeffs$stdev.unscaled, 
+                                           PEM_2 = ambient_estimate_matrix, 
+                                           PSEM_2 = ambient_stderr_matrix, 
+                                           prefix = "perturb_to_ambient"))
     
     cell_perturbations = cell_perturbations %>% 
       tidyr::unnest(perturb_to_ambient) %>% 
@@ -726,7 +744,8 @@ compare_gene_expression_within_node <- function(cell_group,
                                          .x = term,
                                          state_2 = control_ids, 
                                          PEM = pb_coeffs$coefficients, 
-                                         PSEM = pb_coeffs$stdev.unscaled))
+                                         PSEM = pb_coeffs$stdev.unscaled, 
+                                         prefix = "perturb_to_ctrl"))
   
   return(cell_perturbations) 
   
@@ -797,8 +816,10 @@ contrast_helper = function(state_1,
                            PEM, 
                            PSEM,
                            PEM_2 = PEM,
-                           PSEM_2 = PSEM){
+                           PSEM_2 = PSEM, 
+                           prefix = NULL){
   
+  ids = intersect(rownames(PEM), rownames(PEM_2))
   
   state_1_effects = Matrix::rowSums(PEM[,state_1, drop=F])
   state_1_effects_se = sqrt(Matrix::rowSums(PEM[,state_1, drop=F]^2))
@@ -806,17 +827,22 @@ contrast_helper = function(state_1,
   state_2_effects = Matrix::rowSums(PEM_2[,state_2, drop=F])
   state_2_effects_se = sqrt(Matrix::rowSums(PSEM_2[,state_2, drop=F]^2))
   
-  effect_est = state_1_effects - state_2_effects
-  se_est = sqrt(state_1_effects_se^2 + state_2_effects_se^2)
+  effect_est = state_1_effects[ids] - state_2_effects[ids]
+  se_est = sqrt(state_1_effects_se[ids]^2 + state_2_effects_se[ids]^2)
   shrunkren_res = ashr::ash(effect_est, se_est, method="fdr")
   
-  contrast_res = tibble(id = row.names(PEM),
+  contrast_res = tibble(id = ids, #row.names(PEM),
                         raw_lfc = effect_est,
                         raw_lfc_se = se_est,
                         shrunken_lfc = shrunkren_res$result$PosteriorMean,
                         shrunken_lfc_se = shrunkren_res$result$PosteriorSD,
                         p_value = shrunkren_res$result$lfsr)
   
+  if (!is.null(prefix)){
+    colnames(contrast_res)[2:6] = paste(prefix, colnames(contrast_res)[2:6], sep="_")
+    
+  }
+  return(contrast_res)
 }
 
 
