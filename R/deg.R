@@ -237,7 +237,7 @@ estimate_ambient_rna <- function(ccs,
   
   pseudobulks_to_test = which(colData(pb_cds)$num_cells_in_group >= min_cells_per_pseudobulk)
   
-  message("fitting regression models")
+  message("fitting ambient regression models")
   pb_cds = pb_cds[,pseudobulks_to_test]
   
   # Collect background estimate 
@@ -263,8 +263,6 @@ compare_genes_over_graph <- function(ccs,
                                     assembly_group = NULL, 
                                     label_nodes_by="cell_state", 
                                     nuisance_model_formula_str = "0",
-                                    # ambient_estimate_matrix = NULL, 
-                                    # ambient_stderr_matrix = NULL, 
                                     ambient_coeffs = NULL, 
                                     log_fc_thresh=1,
                                     abs_expr_thresh = 1e-3,
@@ -552,11 +550,18 @@ compare_genes_within_state_graph = function(ccs,
   #                         model_formula_str="~ 1",
   #                         cores=cores)
   # ambient_coeffs = collect_coefficients_for_shrinkage(pb_cds, pb_ambient, abs_expr_thresh, term_to_keep = "(Intercept)") 
-  
-  
+
   
   if (is.null(cell_groups)) {
     cell_groups = rownames(counts(ccs))
+  }
+  
+  if (is.null(ambient_coeffs)){
+    ambient_estimate_matrix = NULL
+    ambient_stderr_matrix =  NULL
+  } else {
+    ambient_estimate_matrix = ambient_coeffs$coefficients 
+    ambient_stderr_matrix = ambient_coeffs$stdev.unscaled
   }
   
   df = data.frame(cell_group = cell_groups) %>% 
@@ -681,13 +686,22 @@ compare_gene_expression_within_node <- function(cell_group,
                                            PSEM_2 = ambient_stderr_matrix)
       expressed_in_perturb_mat = perturb_to_ambient[, "p_value"]
       expressed_in_perturb_mat = apply(expressed_in_perturb_mat, 2, p.adjust, method="BH")
-      expressed_in_perturb_mat = expressed_in_perturb_mat < sig_thresh
+      expressed_in_perturb_mat = expressedhead_in_perturb_mat < sig_thresh
       
-      expressed_in_perturbation = Matrix::rowSums(expressed_in_perturb_mat) > 0
-      names(expressed_in_perturbation) = rownames(estimate_matrix)
-      data.frame(expressed_in_perturbation) %>% rownames_to_column("id")
+      expr_in_perturb = Matrix::rowSums(expressed_in_perturb_mat) > 0
+      names(expr_in_perturb) = rownames(estimate_matrix)
+      data.frame(expr_in_perturb) %>% rownames_to_column("id")
       
     }
+    
+    # add ctrl comparison 
+    ctrl_to_ambient = compare_perturb_to_ambient("Control", 
+                                                 estimate_matrix = pb_coeffs$coefficients, 
+                                                 stderr_matrix = pb_coeffs$stdev.unscaled,
+                                                 ambient_estimate_matrix = ambient_estimate_matrix, 
+                                                 ambient_stderr_matrix = ambient_stderr_matrix, 
+                                                 sig_thresh = sig_thresh)
+    colnames(ctrl_to_ambient)[2] = "expr_in_ctrl"
     
     cell_perturbations = cell_perturbations %>% 
       mutate(perturb_to_ambient = purrr::map(.f = compare_perturb_to_ambient,
@@ -697,6 +711,13 @@ compare_gene_expression_within_node <- function(cell_group,
                                              ambient_estimate_matrix = ambient_estimate_matrix, 
                                              ambient_stderr_matrix = ambient_stderr_matrix, 
                                              sig_thresh = sig_thresh))
+    
+    cell_perturbations = cell_perturbations %>% 
+      tidyr::unnest(perturb_to_ambient) %>% 
+      left_join(ctrl_to_ambient, by = "id") %>% 
+      group_by(term) %>% tidyr::nest()
+      
+    
   }
   
 
@@ -787,7 +808,7 @@ contrast_helper = function(state_1,
   
   effect_est = state_1_effects - state_2_effects
   se_est = sqrt(state_1_effects_se^2 + state_2_effects_se^2)
-  shrunkren_res = ashr::ash(effect_est, se_est,  method="fdr")
+  shrunkren_res = ashr::ash(effect_est, se_est, method="fdr")
   
   contrast_res = tibble(id = row.names(PEM),
                         raw_lfc = effect_est,
