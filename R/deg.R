@@ -869,7 +869,7 @@ compare_genes_in_cell_state <- function(cell_state,
                                             PEM = estimate_matrix, PSEM = stderr_matrix, 
                                             PEM_2 = ambient_estimate_matrix, PSEM_2 = ambient_stderr_matrix, 
                                             prefix = "cell_state")
-    expr_df$expr_self = cell_state_to_ambient$p_value
+    expr_df$expr_self = cell_state_to_ambient$cell_state_p_value
     expr_df = left_join(expr_df,cell_state_to_ambient, by = c("gene_id" = "id"))
   }
   
@@ -900,7 +900,7 @@ compare_genes_in_cell_state <- function(cell_state,
                                            PEM = estimate_matrix, PSEM = stderr_matrix, 
                                            PEM_2 = ambient_estimate_matrix, PSEM_2 = ambient_stderr_matrix, 
                                            prefix = "parents")
-      expressed_in_parents_mat = parents_to_ambient[, "p_value"]
+      expressed_in_parents_mat = parents_to_ambient[, "parents_p_value"]
       expr_df = left_join(expr_df, parents_to_ambient, by = c("gene_id" = "id"))
     }
     
@@ -919,7 +919,7 @@ compare_genes_in_cell_state <- function(cell_state,
                                             PEM = estimate_matrix, PSEM = stderr_matrix, 
                                             prefix = "cell_state_to_parents")
     higher_than_parents_stat = cell_state_to_parents[, "shrunken_lfc"]
-    higher_than_parents_pval = cell_state_to_parents[,"p_value"]
+    higher_than_parents_pval = cell_state_to_parents[,"cell_state_to_parents_p_value"]
     higher_than_parents_pval = apply(higher_than_parents_pval, 2, p.adjust, method="BH")
     
     higher_than_parents_mat = abs(higher_than_parents_stat) > log_fc_thresh & higher_than_parents_pval < sig_thresh
@@ -928,7 +928,7 @@ compare_genes_in_cell_state <- function(cell_state,
     # lower_than_parents_pval = pnorm(-higher_than_parents_stat,
     #                                 sd = sqrt(sweep(t(stderr_matrix[,parents, drop=F]^2), 2, as.numeric(stderr_matrix[,cell_state, drop=F]^2), `+`)), lower.tail=FALSE)
     # lower_than_parents_pval = p_value_matrix[,cell_state]
-    lower_than_parents_pval = cell_state_to_parents[,"p_value"]
+    lower_than_parents_pval = cell_state_to_parents[,"cell_state_to_parents_p_value"]
     lower_than_parents_pval = apply(lower_than_parents_pval, 2, p.adjust, method="BH")
     
     lower_than_parents_mat = abs(higher_than_parents_stat) > log_fc_thresh & lower_than_parents_pval < sig_thresh
@@ -960,7 +960,7 @@ compare_genes_in_cell_state <- function(cell_state,
                                             PEM = estimate_matrix, PSEM = stderr_matrix, 
                                             PEM_2 = ambient_estimate_matrix, PSEM_2 = ambient_stderr_matrix, 
                                             prefix = "siblings")
-      expressed_in_siblings_mat = siblings_to_ambient[, "p_value"]
+      expressed_in_siblings_mat = siblings_to_ambient[, "siblings_p_value"]
   
     }
     
@@ -977,7 +977,7 @@ compare_genes_in_cell_state <- function(cell_state,
                                              prefix = "cell_state_to_siblings")
     
     higher_than_siblings_stat = cell_state_to_siblings[, "shrunken_lfc"]
-    higher_than_siblings_pval = cell_state_to_siblings[,"p_value"]
+    higher_than_siblings_pval = cell_state_to_siblings[,"cell_state_to_siblings_p_value"]
     higher_than_siblings_pval = apply(higher_than_siblings_pval, 2, p.adjust, method="BH")
     
     higher_than_siblings_mat = abs(higher_than_siblings_stat) > log_fc_thresh & higher_than_siblings_pval < sig_thresh
@@ -986,7 +986,7 @@ compare_genes_in_cell_state <- function(cell_state,
     
     # lower_than_siblings_pval = pnorm(-higher_than_siblings_stat,
     #                                  sd = sqrt(sweep(t(stderr_matrix[,siblings, drop=F]^2), 2, as.numeric(stderr_matrix[,cell_state, drop=F]^2), `+`)), lower.tail=FALSE)
-    lower_than_siblings_pval = cell_state_to_siblings[,"p_value"]
+    lower_than_siblings_pval = cell_state_to_siblings[,"cell_state_to_siblings_p_value"]
     lower_than_siblings_pval = apply(lower_than_siblings_pval, 2, p.adjust, method="BH")
     
     lower_than_siblings_mat = abs(higher_than_siblings_stat) > log_fc_thresh & lower_than_siblings_pval < sig_thresh
@@ -1012,7 +1012,7 @@ compare_genes_in_cell_state <- function(cell_state,
                                             PEM = estimate_matrix, PSEM = stderr_matrix, 
                                             PEM_2 = ambient_estimate_matrix, PSEM_2 = ambient_stderr_matrix, 
                                             prefix = "children")
-      expressed_in_children_mat = children_to_ambient[,"p_value"]
+      expressed_in_children_mat = children_to_ambient[,"children_p_value"]
     }
     expressed_in_children_mat = apply(expressed_in_children_mat, 2, p.adjust, method="BH")
     expressed_in_children_mat = expressed_in_children_mat < sig_thresh
@@ -1027,7 +1027,7 @@ compare_genes_in_cell_state <- function(cell_state,
                                              prefix = "cell_state_to_children")
     
     higher_than_children_stat = cell_state_to_children[, "shrunken_lfc"]
-    higher_than_children_pval = cell_state_to_children[, "p_value"]
+    higher_than_children_pval = cell_state_to_children[, "cell_state_to_children_p_value"]
     higher_than_children_pval = apply(higher_than_children_pval, 2, p.adjust, method="BH")
     
     higher_than_children_mat = abs(higher_than_children_stat) > log_fc_thresh & higher_than_children_pval < sig_thresh
@@ -1036,7 +1036,7 @@ compare_genes_in_cell_state <- function(cell_state,
     
     # lower_than_children_pval = pnorm(-higher_than_children_stat,
     # sd = sqrt(sweep(t(stderr_matrix[,children, drop=F]^2), 2, as.numeric(stderr_matrix[,cell_state, drop=F]^2), `+`)), lower.tail=FALSE)
-    lower_than_children_pval = cell_state_to_children[, "p_value"]
+    lower_than_children_pval = cell_state_to_children[, "cell_state_to_children_p_value"]
     # lower_than_children_pval = apply(lower_than_children_pval, 2, p.adjust, method="BH")
     
     lower_than_children_mat = abs(higher_than_children_stat) > log_fc_thresh & lower_than_children_pval < sig_thresh
