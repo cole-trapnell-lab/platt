@@ -918,8 +918,8 @@ compare_genes_in_cell_state <- function(cell_state,
     cell_state_to_parents = contrast_helper(cell_state, parents, 
                                             PEM = estimate_matrix, PSEM = stderr_matrix, 
                                             prefix = "cell_state_to_parents")
-    higher_than_parents_stat = cell_state_to_parents[, "shrunken_lfc"]
-    higher_than_parents_pval = cell_state_to_parents[,"cell_state_to_parents_p_value"]
+    higher_than_parents_stat = cell_state_to_parents[, "cell_state_to_parents_shrunken_lfc"]
+    higher_than_parents_pval = cell_state_to_parents[, "cell_state_to_parents_p_value"]
     higher_than_parents_pval = apply(higher_than_parents_pval, 2, p.adjust, method="BH")
     
     higher_than_parents_mat = abs(higher_than_parents_stat) > log_fc_thresh & higher_than_parents_pval < sig_thresh
@@ -976,7 +976,7 @@ compare_genes_in_cell_state <- function(cell_state,
                                              PEM = estimate_matrix, PSEM = stderr_matrix, 
                                              prefix = "cell_state_to_siblings")
     
-    higher_than_siblings_stat = cell_state_to_siblings[, "shrunken_lfc"]
+    higher_than_siblings_stat = cell_state_to_siblings[, "cell_state_to_siblings_shrunken_lfc"]
     higher_than_siblings_pval = cell_state_to_siblings[,"cell_state_to_siblings_p_value"]
     higher_than_siblings_pval = apply(higher_than_siblings_pval, 2, p.adjust, method="BH")
     
@@ -1026,7 +1026,7 @@ compare_genes_in_cell_state <- function(cell_state,
                                              PEM = estimate_matrix, PSEM = stderr_matrix, 
                                              prefix = "cell_state_to_children")
     
-    higher_than_children_stat = cell_state_to_children[, "shrunken_lfc"]
+    higher_than_children_stat = cell_state_to_children[, "cell_state_to_children_shrunken_lfc"]
     higher_than_children_pval = cell_state_to_children[, "cell_state_to_children_p_value"]
     higher_than_children_pval = apply(higher_than_children_pval, 2, p.adjust, method="BH")
     
