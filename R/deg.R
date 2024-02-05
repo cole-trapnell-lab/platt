@@ -383,7 +383,9 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   
   mean_expr_helper <- function(model, new_data, type="response"){
     res = tryCatch({
-      mean(stats::predict(model, newdata=new_data, type=type))
+      #mean(stats::predict(model, newdata=new_data, type=type))
+      # FIXME: this is a hack to avoid attaching speedglm for now
+      mean(speedglm:::predict.speedglm(model, newdata=new_data, type=type))
     }, error = function(e){
       NA
     })
@@ -425,7 +427,7 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
     #dplyr::select(gene_short_name, id, term, estimate, std_err, p_value, status) %>%
     filter(grepl(term_to_keep, term)) %>% 
     mutate(term = stringr::str_replace_all(term, term_to_keep, "")) %>% 
-    mutate(term = str_replace(term,"\\(\\)","Intercept"))
+    mutate(term = stringr::str_replace(term,"\\(\\)","Intercept"))
   
   estimate_matrix = raw_coefficient_table %>% dplyr::select(id, term, estimate)
   if (term_to_keep != "(Intercept)"){
