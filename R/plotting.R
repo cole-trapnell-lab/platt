@@ -2008,3 +2008,40 @@ plot_genes_expr_across_cell_groups = function(cds,
   
   
 }
+
+
+#' selects the fold changes from when a cell type is at peak abundance in the control
+#' @param ccm cell_count_model, assumes output of fit_genotype_ccm 
+#' @param start_time
+#' @param stop_time
+#' 
+get_max_abundance_contrast = function(ccm, 
+                                      start_time = NULL, 
+                                      stop_time = NULL, 
+                                      interval_col = "timepoint", 
+                                      ...){
+  
+  timepoints = as.numeric(unique(colData(ccm@ccs@cds)[[interval_col]]))
+  timepoints = timepoints[!is.na(timepoints)]
+  
+  if (is.null(start_time)) {
+    start_time = min(timepoints)
+  }
+  if (is.null(stop_time)) {
+    stop_time = max(timepoints)
+  }
+  
+  ctrl_abundances = get_extant_cell_types(ccm, start = start_time, stop = stop_time, knockout = F) 
+  perturb_effects = platt:::get_perturbation_effects(ccm, ...)
+  peak_abundances = ctrl_abundances %>% 
+    filter(!is.na(percent_cell_type_range)) %>% 
+    group_by(cell_group) %>% 
+    top_n(n = 1, wt = percent_max_abund) %>% 
+    select(timepoint, cell_group) 
+  
+  peak_abundances$timepoint = as.character(peak_abundances$timepoint)
+  
+  max_abund_tbl = left_join(peak_abundances, perturb_effects, by = c("cell_group", "timepoint" = "time"))
+  
+  return(max_abund_tbl)
+}
