@@ -203,12 +203,18 @@ unnest_degs = function(ccs,
 
 
 #' 
+#' @param abs_expr_thresh 
+#' @param min_samples_detected 
+#' @param min_cells_per_pseudobulk 
+#' @param cores 
+#' @param gene_ids 
+#' @param group_nodes_by 
+#' @param ... 
 #' @param ccs 
+#'
 #' @param 
 estimate_ambient_rna <- function(ccs, 
-                                 log_fc_thresh=1,
                                  abs_expr_thresh = 1e-3,
-                                 sig_thresh=0.05,
                                  min_samples_detected = 2,
                                  min_cells_per_pseudobulk = 3,
                                  cores=1,
@@ -230,10 +236,23 @@ estimate_ambient_rna <- function(ccs,
     pb_cds = pb_cds[gene_ids,]
   }
   
+  
+  # FIXME: assess whether we actually want to do these filtering steps:
   # expr_over_thresh = threshold_expression_matrix(normalized_counts(pb_cds, "size_only", pseudocount = 0), ...)
   expr_over_thresh = normalized_counts(pb_cds, "size_only", pseudocount = 0)
   genes_to_test = which(Matrix::rowSums(expr_over_thresh) >= min_samples_detected)
   pb_cds = pb_cds[genes_to_test,]
+  
+  colData(pb_cds)$Size_Factor = colData(pb_cds)$num_cells_in_group
+  
+  # mean_expr = Matrix::rowMeans(normalized_counts(pb_cds, norm_method="size_only", pseudocount=0)) 
+  # max_expr = DelayedMatrixStats::rowMaxs(normalized_counts(pb_cds, norm_method="size_only", pseudocount=0))
+  # mean_v_max = mean_expr / max_expr
+  # mean_v_max = mean_v_max[max_expr > 0]
+  # median_mean_v_max = median(mean_v_max)
+  # message(paste("ambient RNA estimate: ", median_mean_v_max))
+  # 
+  #colData(pb_cds)$Size_Factor = colData(pb_cds)$Size_Factor / median_mean_v_max
   
   pseudobulks_to_test = which(colData(pb_cds)$num_cells_in_group >= min_cells_per_pseudobulk)
   
@@ -245,6 +264,23 @@ estimate_ambient_rna <- function(ccs,
                           model_formula_str="~ 1",
                           cores=cores)
   ambient_coeffs = collect_coefficients_for_shrinkage(pb_cds, pb_ambient, abs_expr_thresh, term_to_keep = "(Intercept)") 
+  
+  # Scale the "number of cells" up by the fraction of ambient RNA to arrive 
+  # at transcript count estimates coming from the soup 
+  #colData(pb_cds)$Size_Factor = colData(pb_cds)$Size_Factor / median_mean_v_max 
+  
+  
+  # FIXME:
+  # automatic estimate of ambient fraction. Total heuristic, replace with below-the-knee estimate
+  mean_expr = Matrix::rowMeans(normalized_counts(pb_cds, norm_method="size_only", pseudocount=0))
+  max_expr = DelayedMatrixStats::rowMaxs(normalized_counts(pb_cds, norm_method="size_only", pseudocount=0))
+  mean_v_max = mean_expr / max_expr
+  mean_v_max = mean_v_max[max_expr > 0]
+  median_mean_v_max = median(mean_v_max)
+  message(paste("ambient RNA estimate: ", median_mean_v_max))
+
+  ambient_coeffs$coefficients = ambient_coeffs$coefficients + log(median_mean_v_max)
+  #ambient_coeffs$stdev.unscaled = ambient_coeffs$stdev.unscaled
   
   return(ambient_coeffs)
   
@@ -501,7 +537,7 @@ compare_genes_within_state_graph = function(ccs,
                                             abs_expr_thresh = 1e-3,
                                             sig_thresh = 0.05,
                                             min_samples_detected = 2,
-                                            min_cells_per_pseudobulk = 3,
+                                            min_cells_per_pseudobulk = NULL,
                                             cores = 1,
                                             ...) {
   
@@ -543,10 +579,6 @@ compare_genes_within_state_graph = function(ccs,
   genes_to_test = which(Matrix::rowSums(expr_over_thresh) >= min_samples_detected)
   pb_cds = pb_cds[genes_to_test,]
   
-  pseudobulks_to_test = which(colData(pb_cds)$num_cells_in_group >= min_cells_per_pseudobulk)
-  pb_cds = pb_cds[,pseudobulks_to_test]
-  
-  
   # # Collect background estimate 
   # pb_ambient = fit_models(pb_cds,
   #                         model_formula_str="~ 1",
@@ -575,7 +607,8 @@ compare_genes_within_state_graph = function(ccs,
                                                 ambient_estimate_matrix = ambient_coeffs$coefficients, 
                                                 ambient_stderr_matrix = ambient_coeffs$stdev.unscaled, 
                                                 cores = cores, 
-                                                nuisance_model_formula_str = nuisance_model_formula_str))
+                                                nuisance_model_formula_str = nuisance_model_formula_str,
+                                                min_cells_per_pseudobulk=min_cells_per_pseudobulk))
   
   return(df)
   
@@ -627,11 +660,24 @@ compare_gene_expression_within_node <- function(cell_group,
                                                 log_fc_thresh=1,
                                                 abs_expr_thresh = 1e-3,
                                                 sig_thresh=0.05, 
+                                                min_cells_per_pseudobulk=NULL,
                                                 cores=1) {
+  
   
   # now fit models per cell group
   
   cg_pb_cds = pb_cds[, colData(pb_cds)[[state_term]] == cell_group]
+  
+  if (is.null(min_cells_per_pseudobulk)){
+    min_cells_per_pseudobulk = mean(colData(cg_pb_cds[, colData(cg_pb_cds)$perturbation %in% control_ids])$num_cells_in_group)
+    min_cells_per_pseudobulk = 0.5 * min_cells_per_pseudobulk
+  }
+  
+  pseudobulks_to_test = which(colData(cg_pb_cds)$num_cells_in_group >= min_cells_per_pseudobulk)
+  cg_pb_cds = cg_pb_cds[,pseudobulks_to_test]
+  
+  
+  
   message(paste0("fitting regression models for ", cell_group))
   
   colData(cg_pb_cds)$Size_Factor = colData(cg_pb_cds)$num_cells_in_group
@@ -814,12 +860,13 @@ contrast_helper = function(state_1,
   contrast_res = tibble(id = ids, #row.names(PEM),
                         raw_lfc = effect_est,
                         raw_lfc_se = se_est,
+                        raw_p_value = pnorm(effect_est, sd = se_est, lower.tail=FALSE),
                         shrunken_lfc = shrunkren_res$result$PosteriorMean,
                         shrunken_lfc_se = shrunkren_res$result$PosteriorSD,
                         p_value = shrunkren_res$result$lfsr)
   
   if (!is.null(prefix)){
-    colnames(contrast_res)[2:6] = paste(prefix, colnames(contrast_res)[2:6], sep="_")
+    colnames(contrast_res)[2:7] = paste(prefix, colnames(contrast_res)[2:7], sep="_")
     
   }
   return(contrast_res)
