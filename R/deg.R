@@ -731,7 +731,8 @@ compare_gene_expression_within_node <- function(cell_group,
                                            PEM = estimate_matrix, 
                                            PSEM = stderr_matrix, 
                                            PEM_2 = ambient_estimate_matrix, 
-                                           PSEM_2 = ambient_stderr_matrix)
+                                           PSEM_2 = ambient_stderr_matrix, 
+                                           prefix = "perturb_to_ambient")
       
       perturb_to_ambient
       
@@ -805,11 +806,14 @@ calc_pathway_enrichment_on_state_specific_genes <- function(gene_df, msigdbr_t2g
 #' @param ... filtering criteria for
 fit_genotype_deg = function(ccm, 
                             cores = 1, 
+                            cell_agg_fun = c("sum", "mean"), 
                             ...) {
+  
+  cell_agg_fun = match.arg(cell_agg_fun)
   
   # filter by cell types 
   sub_ccs = subset_ccs(ccm@ccs, ...)
-  sub_pb_cds = pseudobulk_ccs_for_states(sub_ccs)
+  sub_pb_cds = pseudobulk_ccs_for_states(sub_ccs, cell_agg_fun=cell_agg_fun)
   sub_pb_cds = add_covariate(sub_ccs, 
                              sub_pb_cds, 
                              ccm@info$perturbation_col)
