@@ -263,6 +263,8 @@ estimate_ambient_rna <- function(ccs,
   pb_ambient = fit_models(pb_cds,
                           model_formula_str="~ 1",
                           cores=cores)
+  
+  message("\tcollecting coefficients")
   ambient_coeffs = collect_coefficients_for_shrinkage(pb_cds, pb_ambient, abs_expr_thresh, term_to_keep = "(Intercept)") 
   
   # Scale the "number of cells" up by the fraction of ambient RNA to arrive 
@@ -272,6 +274,8 @@ estimate_ambient_rna <- function(ccs,
   
   # FIXME:
   # automatic estimate of ambient fraction. Total heuristic, replace with below-the-knee estimate
+  
+  message("\testimating background")
   mean_expr = Matrix::rowMeans(normalized_counts(pb_cds, norm_method="size_only", pseudocount=0))
   max_expr = DelayedMatrixStats::rowMaxs(normalized_counts(pb_cds, norm_method="size_only", pseudocount=0))
   mean_v_max = mean_expr / max_expr
@@ -669,13 +673,24 @@ compare_gene_expression_within_node <- function(cell_group,
   cg_pb_cds = pb_cds[, colData(pb_cds)[[state_term]] == cell_group]
   
   if (is.null(min_cells_per_pseudobulk)){
-    min_cells_per_pseudobulk = mean(colData(cg_pb_cds[, colData(cg_pb_cds)$perturbation %in% control_ids])$num_cells_in_group)
-    min_cells_per_pseudobulk = 0.5 * min_cells_per_pseudobulk
+    control_size_factors = log(size_factors(cg_pb_cds[, colData(cg_pb_cds)$perturbation %in% control_ids]))
+    perturb_size_factors = log(size_factors(cg_pb_cds[, colData(cg_pb_cds)$perturbation %in% control_ids == FALSE]))
+    t_res = t.test(control_size_factors, perturb_size_factors)
+    if (t_res$p.value < 0.05 & mean(perturb_size_factors) < 0.5 * mean(control_size_factors)){
+      message("Skipping", cell_group, "large library size imbalance between controls and perturbation.")
+      return (NA)
+    }
+    #min_cells_per_pseudobulk = mean($num_cells_in_group)
+    #min_cells_per_pseudobulk = 0.5 * min_cells_per_pseudobulk
   }
   
-  pseudobulks_to_test = which(colData(cg_pb_cds)$num_cells_in_group >= min_cells_per_pseudobulk)
-  cg_pb_cds = cg_pb_cds[,pseudobulks_to_test]
-  
+  # num_pseudobulks_pre_filter = ncol(cg_pb_cds)
+  # pseudobulks_to_test = which(colData(cg_pb_cds)$num_cells_in_group >= min_cells_per_pseudobulk)
+  # cg_pb_cds = cg_pb_cds[,pseudobulks_to_test]
+  # num_pseudobulks_post_filter = ncol(cg_pb_cds)
+  # num_filtered = num_pseudobulks_pre_filter - num_pseudobulks_post_filter
+  # message (paste("dropped", num_filtered, "pseudobulks. (", num_filtered / num_pseudobulks_pre_filter, "% )"))
+  # 
   
   
   message(paste0("fitting regression models for ", cell_group))
@@ -695,6 +710,8 @@ compare_gene_expression_within_node <- function(cell_group,
     dplyr::select(gene_short_name, id, model, model_summary, status)
   
   #pb_coeffs = collect_coefficients_for_limma(cg_pb_cds, pb_group_models, abs_expr_thresh) #coefficient_table(pb_group_models) %>%
+  
+  message ("\tcollecting coefficients")
   
   pb_coeffs = collect_coefficients_for_shrinkage(cg_pb_cds, pb_group_models, abs_expr_thresh, term_to_keep = "perturbation") #coefficient_table(pb_group_models) %>%
   
@@ -765,6 +782,7 @@ compare_gene_expression_within_node <- function(cell_group,
     
   }
   
+  message("\tcomputing contrasts")
 
   cell_perturbations = cell_perturbations %>% 
     mutate(perturb_effects = purrr:::map(.f = contrast_helper, 
