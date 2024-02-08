@@ -2014,10 +2014,11 @@ plot_genes_expr_across_cell_groups = function(cds,
 #' @param ccm cell_count_model, assumes output of fit_genotype_ccm 
 #' @param start_time
 #' @param stop_time
-#' 
+#' @param ctrl_abundances you can put in precomputed estimates but 
 get_max_abundance_contrast = function(ccm, 
                                       start_time = NULL, 
                                       stop_time = NULL, 
+                                      ctrl_abundances = NULL, 
                                       interval_col = "timepoint", 
                                       ...){
   
@@ -2031,7 +2032,10 @@ get_max_abundance_contrast = function(ccm,
     stop_time = max(timepoints)
   }
   
-  ctrl_abundances = get_extant_cell_types(ccm, start = start_time, stop = stop_time, knockout = F) 
+  if (is.null(ctrl_abundances)) {
+    ctrl_abundances = get_extant_cell_types(ccm, start = start_time, stop = stop_time, knockout = F) 
+  }
+  
   perturb_effects = platt:::get_perturbation_effects(ccm, ...)
   peak_abundances = ctrl_abundances %>% 
     filter(!is.na(percent_cell_type_range)) %>% 
