@@ -2032,11 +2032,15 @@ get_max_abundance_contrast = function(ccm,
     stop_time = max(timepoints)
   }
   
+  perturb_effects = platt:::get_perturbation_effects(ccm, ...)
+  
   if (is.null(ctrl_abundances)) {
-    ctrl_abundances = get_extant_cell_types(ccm, start = start_time, stop = stop_time, knockout = F) 
+    ctrl_abundances = get_extant_cell_types(ccm, start = start_time, stop = stop_time, knockout = F, ...) 
+  } else {
+    ctrl_abundances = ctrl_abundances %>% filter(timepoint %in% unique(perturb_effects$time))
   }
   
-  perturb_effects = platt:::get_perturbation_effects(ccm, ...)
+  
   peak_abundances = ctrl_abundances %>% 
     filter(!is.na(percent_cell_type_range)) %>% 
     group_by(cell_group) %>% 
