@@ -284,6 +284,10 @@ estimate_ambient_rna <- function(ccs,
   message(paste("ambient RNA estimate: ", median_mean_v_max))
 
   ambient_coeffs$coefficients = ambient_coeffs$coefficients + log(median_mean_v_max)
+  ambient_coeffs$median_mean_v_max = median_mean_v_max
+  ambient_coeffs$max_expr = max_expr
+  ambient_coeffs$mean_v_max = mean_v_max
+  
   #ambient_coeffs$stdev.unscaled = ambient_coeffs$stdev.unscaled
   
   return(ambient_coeffs)
