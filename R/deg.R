@@ -984,7 +984,7 @@ compare_genes_in_cell_state <- function(cell_state,
       # expressed_in_parents_mat = parents_to_ambient[, "parents_p_value"]
       expr_df = left_join(expr_df, parents_to_ambient, by = c("gene_id" = "id"))
       expr_df$expressed_in_parents = expr_df$parents_p_value
-      expr_df$expressed_in_parents = p.adjust(expr_df$expr_self, method="BH") < sig_thresh
+      expr_df$expressed_in_parents = p.adjust(expr_df$expressed_in_parents, method="BH") < sig_thresh
     }
     
     # higher_than_parents_stat = -t( sweep( t(estimate_matrix[,parents, drop=F]), 2, as.numeric(estimate_matrix[,cell_state]) , `-`) )
@@ -1008,7 +1008,7 @@ compare_genes_in_cell_state <- function(cell_state,
                                             PEM = estimate_matrix, PSEM = stderr_matrix, 
                                             prefix = "parents_to_cell_state")
     lower_than_parents_stat = parents_to_cell_state[, "parents_to_cell_state_shrunken_lfc"]
-    lower_than_parents_pval = parents_to_cell_state[,"parents_to_cell_state_p_value"]
+    lower_than_parents_pval = parents_to_cell_state[, "parents_to_cell_state_p_value"]
     lower_than_parents_pval = apply(lower_than_parents_pval, 2, p.adjust, method="BH")
     
     lower_than_parents_mat = abs(lower_than_parents_stat) > log_fc_thresh & lower_than_parents_pval < sig_thresh
@@ -1048,7 +1048,7 @@ compare_genes_in_cell_state <- function(cell_state,
 
       expr_df = left_join(expr_df, siblings_to_ambient, by = c("gene_id" = "id"))
       expr_df$expressed_in_siblings = expr_df$siblings_p_value
-      expr_df$expressed_in_siblings = p.adjust(expr_df$expr_self, method="BH") < sig_thresh
+      expr_df$expressed_in_siblings = p.adjust(expr_df$expressed_in_siblings, method="BH") < sig_thresh
 
     }
     
@@ -1110,7 +1110,7 @@ compare_genes_in_cell_state <- function(cell_state,
                                             prefix = "children")
       expr_df = left_join(expr_df, children_to_ambient, by = c("gene_id" = "id"))
       expr_df$expressed_in_children = expr_df$children_p_value
-      expr_df$expressed_in_children = p.adjust(expr_df$expr_self, method="BH") < sig_thresh
+      expr_df$expressed_in_children = p.adjust(expr_df$expressed_in_children, method="BH") < sig_thresh
     }
     
     
