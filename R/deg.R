@@ -306,6 +306,7 @@ compare_genes_over_graph <- function(ccs,
                                     group_nodes_by=NULL,
                                     assembly_group = NULL, 
                                     label_nodes_by="cell_state", 
+                                    states_to_assess = list(), 
                                     nuisance_model_formula_str = "0",
                                     ambient_coeffs = NULL, 
                                     log_fc_thresh=1,
@@ -378,8 +379,11 @@ compare_genes_over_graph <- function(ccs,
   
   pb_coeffs = collect_coefficients_for_shrinkage(pb_cds, pb_group_models, abs_expr_thresh, term_to_keep = "cell_group") 
   
-  
-  states_to_assess = intersect(as.character(unique(colData(pb_cds)[,state_term])), unlist(igraph::V(state_graph)$name))
+  if (length(states_to_assess) == 0) {
+    states_to_assess = intersect(as.character(unique(colData(pb_cds)[,state_term])), unlist(igraph::V(state_graph)$name))
+  } else {
+    states_to_assess = intersect(unlist(states_to_assess), unlist(igraph::V(state_graph)$name))
+  }
   cell_states = tibble(cell_state = states_to_assess)
   
   cell_states = cell_states %>%
@@ -939,17 +943,16 @@ compare_genes_in_cell_state <- function(cell_state,
   
   if (is.null(ambient_estimate_matrix)) {
     expr_df$expr_self = pnorm(estimate_matrix[,cell_state] - log(abs_expr_thresh), sd = stderr_matrix[,cell_state], lower.tail=FALSE)
+    expr_df$expr_self = p.adjust(expr_df$expr_self, method="BH") < sig_thresh
   } else {
     cell_state_to_ambient = contrast_helper(cell_state, "Intercept", 
                                             PEM = estimate_matrix, PSEM = stderr_matrix, 
                                             PEM_2 = ambient_estimate_matrix, PSEM_2 = ambient_stderr_matrix, 
                                             prefix = "cell_state")
-
+    
     expr_df = left_join(expr_df, cell_state_to_ambient, by = c("gene_id" = "id"))
-    expr_df$expr_self = expr_df$cell_state_p_value
+    expr_df$expr_self = p.adjust(expr_df$cell_state_p_value) < sig_thresh & expr_df$cell_state_shrunken_lfc > log_fc_thresh
   }
-  
-  expr_df$expr_self = p.adjust(expr_df$expr_self, method="BH") < sig_thresh
   
   expr_df$expressed_in_parents = NA
   expr_df$expressed_in_siblings = NA
@@ -972,7 +975,6 @@ compare_genes_in_cell_state <- function(cell_state,
     if (is.null(ambient_estimate_matrix)) {
       expressed_in_parents_mat = pnorm(estimate_matrix[,parents, drop=F] - log(abs_expr_thresh), sd = stderr_matrix[,parents, drop=F], lower.tail=FALSE)
       expressed_in_parents_mat = apply(expressed_in_parents_mat, 2, p.adjust, method="BH")
-      
       expressed_in_parents_mat = expressed_in_parents_mat < sig_thresh
       expr_df$expressed_in_parents = Matrix::rowSums(expressed_in_parents_mat) > 0
       
@@ -981,18 +983,12 @@ compare_genes_in_cell_state <- function(cell_state,
                                            PEM = estimate_matrix, PSEM = stderr_matrix, 
                                            PEM_2 = ambient_estimate_matrix, PSEM_2 = ambient_stderr_matrix, 
                                            prefix = "parents")
-      # expressed_in_parents_mat = parents_to_ambient[, "parents_p_value"]
+      
       expr_df = left_join(expr_df, parents_to_ambient, by = c("gene_id" = "id"))
-      expr_df$expressed_in_parents = expr_df$parents_p_value
-      expr_df$expressed_in_parents = p.adjust(expr_df$expressed_in_parents, method="BH") < sig_thresh
+      expr_df$expressed_in_parents = p.adjust(expr_df$parents_p_value, method="BH") < sig_thresh & 
+                                     expr_df$parents_shrunken_lfc > log_fc_thresh
     }
     
-    # higher_than_parents_stat = -t( sweep( t(estimate_matrix[,parents, drop=F]), 2, as.numeric(estimate_matrix[,cell_state]) , `-`) )
-    # higher_than_parents_pval = pnorm(higher_than_parents_stat,
-    #                                  sd = sqrt(sweep(t(stderr_matrix[,parents, drop=F]^2), 2, as.numeric(stderr_matrix[,cell_state, drop=F]^2), `+`)), lower.tail=FALSE)
-    
-    # higher_than_parents_stat = new_estimate_matrix[,cell_state]
-    # higher_than_parents_pval = p_value_matrix[, cell_state]
     cell_state_to_parents = contrast_helper(cell_state, parents, 
                                             PEM = estimate_matrix, PSEM = stderr_matrix, 
                                             prefix = "cell_state_to_parents")
@@ -1000,7 +996,7 @@ compare_genes_in_cell_state <- function(cell_state,
     higher_than_parents_pval = cell_state_to_parents[, "cell_state_to_parents_p_value"]
     higher_than_parents_pval = apply(higher_than_parents_pval, 2, p.adjust, method="BH")
     
-    higher_than_parents_mat = abs(higher_than_parents_stat) > log_fc_thresh & higher_than_parents_pval < sig_thresh
+    higher_than_parents_mat = higher_than_parents_stat > log_fc_thresh & higher_than_parents_pval < sig_thresh
     expr_df$higher_than_parents = Matrix::rowSums(higher_than_parents_mat) > 0
     
     
@@ -1011,7 +1007,7 @@ compare_genes_in_cell_state <- function(cell_state,
     lower_than_parents_pval = parents_to_cell_state[, "parents_to_cell_state_p_value"]
     lower_than_parents_pval = apply(lower_than_parents_pval, 2, p.adjust, method="BH")
     
-    lower_than_parents_mat = abs(lower_than_parents_stat) > log_fc_thresh & lower_than_parents_pval < sig_thresh
+    lower_than_parents_mat = lower_than_parents_stat > log_fc_thresh & lower_than_parents_pval < sig_thresh
     expr_df$lower_than_parents = Matrix::rowSums(lower_than_parents_mat) > 0
     expr_df = left_join(expr_df, cell_state_to_parents, by = c("gene_id" = "id"))
     expr_df = left_join(expr_df, parents_to_cell_state, by = c("gene_id" = "id"))
@@ -1047,15 +1043,11 @@ compare_genes_in_cell_state <- function(cell_state,
                                             prefix = "siblings")
 
       expr_df = left_join(expr_df, siblings_to_ambient, by = c("gene_id" = "id"))
-      expr_df$expressed_in_siblings = expr_df$siblings_p_value
-      expr_df$expressed_in_siblings = p.adjust(expr_df$expressed_in_siblings, method="BH") < sig_thresh
+      expr_df$expressed_in_siblings = p.adjust(expr_df$siblings_p_value, method="BH") < sig_thresh & 
+                                      expr_df$siblings_shrunken_lfc > log_fc_thresh
 
     }
     
-    
-    # higher_than_siblings_stat = -t(sweep(t(estimate_matrix[,siblings, drop=F]), 2, as.numeric(estimate_matrix[,cell_state]) , `-`))
-    # higher_than_siblings_pval = pnorm(higher_than_siblings_stat,
-    #                                   sd = sqrt(sweep(t(stderr_matrix[,siblings, drop=F]^2), 2, as.numeric(stderr_matrix[,cell_state, drop=F]^2), `+`)), lower.tail=FALSE)
     
     cell_state_to_siblings = contrast_helper(cell_state, siblings, 
                                              PEM = estimate_matrix, PSEM = stderr_matrix, 
@@ -1065,13 +1057,10 @@ compare_genes_in_cell_state <- function(cell_state,
     higher_than_siblings_pval = cell_state_to_siblings[, "cell_state_to_siblings_p_value"]
     higher_than_siblings_pval = apply(higher_than_siblings_pval, 2, p.adjust, method="BH")
     
-    higher_than_siblings_mat = abs(higher_than_siblings_stat) > log_fc_thresh & higher_than_siblings_pval < sig_thresh
+    higher_than_siblings_mat = higher_than_siblings_stat > log_fc_thresh & higher_than_siblings_pval < sig_thresh
     expr_df$higher_than_all_siblings = Matrix::rowSums(higher_than_siblings_mat) == ncol(higher_than_siblings_pval)
     expr_df$higher_than_siblings = Matrix::rowSums(higher_than_siblings_mat) > 0
     
-    # lower_than_siblings_pval = pnorm(-higher_than_siblings_stat,
-    #                                  sd = sqrt(sweep(t(stderr_matrix[,siblings, drop=F]^2), 2, as.numeric(stderr_matrix[,cell_state, drop=F]^2), `+`)), lower.tail=FALSE)
-   
     siblings_to_cell_state = contrast_helper(siblings, cell_state, 
                                              PEM = estimate_matrix, PSEM = stderr_matrix, 
                                              prefix = "siblings_to_cell_state")
@@ -1079,7 +1068,7 @@ compare_genes_in_cell_state <- function(cell_state,
     lower_than_siblings_pval = siblings_to_cell_state[, "siblings_to_cell_state_p_value"]
     lower_than_siblings_pval = apply(lower_than_siblings_pval, 2, p.adjust, method="BH")
     
-    lower_than_siblings_mat = abs(lower_than_siblings_stat) > log_fc_thresh & lower_than_siblings_pval < sig_thresh
+    lower_than_siblings_mat = lower_than_siblings_stat > log_fc_thresh & lower_than_siblings_pval < sig_thresh
     expr_df$lower_than_all_siblings = Matrix::rowSums(lower_than_siblings_mat) == ncol(lower_than_siblings_mat)
     expr_df$lower_than_siblings = Matrix::rowSums(lower_than_siblings_mat) > 0
     
@@ -1109,8 +1098,8 @@ compare_genes_in_cell_state <- function(cell_state,
                                             PEM_2 = ambient_estimate_matrix, PSEM_2 = ambient_stderr_matrix, 
                                             prefix = "children")
       expr_df = left_join(expr_df, children_to_ambient, by = c("gene_id" = "id"))
-      expr_df$expressed_in_children = expr_df$children_p_value
-      expr_df$expressed_in_children = p.adjust(expr_df$expressed_in_children, method="BH") < sig_thresh
+      expr_df$expressed_in_children = p.adjust(expr_df$children_p_value, method="BH") < sig_thresh & 
+                                      expr_df$children_shrunken_lfc > log_fc_thresh
     }
     
     
@@ -1122,12 +1111,12 @@ compare_genes_in_cell_state <- function(cell_state,
     higher_than_children_pval = cell_state_to_children[, "cell_state_to_children_p_value"]
     higher_than_children_pval = apply(higher_than_children_pval, 2, p.adjust, method="BH")
     
-    higher_than_children_mat = abs(higher_than_children_stat) > log_fc_thresh & higher_than_children_pval < sig_thresh
+    higher_than_children_mat = higher_than_children_stat > log_fc_thresh & higher_than_children_pval < sig_thresh
     expr_df$higher_than_all_children = Matrix::rowSums(higher_than_children_mat) == ncol(higher_than_children_pval)
     expr_df$higher_than_children = Matrix::rowSums(higher_than_children_mat) > 0
     
     
-    children_to_cell_state = contrast_helper(cell_state, children, 
+    children_to_cell_state = contrast_helper(children, cell_state, 
                                             PEM = estimate_matrix, PSEM = stderr_matrix, 
                                             prefix = "children_to_cell_state")
     
@@ -1135,7 +1124,7 @@ compare_genes_in_cell_state <- function(cell_state,
     lower_than_children_pval = children_to_cell_state[, "children_to_cell_state_shrunken_lfc"]
     lower_than_children_pval = apply(lower_than_children_pval, 2, p.adjust, method="BH")
     
-    lower_than_children_mat = abs(lower_than_children_stat) > log_fc_thresh & lower_than_children_pval < sig_thresh
+    lower_than_children_mat = lower_than_children_stat > log_fc_thresh & lower_than_children_pval < sig_thresh
     expr_df$lower_than_all_children = Matrix::rowSums(lower_than_children_mat) == ncol(lower_than_children_mat)
     expr_df$lower_than_children = Matrix::rowSums(lower_than_children_mat) > 0
     expr_df = left_join(expr_df, cell_state_to_children, by = c("gene_id" = "id"))
