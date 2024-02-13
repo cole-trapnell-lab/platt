@@ -355,12 +355,6 @@ compare_genes_over_graph <- function(ccs,
   message("fitting regression models")
   pb_cds = pb_cds[,pseudobulks_to_test]
   
-  # # Collect background estimate 
-  # pb_ambient = fit_models(pb_cds,
-  #                         model_formula_str="~ 1",
-  #                         cores=cores)
-  # ambient_coeffs = collect_coefficients_for_shrinkage(pb_cds, pb_ambient, abs_expr_thresh, term_to_keep = "(Intercept)") 
-  
   colData(pb_cds)$Size_Factor = colData(pb_cds)$num_cells_in_group
   
   full_model_str = paste0("~ 0 + cell_group")
@@ -918,12 +912,9 @@ compare_genes_in_cell_state <- function(cell_state,
                                         ambient_stderr_matrix = NULL, 
                                         state_term="cell_group", 
                                         log_fc_thresh=1, 
-                                        abs_expr_thresh = 1e-10, 
+                                        abs_expr_thresh = 1e-3, 
                                         sig_thresh=0.05, 
                                         cores=1) {
-  
-  
-  #expr_self = expr_mat[,cell_state]
   
   parents = get_parents(state_graph, cell_state) #igraph::neighbors(state_graph, cell_state, mode="in")
   parents = intersect(parents, colnames(estimate_matrix))
@@ -954,7 +945,7 @@ compare_genes_in_cell_state <- function(cell_state,
     
     expr_df = left_join(expr_df, cell_state_to_ambient, by = c("gene_id" = "id"))
     expr_df$expr_self = p.adjust(expr_df$cell_state_raw_p_value) < sig_thresh & 
-                        expr_df$cell_state_shrunken_lfc > abs_expr_thresh
+                        expr_df$cell_state_raw_lfc > log_fc_thresh
     cell_state_genes = cell_state_to_ambient %>% filter(cell_state_raw_lfc > abs_expr_thresh) %>% pull(id)
     
   }
@@ -976,7 +967,6 @@ compare_genes_in_cell_state <- function(cell_state,
   
   if (length(parents) > 0){
     
-    
     if (is.null(ambient_estimate_matrix)) {
       expressed_in_parents_mat = pnorm(estimate_matrix[,parents, drop=F] - log(abs_expr_thresh), 
                                        sd = stderr_matrix[,parents, drop=F], lower.tail=FALSE)
@@ -994,7 +984,7 @@ compare_genes_in_cell_state <- function(cell_state,
       
       expr_df = left_join(expr_df, parents_to_ambient, by = c("gene_id" = "id"))
       expr_df$expressed_in_parents = p.adjust(expr_df$parents_raw_p_value, method="BH") < sig_thresh & 
-                                     expr_df$parents_shrunken_lfc > abs_expr_thresh
+                                     expr_df$parents_raw_lfc > log_fc_thresh
     }
     
     parent_genes = parents_to_ambient %>% filter(parents_raw_lfc > abs_expr_thresh) %>% pull(id)
@@ -1057,7 +1047,7 @@ compare_genes_in_cell_state <- function(cell_state,
 
       expr_df = left_join(expr_df, siblings_to_ambient, by = c("gene_id" = "id"))
       expr_df$expressed_in_siblings = p.adjust(expr_df$siblings_raw_p_value, method="BH") < sig_thresh & 
-                                      expr_df$siblings_shrunken_lfc > abs_expr_thresh
+                                      expr_df$siblings_raw_lfc > log_fc_thresh
 
     }
     
@@ -1111,12 +1101,11 @@ compare_genes_in_cell_state <- function(cell_state,
                                             prefix = "children")
       expr_df = left_join(expr_df, children_to_ambient, by = c("gene_id" = "id"))
       expr_df$expressed_in_children = p.adjust(expr_df$children_raw_p_value, method="BH") < sig_thresh & 
-                                      expr_df$children_shrunken_lfc > abs_expr_thresh
+                                      expr_df$children_raw_lfc > log_fc_thresh
      }
     
     children_genes = children_to_ambient %>% filter(children_raw_lfc > abs_expr_thresh) %>% pull(id)
     genes_to_test = intersect(cell_state_genes, children_genes)
-    
     
     cell_state_to_children = contrast_helper(cell_state, children, 
                                              PEM = estimate_matrix[genes_to_test,], 
