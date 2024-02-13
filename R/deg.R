@@ -1016,7 +1016,7 @@ compare_genes_in_cell_state <- function(cell_state,
     expr_df$higher_than_parents = p.adjust(expr_df$cell_state_to_parents_p_value, method="BH") < sig_thresh & 
       expr_df$cell_state_to_parents_shrunken_lfc > log_fc_thresh
     
-    expr_df$lower_than_parents = p.adjust(expr_df$parents_to_cell_state_parents_p_value, method="BH") < sig_thresh & 
+    expr_df$lower_than_parents = p.adjust(expr_df$parents_to_cell_state_p_value, method="BH") < sig_thresh & 
       expr_df$parents_to_cell_state_shrunken_lfc > log_fc_thresh
     
     
