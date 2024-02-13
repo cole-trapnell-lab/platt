@@ -955,6 +955,8 @@ compare_genes_in_cell_state <- function(cell_state,
     expr_df = left_join(expr_df, cell_state_to_ambient, by = c("gene_id" = "id"))
     expr_df$expr_self = p.adjust(expr_df$cell_state_raw_p_value) < sig_thresh & 
                         expr_df$cell_state_shrunken_lfc > abs_expr_thresh
+    cell_state_genes = cell_state_to_ambient %>% filter(cell_state_raw_lfc > abs_expr_thresh) %>% pull(id)
+    
   }
   
   expr_df$expressed_in_parents = NA
@@ -995,7 +997,6 @@ compare_genes_in_cell_state <- function(cell_state,
                                      expr_df$parents_shrunken_lfc > abs_expr_thresh
     }
     
-    cell_state_genes = cell_state_to_ambient %>% filter(cell_state_raw_lfc > abs_expr_thresh) %>% pull(id)
     parent_genes = parents_to_ambient %>% filter(parents_raw_lfc > abs_expr_thresh) %>% pull(id)
     genes_to_test = intersect(cell_state_genes, parent_genes)
     
