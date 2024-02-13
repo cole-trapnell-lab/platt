@@ -214,7 +214,7 @@ unnest_degs = function(ccs,
 #'
 #' @param 
 estimate_ambient_rna <- function(ccs, 
-                                 abs_expr_thresh = 1e-3,
+                                 abs_expr_thresh = 1e-10,
                                  min_samples_detected = 2,
                                  min_cells_per_pseudobulk = 3,
                                  cores=1,
@@ -305,7 +305,7 @@ compare_genes_over_graph <- function(ccs,
                                     nuisance_model_formula_str = "0",
                                     ambient_coeffs = NULL, 
                                     log_fc_thresh=1,
-                                    abs_expr_thresh = 1e-3,
+                                    abs_expr_thresh = 1e-10,
                                     sig_thresh=0.05,
                                     min_samples_detected = 2,
                                     min_cells_per_pseudobulk = 3,
@@ -538,7 +538,7 @@ compare_genes_within_state_graph = function(ccs,
                                             gene_ids = NULL,
                                             group_nodes_by = NULL,
                                             log_fc_thresh = 1,
-                                            abs_expr_thresh = 1e-3,
+                                            abs_expr_thresh = 1e-10,
                                             sig_thresh = 0.05,
                                             min_samples_detected = 2,
                                             min_cells_per_pseudobulk = NULL,
@@ -662,9 +662,10 @@ compare_gene_expression_within_node <- function(cell_group,
                                                 perturbation_ids = NULL,
                                                 state_term ="cell_group",
                                                 log_fc_thresh=1,
-                                                abs_expr_thresh = 1e-3,
+                                                abs_expr_thresh = 1e-10,
                                                 sig_thresh=0.05, 
                                                 min_cells_per_pseudobulk=NULL,
+                                                exclude_results_below_ambient=TRUE,
                                                 cores=1) {
   
   
@@ -684,16 +685,27 @@ compare_gene_expression_within_node <- function(cell_group,
     #min_cells_per_pseudobulk = 0.5 * min_cells_per_pseudobulk
   }
   
-  # num_pseudobulks_pre_filter = ncol(cg_pb_cds)
-  # pseudobulks_to_test = which(colData(cg_pb_cds)$num_cells_in_group >= min_cells_per_pseudobulk)
-  # cg_pb_cds = cg_pb_cds[,pseudobulks_to_test]
-  # num_pseudobulks_post_filter = ncol(cg_pb_cds)
-  # num_filtered = num_pseudobulks_pre_filter - num_pseudobulks_post_filter
-  # message (paste("dropped", num_filtered, "pseudobulks. (", num_filtered / num_pseudobulks_pre_filter, "% )"))
-  # 
+  # if (is.null(ambient_estimate_matrix) == FALSE){
+  #   # Do a quick method-of-moments estimate for average expression under a NB model:
+  #   pb_group_by_term =  tibble::tibble(pb_id=row.names(colData(cg_pb_cds)),
+  #                                      pb_group=colData(cg_pb_cds)$perturbation)
+  #   
+  #   mean_expr_mat = monocle3::aggregate_gene_expression(cg_pb_cds, 
+  #                                                       cell_group_df=pb_group_by_term, 
+  #                                                       norm_method="size_only", 
+  #                                                       pseudocount=0, 
+  #                                                       scale_agg_values=FALSE)
+  #   mean_expr_mat = log(mean_expr_mat)
+  #   above_ambient = mean_expr_mat > ambient_estimate_matrix[row.names(mean_expr_mat),1]
+  #   above_ambient_genes = Matrix::rowSums(above_ambient) > 0
+  #   cg_pb_cds = cg_pb_cds[above_ambient_genes,]
+  # }
   
   
-  message(paste0("fitting regression models for ", cell_group))
+  nz_genes = Matrix::rowSums(counts(cg_pb_cds)) > 0 
+  cg_pb_cds = cg_pb_cds[nz_genes,]
+  
+  message(paste0("fitting ", nrow(cg_pb_cds), " regression models for ", cell_group))
   
   colData(cg_pb_cds)$Size_Factor = colData(cg_pb_cds)$num_cells_in_group
   
@@ -760,8 +772,8 @@ compare_gene_expression_within_node <- function(cell_group,
                                                  "Intercept",
                                                  PEM = pb_coeffs$coefficients, 
                                                  PSEM = pb_coeffs$stdev.unscaled,
-                                                 PEM_2 = ambient_estimate_matrix, 
-                                                 PSEM_2 = ambient_stderr_matrix, 
+                                                 PEM_2 = ambient_estimate_matrix[row.names(pb_coeffs$coefficients),,drop=F], 
+                                                 PSEM_2 = ambient_stderr_matrix[row.names(pb_coeffs$coefficients),,drop=F], 
                                       prefix = "ctrl_to_ambient")
     
     cell_perturbations = cell_perturbations %>% 
@@ -770,8 +782,8 @@ compare_gene_expression_within_node <- function(cell_group,
                                            state_2 = "Intercept", 
                                            PEM = pb_coeffs$coefficients, 
                                            PSEM = pb_coeffs$stdev.unscaled, 
-                                           PEM_2 = ambient_estimate_matrix, 
-                                           PSEM_2 = ambient_stderr_matrix, 
+                                           PEM_2 = ambient_estimate_matrix[row.names(pb_coeffs$coefficients),,drop=F], 
+                                           PSEM_2 = ambient_stderr_matrix[row.names(pb_coeffs$coefficients),,drop=F], 
                                            prefix = "perturb_to_ambient"))
     
     cell_perturbations = cell_perturbations %>% 
@@ -791,6 +803,19 @@ compare_gene_expression_within_node <- function(cell_group,
                                          PEM = pb_coeffs$coefficients, 
                                          PSEM = pb_coeffs$stdev.unscaled, 
                                          prefix = "perturb_to_ctrl"))
+  
+  if (exclude_results_below_ambient & is.null(ambient_estimate_matrix) == FALSE){
+    ambient_res = cell_perturbations %>%
+      tidyr::unnest(data) %>% 
+      dplyr::filter((ctrl_to_ambient_p_value < 0.05 & ctrl_to_ambient_shrunken_lfc > 0) | 
+             (perturb_to_ambient_p_value < 0.05 & perturb_to_ambient_shrunken_lfc > 0)) %>%
+      dplyr::select(term, id)
+    
+    perturb_res = left_join(cell_perturbations %>%
+                            tidyr::unnest(perturb_effects),
+                            ambient_res, by=c("term", "id"))
+    cell_perturbations = perturb_res %>% group_by(term) %>% tidyr::nest()
+  }
   
   return(cell_perturbations) 
   
@@ -870,7 +895,7 @@ contrast_helper = function(state_1,
   ids = intersect(rownames(PEM), rownames(PEM_2))
   
   state_1_effects = Matrix::rowSums(PEM[,state_1, drop=F])
-  state_1_effects_se = sqrt(Matrix::rowSums(PEM[,state_1, drop=F]^2))
+  state_1_effects_se = sqrt(Matrix::rowSums(PSEM[,state_1, drop=F]^2))
   
   state_2_effects = Matrix::rowSums(PEM_2[,state_2, drop=F])
   state_2_effects_se = sqrt(Matrix::rowSums(PSEM_2[,state_2, drop=F]^2))
@@ -910,7 +935,7 @@ compare_genes_in_cell_state <- function(cell_state,
                                         ambient_stderr_matrix = NULL, 
                                         state_term="cell_group", 
                                         log_fc_thresh=1, 
-                                        abs_expr_thresh = 1e-3, 
+                                        abs_expr_thresh = 1e-10, 
                                         sig_thresh=0.05, 
                                         cores=1) {
   
