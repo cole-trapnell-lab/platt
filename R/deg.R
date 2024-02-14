@@ -122,12 +122,10 @@ score_genes_for_expression_pattern <- function(cell_state, gene_patterns, state_
   
   expr_df = tibble(gene_id=row.names(estimate_matrix))
   
-  data_mat = gene_patterns %>% tidyr::unnest(data) %>% column_to_rownames("gene_id")
-  
   if (length(parents) > 0 ){
     parent_cols = c("parents_shrunken_lfc")
   } else {
-    parent_cols = c()
+    parent_cols = parents
   } 
   
   if (length(children) > 0 ) {
@@ -142,8 +140,13 @@ score_genes_for_expression_pattern <- function(cell_state, gene_patterns, state_
     sibling_cols = c()
   }
   
+  data_mat = gene_patterns %>% tidyr::unnest(data) %>% column_to_rownames("gene_id") 
+  data_mat = data_mat %>% select(all_of(c("cell_state_shrunken_lfc", parent_cols, child_cols, sibling_cols))) %>% as.matrix()
+  
   self_estimates = data_mat[gene_patterns$gene_id, "cell_state_shrunken_lfc", drop=FALSE] %>% as.matrix()
-  parents_estimates = data_mat[gene_patterns$gene_id, parent_cols, drop=FALSE] %>% as.matrix()
+  parents_estimates = data_mat[gene_patterns$gene_id, parent_cols, drop=FALSE] #%>% as.matrix()
+  measure_upregulation_effect(self_estimates, parents_estimates)
+  
   
   parents_and_sib_estimates = data_mat[gene_patterns$gene_id, c(parent_cols, sibling_cols), drop=FALSE] %>% as.matrix()
   
@@ -153,22 +156,21 @@ score_genes_for_expression_pattern <- function(cell_state, gene_patterns, state_
   self_parent_sibs = exp(data_mat[gene_patterns$gene_id, c("cell_state_shrunken_lfc", parent_cols, sibling_cols), drop=FALSE]) %>% as.matrix()
   self_parent_sibs = self_parent_sibs / Matrix::rowSums(self_parent_sibs) #normalize so that rows sum to 1
   
-  
   num_parents = length(parents)
   num_siblings = length(siblings)
   gene_patterns_and_scores = gene_patterns %>%
     tidyr::unnest(interpretation) %>%
     #group_by(interpretation) %>%
-    mutate(pattern_match_score =
-             case_when(interpretation %in% c("Absent") ~ 0,
-                       interpretation %in% c("Maintained") ~ js_dist_to_pattern(self_and_parent,c(1, rep(1, num_parents))),
-                       interpretation %in% c("Selectively maintained", "Specifically maintained") ~ js_dist_to_pattern(self_parent_sibs, c(1, rep(1, num_parents), rep(0, num_siblings))),
-                       interpretation %in% c("Upregulated", "Activated") ~ js_dist_to_pattern(self_and_parent, c(1, rep(0, num_parents))),
-                       interpretation %in% c("Selectively upregulated", "Specifically upregulated", "Selectively activated", "Specifically activated") ~ js_dist_to_pattern(self_parent_sibs, c(1, rep(0, num_parents), rep(0, num_siblings))),
-                       interpretation %in% c("Downregulated", "Dectivated") ~ js_dist_to_pattern(self_and_parent, c(0, rep(1, num_parents))),
-                       interpretation %in% c("Selectively downregulated", "Specifically downregulated", "Selectively deactivated", "Specifically deactivated") ~ js_dist_to_pattern(self_parent_sibs, c(0, rep(1, num_parents), rep(0, num_siblings))),
-                       TRUE ~ 0)
-    ) %>%
+    # mutate(pattern_match_score =
+    #          case_when(interpretation %in% c("Absent") ~ 0,
+    #                    interpretation %in% c("Maintained") ~ js_dist_to_pattern(self_and_parent,c(1, rep(1, num_parents))),
+    #                    interpretation %in% c("Selectively maintained", "Specifically maintained") ~ js_dist_to_pattern(self_parent_sibs, c(1, rep(1, num_parents), rep(0, num_siblings))),
+    #                    interpretation %in% c("Upregulated", "Activated") ~ js_dist_to_pattern(self_and_parent, c(1, rep(0, num_parents))),
+    #                    interpretation %in% c("Selectively upregulated", "Specifically upregulated", "Selectively activated", "Specifically activated") ~ js_dist_to_pattern(self_parent_sibs, c(1, rep(0, num_parents), rep(0, num_siblings))),
+    #                    interpretation %in% c("Downregulated", "Dectivated") ~ js_dist_to_pattern(self_and_parent, c(0, rep(1, num_parents))),
+    #                    interpretation %in% c("Selectively downregulated", "Specifically downregulated", "Selectively deactivated", "Specifically deactivated") ~ js_dist_to_pattern(self_parent_sibs, c(0, rep(1, num_parents), rep(0, num_siblings))),
+    #                    TRUE ~ 0)
+    # ) %>%
     #group_by(interpretation) %>%
     mutate(pattern_activity_score =
              case_when(interpretation %in% c("Absent") ~ 0,
