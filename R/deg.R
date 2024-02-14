@@ -171,7 +171,7 @@ score_genes_for_expression_pattern <- function(cell_state, gene_patterns, state_
     #                    interpretation %in% c("Selectively downregulated", "Specifically downregulated", "Selectively deactivated", "Specifically deactivated") ~ js_dist_to_pattern(self_parent_sibs, c(0, rep(1, num_parents), rep(0, num_siblings))),
     #                    TRUE ~ 0)
     # ) %>%
-    #group_by(interpretation) %>%
+    group_by(interpretation) %>%
     mutate(pattern_activity_score =
              case_when(interpretation %in% c("Absent") ~ 0,
                        interpretation %in% c("Maintained") ~ measure_maintenance_effect(self_estimates, parents_estimates),
