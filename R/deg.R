@@ -145,8 +145,6 @@ score_genes_for_expression_pattern <- function(cell_state, gene_patterns, state_
   
   self_estimates = data_mat[gene_patterns$gene_id, "cell_state_shrunken_lfc", drop=FALSE] %>% as.matrix()
   parents_estimates = data_mat[gene_patterns$gene_id, parent_cols, drop=FALSE] #%>% as.matrix()
-  measure_upregulation_effect(self_estimates, parents_estimates)
-  
   
   parents_and_sib_estimates = data_mat[gene_patterns$gene_id, c(parent_cols, sibling_cols), drop=FALSE] %>% as.matrix()
   
@@ -171,7 +169,7 @@ score_genes_for_expression_pattern <- function(cell_state, gene_patterns, state_
     #                    interpretation %in% c("Selectively downregulated", "Specifically downregulated", "Selectively deactivated", "Specifically deactivated") ~ js_dist_to_pattern(self_parent_sibs, c(0, rep(1, num_parents), rep(0, num_siblings))),
     #                    TRUE ~ 0)
     # ) %>%
-    group_by(interpretation) %>%
+    # group_by(interpretation) %>%
     mutate(pattern_activity_score =
              case_when(interpretation %in% c("Absent") ~ 0,
                        interpretation %in% c("Maintained") ~ measure_maintenance_effect(self_estimates, parents_estimates),
@@ -1091,12 +1089,49 @@ compare_genes_in_cell_state <- function(cell_state,
     
     expr_df = left_join(expr_df, cell_state_to_siblings, by = c("gene_id" = "id"))
     expr_df = left_join(expr_df, siblings_to_cell_state, by = c("gene_id" = "id"))
-  
-    expr_df$higher_than_siblings = p.adjust(expr_df$cell_state_to_siblings_p_value, method="BH") < sig_thresh & 
+    
+    
+    higher_than_siblings_mat = lapply(siblings, function(sibling) {
+      cell_state_to_sibling = contrast_helper(cell_state, sibling, 
+                                            PEM = estimate_matrix[genes_to_test,], 
+                                            PSEM = stderr_matrix[genes_to_test,], 
+                                            prefix = "cell_state_to_sibling")
+      
+      p.adjust(cell_state_to_sibling$cell_state_to_sibling_p_value) < sig_thresh & 
+        cell_state_to_sibling$cell_state_to_sibling_shrunken_lfc > log_fc_thresh
+      
+    }) 
+    higher_than_siblings_mat = do.call(cbind, higher_than_siblings_mat)
+    names(higher_than_siblings_mat) = siblings
+    row.names(higher_than_siblings_mat) = genes_to_test
+    
+    lower_than_siblings_mat = lapply(siblings, function(sibling) {
+      sibling_to_cell_state = contrast_helper(sibling, cell_state, 
+                                            PEM = estimate_matrix[genes_to_test,], 
+                                            PSEM = stderr_matrix[genes_to_test,], 
+                                            prefix = "sibling_to_cell_state")
+      
+      p.adjust(sibling_to_cell_state$sibling_to_cell_state_p_value) < sig_thresh & 
+        sibling_to_cell_state$sibling_to_cell_state_shrunken_lfc > log_fc_thresh
+      
+    }) 
+    lower_than_siblings_mat = do.call(cbind, lower_than_siblings_mat)
+    names(lower_than_siblings_mat) = siblings
+    row.names(lower_than_siblings_mat) = genes_to_test
+    
+    expr_df$higher_than_siblings = left_join(expr_df, 
+                        data.frame("higher_than_siblings" = Matrix::rowSums(higher_than_siblings_mat) > 0) %>% rownames_to_column("gene_id"), by="gene_id") %>% 
+                        pull(higher_than_siblings.y)
+    expr_df$lower_than_siblings = left_join(expr_df, 
+                        data.frame("lower_than_siblings" = Matrix::rowSums(lower_than_siblings_mat) > 0) %>% rownames_to_column("gene_id"), by="gene_id") %>% 
+                        pull(lower_than_siblings.y)
+    
+    expr_df$higher_than_all_siblings = p.adjust(expr_df$cell_state_to_siblings_p_value, method="BH") < sig_thresh & 
       expr_df$cell_state_to_siblings_shrunken_lfc > log_fc_thresh
     
-    expr_df$lower_than_siblings = p.adjust(expr_df$siblings_to_cell_state_p_value, method="BH") < sig_thresh & 
+    expr_df$lower_than_all_siblings = p.adjust(expr_df$siblings_to_cell_state_p_value, method="BH") < sig_thresh & 
       expr_df$siblings_to_cell_state_shrunken_lfc > log_fc_thresh
+    
     
   }else{
     expr_df$expressed_in_siblings = NA
@@ -1145,10 +1180,46 @@ compare_genes_in_cell_state <- function(cell_state,
     expr_df = left_join(expr_df, cell_state_to_children, by = c("gene_id" = "id"))
     expr_df = left_join(expr_df, children_to_cell_state, by = c("gene_id" = "id"))
     
-    expr_df$higher_than_children = p.adjust(expr_df$cell_state_to_children_p_value, method="BH") < sig_thresh & 
+    higher_than_children_mat = lapply(children, function(child) {
+      cell_state_to_child = contrast_helper(cell_state, child, 
+                                               PEM = estimate_matrix[genes_to_test,], 
+                                               PSEM = stderr_matrix[genes_to_test,], 
+                                               prefix = "cell_state_to_child")
+      
+      p.adjust(cell_state_to_child$cell_state_to_child_p_value) < sig_thresh & 
+        cell_state_to_child$cell_state_to_child_shrunken_lfc > log_fc_thresh
+
+    }) 
+    higher_than_children_mat = do.call(cbind, higher_than_children_mat)
+    names(higher_than_children_mat) = children
+    row.names(higher_than_children_mat) = genes_to_test
+    
+    lower_than_children_mat = lapply(children, function(child) {
+      child_to_cell_state = contrast_helper(child, cell_state, 
+                                            PEM = estimate_matrix[genes_to_test,], 
+                                            PSEM = stderr_matrix[genes_to_test,], 
+                                            prefix = "child_to_cell_state")
+      
+      p.adjust(child_to_cell_state$child_to_cell_state_p_value) < sig_thresh & 
+        child_to_cell_state$child_to_cell_state_shrunken_lfc > log_fc_thresh
+      
+    }) 
+    lower_than_children_mat = do.call(cbind, lower_than_children_mat)
+    names(lower_than_children_mat) = children
+    row.names(lower_than_children_mat) = genes_to_test
+    
+    expr_df$higher_than_children = left_join(expr_df, 
+                        data.frame("higher_than_children" = Matrix::rowSums(higher_than_children_mat) > 0) %>% rownames_to_column("gene_id"), by="gene_id") %>% 
+                        pull(higher_than_children.y)
+    expr_df$lower_than_children = left_join(expr_df, 
+                        data.frame("lower_than_children" = Matrix::rowSums(lower_than_children_mat) > 0) %>% rownames_to_column("gene_id"), by="gene_id") %>% 
+                        pull(lower_than_children.y)
+    
+    
+    expr_df$higher_than_all_children = p.adjust(expr_df$cell_state_to_children_p_value, method="BH") < sig_thresh & 
       expr_df$cell_state_to_children_shrunken_lfc > log_fc_thresh
     
-    expr_df$lower_than_children = p.adjust(expr_df$children_to_cell_state_p_value, method="BH") < sig_thresh & 
+    expr_df$lower_than_all_children = p.adjust(expr_df$children_to_cell_state_p_value, method="BH") < sig_thresh & 
       expr_df$children_to_cell_state_shrunken_lfc > log_fc_thresh
     
   }else{
