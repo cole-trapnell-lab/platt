@@ -820,6 +820,7 @@ compare_gene_expression_within_node <- function(cell_group,
       dplyr::select(term, id)
     
     perturb_res = left_join(cell_perturbations %>%
+                            dplyr::select(-data) %>% 
                             tidyr::unnest(perturb_effects),
                             ambient_res, by=c("term", "id"))
     cell_perturbations = perturb_res %>% group_by(term) %>% tidyr::nest()
