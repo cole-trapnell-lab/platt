@@ -698,15 +698,20 @@ compare_gene_expression_within_node <- function(cell_group,
   cg_pb_cds = pb_cds[, colData(pb_cds)[[state_term]] == cell_group]
   
   if (is.null(min_cells_per_pseudobulk)){
-    control_size_factors = log(size_factors(cg_pb_cds[, colData(cg_pb_cds)$perturbation %in% control_ids]))
-    perturb_size_factors = log(size_factors(cg_pb_cds[, colData(cg_pb_cds)$perturbation %in% control_ids == FALSE]))
-    t_res = t.test(control_size_factors, perturb_size_factors)
-    if (t_res$p.value < 0.05 & mean(perturb_size_factors) < 0.5 * mean(control_size_factors)){
-      message("Skipping", cell_group, "large library size imbalance between controls and perturbation.")
-      return (NA)
+    perturb_sf_summary = colData(cg_pb_cds) %>% as.data.frame() %>%
+      dplyr::select(perturbation, Size_Factor) %>% 
+      group_by(perturbation) %>%
+      summarize(mean_log_sf = mean(log(Size_Factor)))
+    mean_ctrl_sf = perturb_sf_summary %>% filter(perturbation %in% control_ids) %>% 
+      pull(mean_log_sf) %>% mean
+    
+    perturbations_to_drop = perturb_sf_summary %>%
+      filter(perturbation %in% control_ids == FALSE & mean_log_sf < 0.5 * mean_ctrl_sf) 
+    if (nrow(perturbations_to_drop) > 0) {
+      perturbations_to_drop = perturbations_to_drop %>% pull(perturbation)
+      message(paste("\tSkipping", perturbations_to_drop, "due to large library size imbalance between controls and perturbation.\n"))
+      cg_pb_cds = cg_pb_cds[,colData(cg_pb_cds)$perturbation %in% perturbations_to_drop]
     }
-    #min_cells_per_pseudobulk = mean($num_cells_in_group)
-    #min_cells_per_pseudobulk = 0.5 * min_cells_per_pseudobulk
   }
   
   # if (is.null(ambient_estimate_matrix) == FALSE){
