@@ -697,22 +697,24 @@ compare_gene_expression_within_node <- function(cell_group,
   
   cg_pb_cds = pb_cds[, colData(pb_cds)[[state_term]] == cell_group]
   
-  if (is.null(min_cells_per_pseudobulk)){
-    perturb_sf_summary = colData(cg_pb_cds) %>% as.data.frame() %>%
-      dplyr::select(perturbation, Size_Factor) %>% 
-      group_by(perturbation) %>%
-      summarize(mean_log_sf = mean(log(Size_Factor)))
-    mean_ctrl_sf = perturb_sf_summary %>% filter(perturbation %in% control_ids) %>% 
+  #if (is.null(min_cells_per_pseudobulk)){
+  perturb_sf_summary = colData(cg_pb_cds) %>% as.data.frame() %>%
+    dplyr::select(perturbation, Size_Factor) %>% 
+    group_by(perturbation) %>%
+    summarize(mean_log_sf = mean(log(Size_Factor)))
+  mean_ctrl_sf = perturb_sf_summary %>% filter(perturbation %in% control_ids) %>% 
       pull(mean_log_sf) %>% mean
-    
-    perturbations_to_drop = perturb_sf_summary %>%
-      filter(perturbation %in% control_ids == FALSE & mean_log_sf < 0.5 * mean_ctrl_sf) 
-    if (nrow(perturbations_to_drop) > 0) {
-      perturbations_to_drop = perturbations_to_drop %>% pull(perturbation)
-      message(paste("\tSkipping", perturbations_to_drop, "due to large library size imbalance between controls and perturbation.\n"))
-      cg_pb_cds = cg_pb_cds[,colData(cg_pb_cds)$perturbation %in% perturbations_to_drop]
-    }
-  }
+   
+  perturb_sf_summary = perturb_sf_summary %>% mutate(ctrl_log_sf = mean_ctrl_sf)
+  
+  #   perturbations_to_drop = perturb_sf_summary %>%
+  #     filter(perturbation %in% control_ids == FALSE & mean_log_sf < 0.5 * mean_ctrl_sf) 
+  #   if (nrow(perturbations_to_drop) > 0) {
+  #     perturbations_to_drop = perturbations_to_drop %>% pull(perturbation)
+  #     message(paste("\tSkipping", perturbations_to_drop, "due to large library size imbalance between controls and perturbation.\n"))
+  #     cg_pb_cds = cg_pb_cds[,colData(cg_pb_cds)$perturbation %in% perturbations_to_drop]
+  #   }
+  # }
   
   # if (is.null(ambient_estimate_matrix) == FALSE){
   #   # Do a quick method-of-moments estimate for average expression under a NB model:
@@ -846,6 +848,8 @@ compare_gene_expression_within_node <- function(cell_group,
                             ambient_res, by=c("term", "id"))
     cell_perturbations = perturb_res %>% group_by(term) %>% tidyr::nest()
   }
+  
+  cell_perturbations = left_join(cell_perturbations, perturb_sf_summary, by=c("term"="perturbation"))
   
   return(cell_perturbations) 
   
