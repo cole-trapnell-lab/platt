@@ -706,32 +706,33 @@ compare_gene_expression_within_node <- function(cell_group,
       pull(mean_log_sf) %>% mean
    
   perturb_sf_summary = perturb_sf_summary %>% mutate(ctrl_log_sf = mean_ctrl_sf)
+
+  pb_group_by_term =  tibble::tibble(pb_id=row.names(colData(cg_pb_cds)),
+                                     pb_group=colData(cg_pb_cds)$perturbation)
+
+  mean_expr_mat = monocle3::aggregate_gene_expression(cg_pb_cds,
+                                                      cell_group_df=pb_group_by_term,
+                                                      norm_method="size_only",
+                                                      pseudocount=0,
+                                                      scale_agg_values=FALSE)
   
-  #   perturbations_to_drop = perturb_sf_summary %>%
-  #     filter(perturbation %in% control_ids == FALSE & mean_log_sf < 0.5 * mean_ctrl_sf) 
-  #   if (nrow(perturbations_to_drop) > 0) {
-  #     perturbations_to_drop = perturbations_to_drop %>% pull(perturbation)
-  #     message(paste("\tSkipping", perturbations_to_drop, "due to large library size imbalance between controls and perturbation.\n"))
-  #     cg_pb_cds = cg_pb_cds[,colData(cg_pb_cds)$perturbation %in% perturbations_to_drop]
-  #   }
-  # }
-  
-  # if (is.null(ambient_estimate_matrix) == FALSE){
-  #   # Do a quick method-of-moments estimate for average expression under a NB model:
-  #   pb_group_by_term =  tibble::tibble(pb_id=row.names(colData(cg_pb_cds)),
-  #                                      pb_group=colData(cg_pb_cds)$perturbation)
-  #   
-  #   mean_expr_mat = monocle3::aggregate_gene_expression(cg_pb_cds, 
-  #                                                       cell_group_df=pb_group_by_term, 
-  #                                                       norm_method="size_only", 
-  #                                                       pseudocount=0, 
-  #                                                       scale_agg_values=FALSE)
+  # if (is.null(ambient_estimate_matrix) == FALSE){  
   #   mean_expr_mat = log(mean_expr_mat)
   #   above_ambient = mean_expr_mat > ambient_estimate_matrix[row.names(mean_expr_mat),1]
   #   above_ambient_genes = Matrix::rowSums(above_ambient) > 0
-  #   cg_pb_cds = cg_pb_cds[above_ambient_genes,]
   # }
   
+  detected_genes = Matrix::colSums(counts(cg_pb_cds) > 0)
+  detected_genes = as.data.frame(detected_genes)
+  detected_genes$perturbation = colData(cg_pb_cds)$perturbation
+  detected_genes = detected_genes %>% group_by(perturbation) %>% summarize(detected_genes = mean(detected_genes))
+  
+  mean_ctrl_detected_genes = detected_genes %>% filter(perturbation %in% control_ids) %>% 
+    pull(detected_genes) %>% mean
+  
+  detected_genes = detected_genes %>% mutate(ctrl_detected_genes = mean_ctrl_detected_genes)
+  
+  perturb_sf_summary = perturb_sf_summary %>% left_join(detected_genes)
   
   nz_genes = Matrix::rowSums(counts(cg_pb_cds)) > 0 
   cg_pb_cds = cg_pb_cds[nz_genes,]
@@ -827,13 +828,20 @@ compare_gene_expression_within_node <- function(cell_group,
   
   message("\tcomputing contrasts")
 
+  cell_perturbations = left_join(cell_perturbations, perturb_sf_summary, by=c("term"="perturbation"))
+  
+  cell_perturbations = cell_perturbations %>% 
+    mutate(ash_mixcompdist = case_when(ctrl_detected_genes / detected_genes > 2 | ctrl_detected_genes / detected_genes < 0.5 ~ "halfuniform",
+                                       TRUE ~ "uniform"))
+  
   cell_perturbations = cell_perturbations %>% 
     mutate(perturb_effects = purrr:::map(.f = contrast_helper, 
                                          .x = term,
                                          state_2 = control_ids, 
                                          PEM = pb_coeffs$coefficients, 
                                          PSEM = pb_coeffs$stdev.unscaled, 
-                                         prefix = "perturb_to_ctrl"))
+                                         prefix = "perturb_to_ctrl",
+                                         ash.control=list(mixcompdist=ash_mixcompdist)))
   
   if (exclude_results_below_ambient & is.null(ambient_estimate_matrix) == FALSE){
     ambient_res = cell_perturbations %>%
@@ -849,7 +857,6 @@ compare_gene_expression_within_node <- function(cell_group,
     cell_perturbations = perturb_res %>% group_by(term) %>% tidyr::nest()
   }
   
-  cell_perturbations = left_join(cell_perturbations, perturb_sf_summary, by=c("term"="perturbation"))
   
   return(cell_perturbations) 
   
@@ -924,7 +931,15 @@ contrast_helper = function(state_1,
                            PSEM,
                            PEM_2 = PEM,
                            PSEM_2 = PSEM, 
-                           prefix = NULL){
+                           prefix = NULL,
+                           ash.control=NULL){
+  
+  ash.mixcompdist = "uniform"
+  
+  if (is.null(ash.control) == FALSE){
+    if (is.null(ash.control[["mixcompdist"]]) == FALSE)
+      ash.mixcompdist = ash.control[["mixcompdist"]]
+  }
   
   ids = intersect(rownames(PEM), rownames(PEM_2))
   
@@ -936,7 +951,7 @@ contrast_helper = function(state_1,
   
   effect_est = state_1_effects[ids] - state_2_effects[ids]
   se_est = sqrt(state_1_effects_se[ids]^2 + state_2_effects_se[ids]^2)
-  shrunkren_res = ashr::ash(effect_est, se_est, method="fdr")
+  shrunkren_res = ashr::ash(effect_est, se_est, method="fdr", mixcompdist=ash.mixcompdist)
   
   contrast_res = tibble(id = ids, #row.names(PEM),
                         raw_lfc = effect_est,
