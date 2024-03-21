@@ -364,7 +364,7 @@ compare_genes_over_graph <- function(ccs,
   }
   
   if (is.null(gene_ids) == FALSE){
-    pb_cds = pb_cds[gene_ids,]
+    pb_cds = pb_cds[intersect(rownames(pb_cds), gene_ids),]
   }
   
   # expr_over_thresh = threshold_expression_matrix(normalized_counts(pb_cds, "size_only", pseudocount = 0), ...)
@@ -427,6 +427,11 @@ compare_genes_over_graph <- function(ccs,
       state_graph,
       pb_coeffs$coefficients)) %>% 
     select(-gene_classes) # otherwise it is duplicated 
+  
+  cell_states = cell_states %>% tidyr::unnest(gene_class_scores) %>% 
+    left_join(rowData(pb_cds) %>% as.data.frame %>%  select(id, gene_short_name), by = c("gene_id" = "id")) %>% 
+    group_by(cell_state) %>% tidyr::nest() %>% dplyr::rename(gene_class_scores = data)
+  
   
   return(cell_states)
   
@@ -1544,6 +1549,7 @@ compare_genes_in_cell_state <- function(cell_state,
     #interpetation[match_row]
   }
   #debug(interpret_expression_pattern)
+  #
   expr_df = expr_df %>% mutate(interpretation = purrr::map(.f = purrr::possibly(
     interpret_expression_pattern, NA_character_), .x = data))
   expr_df = expr_df %>% tidyr::unnest(interpretation)
