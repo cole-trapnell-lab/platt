@@ -569,6 +569,8 @@ plot_state_graph_abundance_changes <- function(ccs,
                                                group_nodes_by=NULL,
                                                label_edges_by=NULL,
                                                edge_weights=NULL,
+                                               size_nodes_by = NULL,
+                                               num_degs = NULL, 
                                                fc_limits=c(-3,3),
                                                arrow.gap=0.03,
                                                arrow_unit = 2,
@@ -757,19 +759,43 @@ plot_state_graph_abundance_changes <- function(ccs,
 
   }
   p = p + guides(fill = "none")
-  p = p + ggnewscale::new_scale_color() +
-    ggnetwork::geom_nodes(data = g,
-                          aes(x, y,
-                              size = -log10(delta_q_value)*1.2),
-                          color=I("black")) +
-    ggnetwork::geom_nodes(data = g,
-                          aes(x, y,
-                              size = -log10(delta_q_value),
-                              color=delta_log_abund)) +
-    ggnetwork::geom_nodetext(data = g,
-                             aes(x, y,
-                                 label = q_value_sig_code),
-                             color=I("black"))
+  
+  if (!is.null(size_nodes_by)){
+    
+    
+    g = left_join(g, num_degs, by=c("name"="cell_group", "perturb_name"))
+    g[["size_nodes_by"]] = as.numeric(g[[size_nodes_by]] )
+    p = p + ggnewscale::new_scale_color() +
+      ggnetwork::geom_nodes(data = g,
+                            aes(x, y,
+                                size = size_nodes_by*1.2),
+                            color=I("black")) +
+      ggnetwork::geom_nodes(data = g,
+                            aes(x, y,
+                                size = size_nodes_by,
+                                color=delta_log_abund)) +
+      ggnetwork::geom_nodetext(data = g,
+                               aes(x, y,
+                                   label = q_value_sig_code),
+                               color=I("black"))
+    
+  } else {
+    p = p + ggnewscale::new_scale_color() +
+      ggnetwork::geom_nodes(data = g,
+                            aes(x, y,
+                                size = -log10(delta_q_value)*1.2),
+                            color=I("black")) +
+      ggnetwork::geom_nodes(data = g,
+                            aes(x, y,
+                                size = -log10(delta_q_value),
+                                color=delta_log_abund)) +
+      ggnetwork::geom_nodetext(data = g,
+                               aes(x, y,
+                                   label = q_value_sig_code),
+                               color=I("black"))
+  }
+  
+  
   # ggnetwork::geom_nodetext_repel(data = g,
   #                                aes(x, y,
   #                                    label = q_value_sig_code),
@@ -950,7 +976,7 @@ plot_state_graph_gene_expression <- function(ccs,
   # }
   #
   # label_subset = label_subset[label_subset != unlabeled_groups]
-
+  group_nodes_by = NULL
   if (is.null(group_nodes_by) == FALSE){
     p = p + ggforce::geom_mark_rect(aes(x, y,
                                         fill = gene_short_name,
@@ -1006,7 +1032,8 @@ plot_state_graph_gene_expression <- function(ccs,
 
   p = p + facet_wrap(~gene_short_name)
 
-  p = p + scale_size_continuous(labels = scales::percent, range=c(min_node_size, max_node_size)) +
+  p = p + 
+    scale_size_continuous(labels = scales::percent, range=c(min_node_size, max_node_size)) +
     ggnetwork::theme_blank() +
     hooke_theme_opts() +
     theme(legend.position=legend_position) + guides(fill = "none")
@@ -1035,7 +1062,7 @@ collect_psg_node_metadata <- function(ccs,
   if (is.null(color_nodes_by) == FALSE){
     color_by_metadata = cell_group_metadata[,c("cell_group", color_nodes_by)] %>%
       as.data.frame %>%
-      count(cell_group, !!sym(color_nodes_by)) %>%
+      dplyr::count(cell_group, !!sym(color_nodes_by)) %>%
       group_by(cell_group) %>% slice_max(n, with_ties=FALSE) %>% dplyr::select(-n)
     colnames(color_by_metadata) = c("cell_group", "color_nodes_by")
     node_metadata = left_join(node_metadata, color_by_metadata, by=c("id"="cell_group"))
@@ -1043,7 +1070,7 @@ collect_psg_node_metadata <- function(ccs,
   if (is.null(group_nodes_by) == FALSE){
     group_by_metadata = cell_group_metadata[,c("cell_group", group_nodes_by)] %>%
       as.data.frame %>%
-      count(cell_group, !!sym(group_nodes_by)) %>%
+      dplyr::count(cell_group, !!sym(group_nodes_by)) %>%
       group_by(cell_group) %>% slice_max(n, with_ties=FALSE) %>% dplyr::select(-n)
     colnames(group_by_metadata) = c("cell_group", "group_nodes_by")
     node_metadata = left_join(node_metadata, group_by_metadata, by=c("id"="cell_group"))
@@ -1053,7 +1080,7 @@ collect_psg_node_metadata <- function(ccs,
     colnames(label_by_metadata) = c("cell_group", "label_nodes_by")
     label_by_metadata = label_by_metadata %>%
       as.data.frame %>%
-      count(cell_group, label_nodes_by) %>%
+      dplyr::count(cell_group, label_nodes_by) %>%
       group_by(cell_group) %>% slice_max(n, with_ties=FALSE) %>% dplyr::select(-n)
     node_metadata = left_join(node_metadata, label_by_metadata, by=c("id"="cell_group"))
   }else{
@@ -2052,4 +2079,83 @@ get_max_abundance_contrast = function(ccm,
   max_abund_tbl = left_join(peak_abundances, perturb_effects, by = c("cell_group", "timepoint" = "time"))
   
   return(max_abund_tbl)
+}
+
+
+
+
+plot_graph_simple = function( ccs, 
+                              state_graph, 
+                              num_degs, 
+                              color_nodes_by = NULL, 
+                              label_nodes_by= NULL, 
+                              group_nodes_by= NULL, 
+                              arrow.gap=0.03,
+                              arrow_unit = 2,
+                              bar_unit = .075,
+                              node_size = 2,
+                              min_edge_size=0.1,
+                              max_edge_size=2, 
+                              con_colour = "darkgrey", 
+                              legend_position = "none", 
+                              hide_unlinked_nodes=TRUE, 
+                              flip_x=F) {
+  
+  if (is(state_graph, "igraph")){
+    edges = state_graph %>% igraph::as_data_frame()
+  }else{
+    edges = state_graph
+  }
+  
+  node_metadata = platt:::collect_psg_node_metadata(ccs, color_nodes_by, label_nodes_by, group_nodes_by)
+  
+  if (hide_unlinked_nodes){
+    node_metadata = node_metadata %>% filter(id %in% edges$from | id %in% edges$to)
+  }
+  
+  edges = edges %>% dplyr::ungroup()
+  edges = edges %>% filter(from %in% node_metadata$id & to %in% node_metadata$id)
+  
+  G = edges %>% distinct() %>% igraph::graph_from_data_frame(directed = T, vertices=node_metadata)
+  
+  layout_info = layout_state_graph(G, node_metadata, NULL, weighted=FALSE)
+  gvizl_coords = layout_info$gvizl_coords
+  bezier_df = layout_info$bezier_df
+  
+  
+
+  
+  g = ggnetwork::ggnetwork(G, layout = gvizl_coords, arrow.gap = arrow.gap, scale=F)
+  g = left_join(g, num_degs, by=c("name"="cell_group"))
+  
+  if (flip_x) {
+    g$x = -1*g$x
+    bezier_df$x = -1*bezier_df$x
+  }
+  
+  bezier_df$edge_thickness = (max_edge_size + min_edge_size) / 2
+  bezier_df$unsupported_edge = FALSE
+  
+  g = g %>% filter(!is.na(term))
+  p <- ggplot() +
+    ggplot2::geom_path(aes(x, y, group=edge_name, size=edge_thickness, linetype=unsupported_edge), 
+                       colour=con_colour, data=bezier_df %>% distinct(), 
+                       arrow = arrow(angle=30, length = unit(arrow_unit, "pt"), type="closed"), linejoin='mitre')
+  
+  p <- p + ggnewscale::new_scale_fill() +
+    ggnetwork::geom_nodes(data = g,
+                          aes(x, y,
+                              color = log10(n),
+                              size = node_size)) +
+    labs(color = "number degs") + 
+    scale_color_viridis_c()
+  
+  p <- p + scale_size_identity() +
+    ggnetwork::theme_blank() +
+    hooke_theme_opts() +
+    theme(legend.position=legend_position)
+  
+  p = p + facet_wrap(~term)
+  return(p)
+  
 }
