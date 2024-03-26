@@ -1122,17 +1122,21 @@ layout_state_graph <- function(G, node_metadata, edge_labels, weighted=FALSE)
     #sg = graph::subGraph(snodes=nodes, graph=G_nel)
     return (sg)
   }
-
-  subgraph_df = node_metadata %>%
-    select(group_nodes_by, id) %>%
-    group_by(group_nodes_by) %>%
-    tidyr::nest(subgraph_ids = id) %>%
-    summarize(subgraph = purrr::map(.f = purrr::possibly(make_subgraphs_for_groups, NULL),
-                                    .x = subgraph_ids,
-                                    G_nel))
-  subgraphs = subgraph_df$subgraph
-  names(subgraphs) = subgraph_df$group_nodes_by
-
+  
+  if (is.null(node_metadata)){
+    subgraphs = NULL
+  } else {
+    subgraph_df = node_metadata %>%
+      select(group_nodes_by, id) %>%
+      group_by(group_nodes_by) %>%
+      tidyr::nest(subgraph_ids = id) %>%
+      summarize(subgraph = purrr::map(.f = purrr::possibly(make_subgraphs_for_groups, NULL),
+                                      .x = subgraph_ids,
+                                      G_nel))
+    subgraphs = subgraph_df$subgraph
+    names(subgraphs) = subgraph_df$group_nodes_by
+  }
+  
     #summarize(subgraph = graph::subGraph(id,graph=G_nel)
     # summarize(subgraph = purrr::map(.f = purrr::possibly(make_subgraphs_for_groups, NULL),
     #                                 .x = group_nodes_by,
@@ -1311,7 +1315,7 @@ plot_state_graph_perturb_effects <- function(ccs,
     edge_labels=NULL
   }
 
-  layout_info = hooke:::layout_state_graph(G, node_metadata, edge_labels, weighted=FALSE)
+  layout_info = layout_state_graph(G, node_metadata, edge_labels, weighted=FALSE)
   gvizl_coords = layout_info$gvizl_coords
   bezier_df = layout_info$bezier_df
   if (is.null(edge_weights) == FALSE){
