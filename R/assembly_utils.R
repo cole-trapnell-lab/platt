@@ -39,8 +39,8 @@ fit_genotype_ccm = function(genotype,
                             assembly_time_stop=NULL,
                             num_time_breaks=NULL,
                             independent_spline_for_ko=TRUE,
-                            edge_whitelist=NULL,
-                            edge_blacklist=NULL,
+                            edge_allowlist=NULL,
+                            edge_denylist=NULL,
                             penalize_by_distance=TRUE,
                             vhat_method = "bootstrap",
                             num_threads=1,
@@ -136,9 +136,9 @@ fit_genotype_ccm = function(genotype,
   }
   
   if (is.null(prior_state_transition_graph) == FALSE){
-    wt_prior_whitelist = prior_state_transition_graph %>% igraph::as_data_frame()
+    wt_prior_allowlist = prior_state_transition_graph %>% igraph::as_data_frame()
   }else{
-    wt_prior_whitelist = NULL
+    wt_prior_allowlist = NULL
   }
   
   genotype_ccm = suppressMessages(suppressWarnings(new_cell_count_model(subset_ccs,
@@ -147,8 +147,8 @@ fit_genotype_ccm = function(genotype,
                                                                         #main_model_formula_str = "~ as.factor(timepoint) + knockout",
                                                                         
                                                                         nuisance_model_formula_str = nuisance_model_formula_str,
-                                                                        whitelist = edge_whitelist,
-                                                                        blacklist = edge_blacklist,
+                                                                        allowlist = edge_allowlist,
+                                                                        denylist = edge_denylist,
                                                                         vhat_method = vhat_method,
                                                                         penalize_by_distance=penalize_by_distance,
                                                                         num_threads = num_threads,
@@ -437,8 +437,8 @@ assemble_partition = function(cds,
       partition_results$perturbation_effects = list(NA)
       partition_results$perturbation_table = list(NA)
     }
-      partition_results$mt_graph_blacklist = list(NA)
-      partition_results$mt_graph_blacklist_plot = list(NA)
+      partition_results$mt_graph_denylist = list(NA)
+      partition_results$mt_graph_denylist_plot = list(NA)
   },
   error = function(e) {
     print (e)
@@ -479,8 +479,8 @@ fit_wt_model = function(cds,
                         interval_step = 2,
                         log_abund_detection_thresh=-5,
                         q_val = 0.1,
-                        edge_whitelist = NULL,
-                        edge_blacklist = NULL,
+                        edge_allowlist = NULL,
+                        edge_denylist = NULL,
                         base_penalty = 1,
                         keep_cds=TRUE,
                         verbose=FALSE,
@@ -559,10 +559,10 @@ fit_wt_model = function(cds,
   wt_ccm = new_cell_count_model(wt_ccs,
                                 main_model_formula_str = full_model_formula_str,
                                 nuisance_model_formula_str = nuisance_model_formula_str,
-                                #whitelist = initial_pcor_graph(wt_ccs),
+                                #allowlist = initial_pcor_graph(wt_ccs),
                                 vhat_method = vhat_method,
-                                whitelist = edge_whitelist,
-                                blacklist = edge_blacklist,
+                                allowlist = edge_allowlist,
+                                denylist = edge_denylist,
                                 base_penalty=base_penalty,
                                 num_threads = num_threads,
                                 backend=backend,
@@ -605,8 +605,8 @@ assemble_wt_graph = function(cds,
                              q_val = 0.1,
                              expt = "GAP16",
                              break_cycles = TRUE,
-                             edge_whitelist=NULL,
-                             edge_blacklist=NULL,
+                             edge_allowlist=NULL,
+                             edge_denylist=NULL,
                              component_col="partition",
                              verbose=FALSE){
 
@@ -645,8 +645,8 @@ assemble_wt_graph = function(cds,
                                                               log_abund_detection_thresh=log_abund_detection_thresh,
                                                               q_val = q_val,
                                                               links_between_components = links_between_components,  
-                                                              edge_whitelist=edge_whitelist,
-                                                              edge_blacklist=edge_blacklist,
+                                                              edge_allowlist=edge_allowlist,
+                                                              edge_denylist=edge_denylist,
                                                               components=component_col,
                                                               verbose=verbose,
                                                               expt=expt)
@@ -685,8 +685,8 @@ fit_mt_models = function(cds,
                          interval_step = 2,
                          log_abund_detection_thresh=-5,
                          q_val = 0.1,
-                         edge_whitelist = NULL,
-                         edge_blacklist = NULL,
+                         edge_allowlist = NULL,
+                         edge_denylist = NULL,
                          expt = "GAP16",
                          keep_cds=TRUE,
                          verbose=FALSE,
@@ -756,8 +756,8 @@ fit_mt_models = function(cds,
                                            batch_col = batch_col, 
                                            #assembly_time_start=start_time,
                                            #assembly_time_stop=stop_time,
-                                           edge_whitelist = edge_whitelist,
-                                           edge_blacklist = edge_blacklist,
+                                           edge_allowlist = edge_allowlist,
+                                           edge_denylist = edge_denylist,
                                            penalize_by_distance=penalize_by_distance,
                                            independent_spline_for_ko=independent_spline_for_ko,
                                            num_threads = num_threads,
@@ -784,8 +784,8 @@ assemble_mt_graph = function(wt_ccm,
                              expt = "GAP16",
                              break_cycles = TRUE,
                              component_col="partition",
-                             edge_whitelist=NULL,
-                             edge_blacklist=NULL,
+                             edge_allowlist=NULL,
+                             edge_denylist=NULL,
                              verbose=FALSE){
 
 
@@ -828,8 +828,8 @@ assemble_mt_graph = function(wt_ccm,
                                                                    q_val = q_val,
                                                                    expt = expt,
                                                                    links_between_components = links_between_components,
-                                                                   edge_whitelist=edge_whitelist,
-                                                                   edge_blacklist=edge_blacklist,
+                                                                   edge_allowlist=edge_allowlist,
+                                                                   edge_denylist=edge_denylist,
                                                                    components=component_col,
                                                                    verbose=verbose)
   if (break_cycles) {
