@@ -238,8 +238,8 @@ init_pathfinding_graph <- function(ccm,
                                    links_between_components=c("ctp", "none", "strongest-pcor", "strong-pcor"),
                                    components="partition",
                                    weigh_by_pcor=F,
-                                   edge_whitelist=NULL,
-                                   edge_blacklist=NULL){
+                                   edge_allowlist=NULL,
+                                   edge_denylist=NULL){
 
   # There are a number of different ways we could set up this "pathfinding graph" but for now
   # Let's just use the PAGA (weighed by distance in UMAP space), subtracting edges between which
@@ -250,7 +250,7 @@ init_pathfinding_graph <- function(ccm,
   cell_groups = ccm@ccs@metadata[["cell_group_assignments"]] %>% pull(cell_group) %>% unique()
   node_metadata = data.frame(id=cell_groups)
 
-  if (is.null(edge_whitelist)){
+  if (is.null(edge_allowlist)){
     message("Initializing pathfinding graph from partially correlated pairs linked in PAGA")
     paga_graph = initial_pcor_graph(ccm@ccs) %>% igraph::graph_from_data_frame(directed = FALSE, vertices=node_metadata) %>% igraph::as.directed()
     cov_graph = hooke:::return_igraph(model(ccm, "reduced"))
@@ -279,7 +279,7 @@ init_pathfinding_graph <- function(ccm,
       igraph::as.directed()
 
   }else{
-    weighted_edges = hooke:::weigh_edges_by_umap_dist(ccm, edge_whitelist)
+    weighted_edges = hooke:::weigh_edges_by_umap_dist(ccm, edge_allowlist)
     pathfinding_graph = weighted_edges %>% select(from, to, weight) %>%
       igraph::graph_from_data_frame(directed=TRUE, vertices=node_metadata)
   }
@@ -298,17 +298,17 @@ init_pathfinding_graph <- function(ccm,
       igraph::as.directed() %>% igraph::simplify()
   }
 
-  if (is.null(edge_blacklist) == FALSE){
-    blacklist_graph = igraph::graph_from_data_frame(edge_blacklist, directed=TRUE, vertices=node_metadata)
-    pathfinding_graph = pathfinding_graph - blacklist_graph
+  if (is.null(edge_denylist) == FALSE){
+    denylist_graph = igraph::graph_from_data_frame(edge_denylist, directed=TRUE, vertices=node_metadata)
+    pathfinding_graph = pathfinding_graph - denylist_graph
   }
 
-  # if (is.null(edge_whitelist) == FALSE){
-  #   # Ensuring whitelisted edges remain in pathfinding graph
-  #   edge_whitelist = edge_whitelist[,c(1,2)] %>% as_tibble()
-  #   colnames(edge_whitelist) = c("from", "to")
+  # if (is.null(edge_allowlist) == FALSE){
+  #   # Ensuring allowlisted edges remain in pathfinding graph
+  #   edge_allowlist = edge_allowlist[,c(1,2)] %>% as_tibble()
+  #   colnames(edge_allowlist) = c("from", "to")
   #   pathfinding_graph = igraph::as_data_frame(pathfinding_graph) %>%  select(from, to)
-  #   pathfinding_graph = pathfinding_graph %>% bind_rows(edge_whitelist) %>% distinct()
+  #   pathfinding_graph = pathfinding_graph %>% bind_rows(edge_allowlist) %>% distinct()
   #   pathfinding_graph = hooke:::weigh_edges_by_umap_dist(ccm, pathfinding_graph)
   # }
 
@@ -317,16 +317,16 @@ init_pathfinding_graph <- function(ccm,
 
 
 
-#' Generate a blacklist of state transition relationships based on a perturbation
+#' Generate a denylist of state transition relationships based on a perturbation
 #' experiment.
 #'
-#' This function generates a blacklist of edges between cell states based on
+#' This function generates a denylist of edges between cell states based on
 #' the idea that if cell state X is lost, and Y is not ever lost in the experiment
 #' Y can't come from X. This function is very simplistic right now. We could get
 #' more sophisticated by looking at the relative timing of losses, etc. We are
 #' also not accounting for power at all. We should be asking whether we have
 #' power to detect a change in state Y, and if not, exclude (X,Y) from the
-#' blacklist
+#' denylist
 #'
 #' @export
 get_discordant_loss_pairs <- function(perturbation_ccm,
@@ -1899,8 +1899,8 @@ assemble_timeseries_transitions <- function(ccm,
                                             make_dag=FALSE,
                                             links_between_components=c("ctp", "none", "strongest-pcor", "strong-pcor"),
                                             components = "partition",
-                                            edge_whitelist=NULL,
-                                            edge_blacklist=NULL,
+                                            edge_allowlist=NULL,
+                                            edge_denylist=NULL,
                                             ...){
 
   message("Determining extant cell types")
@@ -1921,8 +1921,8 @@ assemble_timeseries_transitions <- function(ccm,
                                              extant_cell_type_df,
                                              links_between_components=links_between_components,
                                              components = components,
-                                             edge_whitelist=edge_whitelist,
-                                             edge_blacklist=edge_blacklist)
+                                             edge_allowlist=edge_allowlist,
+                                             edge_denylist=edge_denylist)
 
 
   G = build_timeseries_transition_graph(ccm,
@@ -2070,8 +2070,8 @@ assemble_transition_graph_from_perturbations <- function(control_timeseries_ccm,
                                                          links_between_components=c("ctp", "none", "strongest-pcor", "strong-pcor"),
                                                          components = "partition",
                                                          verbose=FALSE,
-                                                         edge_whitelist=NULL,
-                                                         edge_blacklist=NULL,
+                                                         edge_allowlist=NULL,
+                                                         edge_denylist=NULL,
                                                          ...)
 {
 
@@ -2102,8 +2102,8 @@ assemble_transition_graph_from_perturbations <- function(control_timeseries_ccm,
                                                extant_cell_type_df,
                                                links_between_components=links_between_components,
                                                components = components,
-                                               edge_whitelist=edge_whitelist,
-                                               edge_blacklist=edge_blacklist)
+                                               edge_allowlist=edge_allowlist,
+                                               edge_denylist=edge_denylist)
 
     timeseries_graph = assemble_timeseries_transitions(control_timeseries_ccm,
                                                        q_val=q_val,
@@ -2117,8 +2117,8 @@ assemble_transition_graph_from_perturbations <- function(control_timeseries_ccm,
                                                        log_abund_detection_thresh=log_abund_detection_thresh,
                                                        min_pathfinding_lfc=min_pathfinding_lfc,
                                                        links_between_components=links_between_components,
-                                                       edge_whitelist=edge_whitelist,
-                                                       edge_blacklist=edge_blacklist,
+                                                       edge_allowlist=edge_allowlist,
+                                                       edge_denylist=edge_denylist,
                                                        components = components,
                                                        ...)
 

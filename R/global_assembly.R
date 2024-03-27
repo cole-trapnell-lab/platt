@@ -1,20 +1,20 @@
 #'
 #' @param res
-build_whitelist = function(res, graph_type = c("wt", "mt")) {
-  # build a whitelist
+build_allowlist = function(res, graph_type = c("wt", "mt")) {
+  # build a allowlist
   
   graph_type = match.arg(graph_type)
   
   if (graph_type == "wt"){
-    edge_whitelist = do.call(igraph::union, res %>% filter(is.na(wt_graph) == FALSE) %>% pull(wt_graph))
+    edge_allowlist = do.call(igraph::union, res %>% filter(is.na(wt_graph) == FALSE) %>% pull(wt_graph))
   } else {
-    edge_whitelist = do.call(igraph::union, res %>% filter(is.na(mt_graph) == FALSE) %>% pull(mt_graph))
+    edge_allowlist = do.call(igraph::union, res %>% filter(is.na(mt_graph) == FALSE) %>% pull(mt_graph))
   }
   
-  edge_whitelist = igraph::as_data_frame(edge_whitelist)
-  edge_whitelist = edge_whitelist %>% select(from, to) %>% distinct()
+  edge_allowlist = igraph::as_data_frame(edge_allowlist)
+  edge_allowlist = edge_allowlist %>% select(from, to) %>% distinct()
   
-  return(edge_whitelist)
+  return(edge_allowlist)
   
 }
 
@@ -53,7 +53,7 @@ fit_global_wt_model = function(cds,
                                sparsity_factor = 0.01) {
   
   
-  global_wt_graph_edge_whitelist = build_whitelist(res)
+  global_wt_graph_edge_allowlist = build_allowlist(res)
   
   # transfer the cell states back to global cds
   
@@ -77,7 +77,7 @@ fit_global_wt_model = function(cds,
                                ctrl_ids = ctrl_ids,
                                sparsity_factor = sparsity_factor,
                                perturbation_col = perturbation_col,
-                               edge_whitelist = global_wt_graph_edge_whitelist,
+                               edge_allowlist = global_wt_graph_edge_allowlist,
                                keep_cds = TRUE,
                                num_threads = num_threads,
                                backend = assembly_backend,
@@ -99,7 +99,7 @@ fit_global_wt_model = function(cds,
   #                                     sparsity_factor = 0.01,
   #                                     perturbation_col = perturbation_col,
   #                                     component_col = component_col,
-  #                                     edge_whitelist = global_wt_graph_edge_whitelist,
+  #                                     edge_allowlist = global_wt_graph_edge_allowlist,
   #                                     verbose=TRUE)
   
   # return(list(ccm = global_wt_ccm,
@@ -130,7 +130,7 @@ fit_global_mt_model = function(cds,
                                vhat_method="bootstrap") {
   
   
-  # Learn a single graph on all states at once (using the subgraphs as a whitelist/prior)
+  # Learn a single graph on all states at once (using the subgraphs as a allowlist/prior)
   
   
   # Fit cell count models to each mutant vs control
@@ -152,10 +152,10 @@ fit_global_mt_model = function(cds,
                                             vhat_method=vhat_method,
                                             penalize_by_distance=TRUE)
   
-  # # Build a whitelist of edges by collecting the edges in the subassemblies from the mutants
-  # global_mt_graph_edge_whitelist = build_whitelist(res)
+  # # Build a allowlist of edges by collecting the edges in the subassemblies from the mutants
+  # global_mt_graph_edge_allowlist = build_allowlist(res)
   # 
-  # # Build a global assembly from all the mutant models, using the subassembly as a whitelist
+  # # Build a global assembly from all the mutant models, using the subassembly as a allowlist
   # # NOTE: this graph should really only have edges that are directly supported by
   # # genetic perturbations, and may therefore be somewhat sparse.
   # global_mt_graph = assemble_mt_graph(global_wt_ccm,
@@ -165,7 +165,7 @@ fit_global_mt_model = function(cds,
   #                                             interval_col = interval_col,
   #                                             perturbation_col = perturbation_col,
   #                                             component_col = component_col, 
-  #                                             edge_whitelist = global_mt_graph_edge_whitelist,
+  #                                             edge_allowlist = global_mt_graph_edge_allowlist,
   #                                             q_val=0.1,
   #                                             verbose=TRUE)
   
