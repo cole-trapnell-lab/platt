@@ -381,7 +381,7 @@ plot_state_graph_losses <- function(perturbation_ccm,
     edge_labels=NULL
   }
 
-  layout_info = hooke:::layout_state_graph(G, node_metadata, NULL, weighted=FALSE)
+  layout_info = layout_state_graph(G, node_metadata, NULL, weighted=FALSE)
   gvizl_coords = layout_info$gvizl_coords
   bezier_df = layout_info$bezier_df
   if (is.null(edge_weights) == FALSE){
