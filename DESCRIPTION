@@ -9,6 +9,9 @@ License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.2.3
+Imports:
+    ashr (>= 2.2-63),
+    speedglm (>= 0.3-2),
 Suggests: 
     testthat (>= 3.0.0)
 Config/testthat/edition: 3

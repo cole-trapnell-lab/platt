@@ -5,7 +5,7 @@
 \title{Plot the expression of a single gene on the state transition graph}
 \usage{
 plot_state_graph_abundance_changes(
-  ccm,
+  ccs,
   state_graph,
   comp_abund_table,
   contrast = "contrast",

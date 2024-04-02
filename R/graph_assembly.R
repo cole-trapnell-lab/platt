@@ -40,7 +40,8 @@ get_extant_cell_types <- function(ccm,
            percent_max_abund = exp(log_abund) / max_abundance,
            cell_type_prediction_range = max(log_abund)-(min(log_abund)),
            percent_cell_type_range = (log_abund - min(log_abund)) / cell_type_prediction_range,
-           above_log_abund_thresh = (log_abund - 2*log_abund_se > log_abund_detection_thresh & log_abund - 2*log_abund_se > log(cell_group_pct_range_detection_thresh)) | cell_type_prediction_range < min_cell_range,
+           # above_log_abund_thresh = (log_abund - 2*log_abund_se > log_abund_detection_thresh & log_abund - 2*log_abund_se > log(cell_group_pct_range_detection_thresh)) | cell_type_prediction_range < min_cell_range,
+           above_log_abund_thresh = log_abund  > log_abund_detection_thresh, 
            present_flag = ifelse(above_log_abund_thresh, TRUE, NA)) %>%
     ungroup()
   
@@ -102,6 +103,11 @@ add_cross_component_pathfinding_links = function(ccm,
                                                  type=c("strongest-pcor", "strong-pcor", "ctp"),
                                                  surprise_thresh=2,
                                                  components="partition"){
+  
+  assertthat::assert_that(
+    tryCatch(expr = components %in% colnames(colData(ccm@ccs@cds)),
+             error = function(e) FALSE),
+    msg = paste0(components, "not found in colData"))
 
   pcor_graph = tibble(cell_group = row.names(counts(ccm@ccs)))
   pcor_graph = pcor_graph %>% select(cell_group) %>% tidyr::expand(cell_group, cell_group)
@@ -232,8 +238,8 @@ init_pathfinding_graph <- function(ccm,
                                    links_between_components=c("ctp", "none", "strongest-pcor", "strong-pcor"),
                                    components="partition",
                                    weigh_by_pcor=F,
-                                   edge_whitelist=NULL,
-                                   edge_blacklist=NULL){
+                                   edge_allowlist=NULL,
+                                   edge_denylist=NULL){
 
   # There are a number of different ways we could set up this "pathfinding graph" but for now
   # Let's just use the PAGA (weighed by distance in UMAP space), subtracting edges between which
@@ -244,7 +250,7 @@ init_pathfinding_graph <- function(ccm,
   cell_groups = ccm@ccs@metadata[["cell_group_assignments"]] %>% pull(cell_group) %>% unique()
   node_metadata = data.frame(id=cell_groups)
 
-  if (is.null(edge_whitelist)){
+  if (is.null(edge_allowlist)){
     message("Initializing pathfinding graph from partially correlated pairs linked in PAGA")
     paga_graph = initial_pcor_graph(ccm@ccs) %>% igraph::graph_from_data_frame(directed = FALSE, vertices=node_metadata) %>% igraph::as.directed()
     cov_graph = hooke:::return_igraph(model(ccm, "reduced"))
@@ -273,7 +279,7 @@ init_pathfinding_graph <- function(ccm,
       igraph::as.directed()
 
   }else{
-    weighted_edges = hooke:::weigh_edges_by_umap_dist(ccm, edge_whitelist)
+    weighted_edges = hooke:::weigh_edges_by_umap_dist(ccm, edge_allowlist)
     pathfinding_graph = weighted_edges %>% select(from, to, weight) %>%
       igraph::graph_from_data_frame(directed=TRUE, vertices=node_metadata)
   }
@@ -292,17 +298,17 @@ init_pathfinding_graph <- function(ccm,
       igraph::as.directed() %>% igraph::simplify()
   }
 
-  if (is.null(edge_blacklist) == FALSE){
-    blacklist_graph = igraph::graph_from_data_frame(edge_blacklist, directed=TRUE, vertices=node_metadata)
-    pathfinding_graph = pathfinding_graph - blacklist_graph
+  if (is.null(edge_denylist) == FALSE){
+    denylist_graph = igraph::graph_from_data_frame(edge_denylist, directed=TRUE, vertices=node_metadata)
+    pathfinding_graph = pathfinding_graph - denylist_graph
   }
 
-  # if (is.null(edge_whitelist) == FALSE){
-  #   # Ensuring whitelisted edges remain in pathfinding graph
-  #   edge_whitelist = edge_whitelist[,c(1,2)] %>% as_tibble()
-  #   colnames(edge_whitelist) = c("from", "to")
+  # if (is.null(edge_allowlist) == FALSE){
+  #   # Ensuring allowlisted edges remain in pathfinding graph
+  #   edge_allowlist = edge_allowlist[,c(1,2)] %>% as_tibble()
+  #   colnames(edge_allowlist) = c("from", "to")
   #   pathfinding_graph = igraph::as_data_frame(pathfinding_graph) %>%  select(from, to)
-  #   pathfinding_graph = pathfinding_graph %>% bind_rows(edge_whitelist) %>% distinct()
+  #   pathfinding_graph = pathfinding_graph %>% bind_rows(edge_allowlist) %>% distinct()
   #   pathfinding_graph = hooke:::weigh_edges_by_umap_dist(ccm, pathfinding_graph)
   # }
 
@@ -311,16 +317,16 @@ init_pathfinding_graph <- function(ccm,
 
 
 
-#' Generate a blacklist of state transition relationships based on a perturbation
+#' Generate a denylist of state transition relationships based on a perturbation
 #' experiment.
 #'
-#' This function generates a blacklist of edges between cell states based on
+#' This function generates a denylist of edges between cell states based on
 #' the idea that if cell state X is lost, and Y is not ever lost in the experiment
 #' Y can't come from X. This function is very simplistic right now. We could get
 #' more sophisticated by looking at the relative timing of losses, etc. We are
 #' also not accounting for power at all. We should be asking whether we have
 #' power to detect a change in state Y, and if not, exclude (X,Y) from the
-#' blacklist
+#' denylist
 #'
 #' @export
 get_discordant_loss_pairs <- function(perturbation_ccm,
@@ -541,7 +547,8 @@ get_discordant_loss_pairs <- function(perturbation_ccm,
 #' @export
 get_perturbation_paths <- function(perturbation_ccm,
                                    perturb_summary_tbl,
-                                   pathfinding_graph){
+                                   pathfinding_graph, 
+                                   delta_log_abund_loss_thresh = 0 ){
 
   # Temporarily set the number of threads OpenMP & the BLAS library can use to be 1
   # old_omp_num_threads = single_thread_omp()
@@ -550,10 +557,15 @@ get_perturbation_paths <- function(perturbation_ccm,
   Sys.setenv("OPENBLAS_NUM_THREADS" = 1)
 
   tryCatch({
+    
+    
 
-    lost_cell_groups = perturb_summary_tbl %>% filter(is_lost_when_present) %>% pull(cell_group) %>% unique
-    gained_cell_groups = perturb_summary_tbl %>% filter(is_gained_when_present) %>% pull(cell_group) %>% unique
+    lost_cell_groups = perturb_summary_tbl %>% filter(loss_when_present < -delta_log_abund_loss_thresh) %>% pull(cell_group) %>% unique
+    gained_cell_groups = perturb_summary_tbl %>% filter(gain_when_present > delta_log_abund_loss_thresh) %>% pull(cell_group) %>% unique
 
+    # lost_cell_groups = perturb_summary_tbl %>% filter(is_lost_when_present) %>% pull(cell_group) %>% unique
+    # gained_cell_groups = perturb_summary_tbl %>% filter(is_gained_when_present) %>% pull(cell_group) %>% unique
+    
     perturbed_cell_groups = union(lost_cell_groups, gained_cell_groups)
     lost_subgraph = igraph::subgraph(pathfinding_graph, lost_cell_groups)
     nodes_without_lost_parent = igraph::V(lost_subgraph)[igraph::degree(lost_subgraph, mode="in") == 0]$name
@@ -1320,16 +1332,67 @@ get_pcor_between_pair <- function(perturb_model_pcor_matrix, from, to){
   return(pcor_vals)
 }
 
+
+# score_path_for_loss = function(path, loss_tbl, effect_threshold=1){
+#   cell_groups_on_path = tibble(cell_group=unique(c(path$from, path$to)))
+#   cell_groups_on_path = inner_join(cell_groups_on_path, loss_tbl, by="cell_group")
+#   
+#   # FIXME: we should find a way to incorporate effects from all the nodes along the path.
+#   # cell_groups_on_path = cell_groups_on_path %>% filter(is_lost_when_present)
+#   
+#   # except for the first node, find any cells that are above threshold of one
+#   # even if they have a loss value, consider these positive
+#   pos_cells = cell_groups_on_path[-1,] %>% filter(gain_when_present > effect_threshold) 
+#   
+#   
+#   
+#   cell_groups_on_path = cell_groups_on_path[-1,] #%>%
+#   # group_by(cell_group) %>%
+#   # mutate(when_present = sum(loss_when_present,  gain_when_present,na.rm=T),
+#   #        when_present_tvalue = sum(loss_when_present_tvalue, gain_when_present_tvalue,na.rm=T))
+#   
+#   # if there are lost cells, calculate the significance of the loss path 
+#   # should this be above 1 ? 
+#   if (nrow(cell_groups_on_path) > 1 & nrow(pos_cells) == 0){
+#     cell_loss_stats_on_path = cell_groups_on_path %>%
+#       summarize(perturb_dist_effect = sum(loss_when_present, na.rm=TRUE),
+#                 perturb_dist_effect_pval = pnorm(sum(loss_when_present_tvalue, na.rm=TRUE), mean = 0,
+#                                                  sd = nrow(cell_groups_on_path)),
+#                 perturb_dist_model_adj_rsq = NA,
+#                 perturb_dist_model_ncells = NA)
+#   }else{
+#     cell_loss_stats_on_path = tibble(perturb_dist_effect = NA,
+#                                      perturb_dist_effect_pval = 1,
+#                                      perturb_dist_model_adj_rsq = NA,
+#                                      perturb_dist_model_ncells = NA)
+#   }
+#   
+#   
+#   return(cell_loss_stats_on_path)
+# }
+
+
 score_path_for_loss = function(path, loss_tbl){
   cell_groups_on_path = tibble(cell_group=unique(c(path$from, path$to)))
   cell_groups_on_path = inner_join(cell_groups_on_path, loss_tbl, by="cell_group")
 
   # FIXME: we should find a way to incorporate effects from all the nodes along the path.
-  cell_groups_on_path = cell_groups_on_path %>% filter(is_lost_when_present)
-  if (nrow(cell_groups_on_path) > 0){
+  # cell_groups_on_path = cell_groups_on_path %>% filter(is_lost_when_present)
+  
+  # except for the first node, make sure it isnt significantly positive
+  # pos_cells = cell_groups_on_path[-1,] %>% filter(is_gain_when_present) 
+  pos_cells = cell_groups_on_path[-1,] %>% filter(!is.na(gain_when_present)) 
+  # print('hi')
+  cell_groups_on_path = cell_groups_on_path[-1,] %>%
+    group_by(cell_group) %>%
+    mutate(when_present = sum(loss_when_present, gain_when_present,na.rm=T),
+           when_present_tvalue = sum(loss_when_present_tvalue, gain_when_present_tvalue,na.rm=T))
+  
+  if (nrow(cell_groups_on_path) > 0 & nrow(pos_cells) == 0){
     cell_loss_stats_on_path = cell_groups_on_path %>%
-      summarize(perturb_dist_effect = mean(loss_when_present, na.rm=TRUE),
-                perturb_dist_effect_pval = mean(loss_when_present_q_val, na.rm=TRUE),
+      summarize(perturb_dist_effect = sum(when_present, na.rm=TRUE),
+                perturb_dist_effect_pval = pnorm(sum(when_present_tvalue, na.rm=TRUE), mean = 0,
+                                                 sd = nrow(cell_groups_on_path)),
                 perturb_dist_model_adj_rsq = NA,
                 perturb_dist_model_ncells = NA)
   }else{
@@ -1836,8 +1899,8 @@ assemble_timeseries_transitions <- function(ccm,
                                             make_dag=FALSE,
                                             links_between_components=c("ctp", "none", "strongest-pcor", "strong-pcor"),
                                             components = "partition",
-                                            edge_whitelist=NULL,
-                                            edge_blacklist=NULL,
+                                            edge_allowlist=NULL,
+                                            edge_denylist=NULL,
                                             ...){
 
   message("Determining extant cell types")
@@ -1858,8 +1921,8 @@ assemble_timeseries_transitions <- function(ccm,
                                              extant_cell_type_df,
                                              links_between_components=links_between_components,
                                              components = components,
-                                             edge_whitelist=edge_whitelist,
-                                             edge_blacklist=edge_blacklist)
+                                             edge_allowlist=edge_allowlist,
+                                             edge_denylist=edge_denylist)
 
 
   G = build_timeseries_transition_graph(ccm,
@@ -2007,8 +2070,8 @@ assemble_transition_graph_from_perturbations <- function(control_timeseries_ccm,
                                                          links_between_components=c("ctp", "none", "strongest-pcor", "strong-pcor"),
                                                          components = "partition",
                                                          verbose=FALSE,
-                                                         edge_whitelist=NULL,
-                                                         edge_blacklist=NULL,
+                                                         edge_allowlist=NULL,
+                                                         edge_denylist=NULL,
                                                          ...)
 {
 
@@ -2039,8 +2102,8 @@ assemble_transition_graph_from_perturbations <- function(control_timeseries_ccm,
                                                extant_cell_type_df,
                                                links_between_components=links_between_components,
                                                components = components,
-                                               edge_whitelist=edge_whitelist,
-                                               edge_blacklist=edge_blacklist)
+                                               edge_allowlist=edge_allowlist,
+                                               edge_denylist=edge_denylist)
 
     timeseries_graph = assemble_timeseries_transitions(control_timeseries_ccm,
                                                        q_val=q_val,
@@ -2054,8 +2117,8 @@ assemble_transition_graph_from_perturbations <- function(control_timeseries_ccm,
                                                        log_abund_detection_thresh=log_abund_detection_thresh,
                                                        min_pathfinding_lfc=min_pathfinding_lfc,
                                                        links_between_components=links_between_components,
-                                                       edge_whitelist=edge_whitelist,
-                                                       edge_blacklist=edge_blacklist,
+                                                       edge_allowlist=edge_allowlist,
+                                                       edge_denylist=edge_denylist,
                                                        components = components,
                                                        ...)
 
@@ -2408,20 +2471,25 @@ contract_state_graph <- function(ccs,
   # Create simplified cell state graph just on cell type (not cluster):
   cell_groups = ccs@metadata[["cell_group_assignments"]] %>% pull(cell_group) %>% unique()
   node_metadata = tibble(id=cell_groups)
-
+  
   #G = edges %>% select(from, to, n, scaled_weight, distance_from_root)  %>% igraph::graph_from_data_frame(directed = T)
   cell_group_metadata = colData(ccs@cds) %>%
     as.data.frame %>% select(!!sym(group_nodes_by))
-
+  
   cell_group_metadata$cell_group = ccs@metadata[["cell_group_assignments"]] %>% pull(cell_group)
-
+  
   group_by_metadata = cell_group_metadata[,c("cell_group", group_nodes_by)] %>%
     as.data.frame %>%
     dplyr::count(cell_group, !!sym(group_nodes_by)) %>%
     dplyr::group_by(cell_group) %>% slice_max(n, with_ties=FALSE) %>% dplyr::select(-n)
   colnames(group_by_metadata) = c("cell_group", "group_nodes_by")
-  node_metadata = left_join(node_metadata, group_by_metadata, by=c("id"="cell_group"))
-  node_metadata = node_metadata %>% mutate(id = as.numeric(id)) %>% arrange(id)
+  
+  node_metadata = igraph::as_data_frame(state_graph, what = "vertices") %>% mutate(order = row_number()) %>%
+    left_join(group_by_metadata, by = c("name" = "cell_group"))
+  
+  # node_metadata = left_join(node_metadata, group_by_metadata, by=c("id"="cell_group"))
+  # node_metadata = left_join(node_metadata, df, by = "id")%>% arrange(sort_id)
+  # node_metadata = node_metadata %>% mutate(sort_id = as.numeric(gsub("\\D", "", id))) %>% arrange(sort_id)
   contraction_mapping = as.factor(node_metadata$group_nodes_by)
   contraction_mapping_names = as.character(levels(contraction_mapping))
   contraction_mapping = as.numeric(contraction_mapping)
