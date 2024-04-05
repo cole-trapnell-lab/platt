@@ -1,0 +1,268 @@
+# to do : add edge stuff and node labels
+
+plot_annotations = function(cell_state_graph, 
+                            color_nodes_by = NULL, 
+                            label_nodes_by = NULL, 
+                            arrow_unit = 7,
+                            node_size = 2,
+                            con_colour = "darkgrey", 
+                            legend_position = "none") {
+  
+  if (is.null(color_nodes_by)){
+    color_nodes_by = cell_state_graph@ccs@info$cell_group
+  }
+  
+  g = cell_state_graph@g
+  bezier_df = cell_state_graph@layout_info$bezier_df
+  
+  p <- ggplot(aes(x,y), data=g) + 
+    ggplot2::geom_path(aes(x, y, group = edge_name), 
+                       colour = con_colour, data = bezier_df %>% distinct(), 
+                       arrow = arrow(angle=30, length = unit(arrow_unit, "pt"), type="closed"), 
+                       linejoin='mitre')
+  
+  p = p + ggnetwork::geom_nodes(data = g,
+                                aes(x, y,
+                                    color = color_nodes_by),
+                                size = node_size)  +
+    labs(fill = color_nodes_by)
+  
+  p = p + scale_size_identity() +
+    ggnetwork::theme_blank() +
+    hooke_theme_opts() +
+    theme(legend.position=legend_position)
+  
+  return(p)
+}
+
+#' 
+#' @param cell_state_graph
+#' @param comp_abund_table
+#' @param facet_group
+
+plot_abundance_changes = function(cell_state_graph, 
+                                  comp_abund_table,
+                                  facet_group = "perturb_name",
+                                  arrow_unit = 7,
+                                  node_size = 2,
+                                  con_colour = "darkgrey", 
+                                  legend_position = "none", 
+                                  fc_limits = c(-3,3)) {
+  
+  g = cell_state_graph@g
+  bezier_df = cell_state_graph@layout_info$bezier_df
+  
+  comp_abund_table[["contrast"]] = comp_abund_table[[facet_group]]
+  comp_abund_table$contrast = as.factor(comp_abund_table$contrast)
+  min = fc_limits[1]
+  max = fc_limits[2]
+  comp_abund_table = comp_abund_table %>%
+    mutate(delta_log_abund = ifelse(delta_log_abund > max, max, delta_log_abund)) %>%
+    mutate(delta_log_abund = ifelse(delta_log_abund < min, min, delta_log_abund))
+  
+  comp_abund_table = comp_abund_table %>%
+    mutate(
+      delta_q_value = pmax(0.0001, delta_q_value),
+      q_value_sig_code = platt:::calc_sig_ind(delta_q_value, html=FALSE))
+  
+  g = left_join(g, comp_abund_table, by=c("name"="cell_group"), relationship = "many-to-many")
+  
+  p <- ggplot(aes(x,y), data = g) + 
+    ggplot2::geom_path(aes(x, y, group = edge_name), 
+                       colour = con_colour, data = bezier_df %>% distinct(), 
+                       arrow = arrow(angle=30, length = unit(arrow_unit, "pt"), type="closed"), 
+                       linejoin='mitre')
+  p = p + ggnewscale::new_scale_color() +
+    ggnetwork::geom_nodes(data = g,
+                          aes(x, y,
+                              size = -log10(delta_q_value)*1.2),
+                          color=I("black")) +
+    ggnetwork::geom_nodes(data = g,
+                          aes(x, y,
+                              size = -log10(delta_q_value),
+                              color=delta_log_abund)) +
+    ggnetwork::geom_nodetext(data = g,
+                             aes(x, y,
+                                 label = q_value_sig_code),
+                             color=I("black")) +  
+    scale_color_gradient2(low = "royalblue3", mid = "white", high="orangered3") + 
+    scale_size(range=c(1, 6)) +
+    scale_size_identity() +
+    ggnetwork::theme_blank() +
+    hooke_theme_opts() +
+    theme(legend.position=legend_position) + facet_wrap(~contrast)
+  
+  return(p)
+}
+
+
+# given a list of genes will plot the sum, mean, min or max expression of those genes
+# on top of a cell_state_graph
+#' @param cell_state_graph
+#' @param genes
+#' @param color_nodes_by
+#' 
+plot_gene_expr = function(cell_state_graph, 
+                          genes, 
+                          color_nodes_by = c("sum_expr", "mean_expr", "min_expr", "max_expr"),
+                          arrow_unit = 7,
+                          node_size = 2,
+                          con_colour = "darkgrey",
+                          fract_expr = 0.0,
+                          mean_expr = 0.0,
+                          legend_position = "none") {
+  
+  g = cell_state_graph@g
+  ccs = cell_state_graph@ccs
+  bezier_df = cell_state_graph@layout_info$bezier_df
+  color_nodes_by = match.arg(color_nodes_by)
+  
+  gene_ids = rowData(ccs@cds) %>% as.data.frame %>% filter(gene_short_name %in% genes) %>% rownames()
+  gene_expr = hooke:::aggregated_expr_data(ccs@cds[gene_ids,], group_cells_by = ccs@info$cell_group)
+  sub_gene_expr = gene_expr %>%
+    group_by(gene_short_name) %>%
+    mutate(
+      max_expr = max(mean_expression),
+      fraction_max = ifelse (max_expr > 0, mean_expression / max_expr, 0),
+      gene_expr = case_when(
+        fraction_expressing >= fract_expr & mean_expression >= mean_expr ~ TRUE,
+        TRUE ~ FALSE)) 
+  scale_to_range = T
+  if (scale_to_range) {
+    sub_gene_expr = sub_gene_expr %>%
+      mutate(value = mean_expression) %>%
+      group_by(gene_short_name) %>%
+      dplyr::mutate(max_val_for_feature = max(value),
+                    min_val_for_feature = min(value)) %>%
+      dplyr::mutate(value = 100 * (value - min_val_for_feature) / (max_val_for_feature - min_val_for_feature))
+  }
+  
+  gene_expr_summary =  sub_gene_expr %>% 
+    group_by(cell_group) %>% 
+    summarize( sum_expr = sum(mean_expression), 
+               mean_expr = mean(mean_expression), 
+               min_expr = min(mean_expression), 
+               max_expr = max(mean_expression), 
+               fraction_max = sum(fraction_max),
+               gene_expr = (min(gene_expr) == 1))
+  
+  g = left_join(g, gene_expr_summary, by = c("name" = "cell_group"), relationship = "many-to-many")
+  
+  p <- ggplot(aes(x,y), data=g) + 
+    ggplot2::geom_path(aes(x, y, group = edge_name), 
+                       colour=con_colour, data=bezier_df %>% distinct(), 
+                       arrow = arrow(angle=30, length = unit(arrow_unit, "pt"), type="closed"), 
+                       linejoin='mitre')
+  
+  p = p + ggnewscale::new_scale_color() +
+    ggnetwork::geom_nodes(data = g %>% filter(gene_expr),
+                          aes(x, y,
+                              size = fraction_max * node_size * 1.2), 
+                          color=I("black")) +
+    ggnetwork::geom_nodes(data = g %>% filter(gene_expr),
+                          aes(x, y,
+                              size = fraction_max * node_size,
+                              color = I(con_colour))) +
+    ggnewscale::new_scale_color() +
+    ggnetwork::geom_nodes(data = g %>% filter(gene_expr & fraction_max > 0),
+                          aes(x, y,
+                              size = fraction_max * node_size,
+                              color = sum_expr)) +
+    labs(color = color_nodes_by) +
+    viridis::scale_color_viridis(option = "viridis") + 
+    ggnetwork::theme_blank() +
+    scale_size_identity() +
+    scale_size(range=c(1, 5)) + 
+    hooke_theme_opts() + theme(legend.position = "none") 
+  return(p)
+}
+
+plot_deviation_plot = function(cell_state_graph, 
+                               deviation, 
+                               facet_group = "term", 
+                               arrow_unit = 7,
+                               node_size = 2,
+                               con_colour = "darkgrey",
+                               fract_expr = 0.0,
+                               mean_expr = 0.0,
+                               legend_position = "none"){
+  
+  g = cell_state_graph@g
+  bezier_df = cell_state_graph@layout_info$bezier_df
+  
+  g = left_join(g, deviation, by=c("name"="cell_group"), relationship = "many-to-many")
+  g[["contrast"]] = g[[facet_group]]  
+  g$contrast = as.factor(g$contrast)
+  
+  p <- ggplot(aes(x,y), data = g) + 
+    ggplot2::geom_path(aes(x, y, group = edge_name), 
+                       colour = con_colour, data = bezier_df %>% distinct(), 
+                       arrow = arrow(angle=30, length = unit(arrow_unit, "pt"), type="closed"), 
+                       linejoin='mitre')
+  # deviation plot 
+  p = p + ggnewscale::new_scale_fill() +
+    ggnetwork::geom_nodes(data = g,
+                          aes(x, y,
+                              size = node_size * 1.2), 
+                          color=I("black")) +
+    ggnetwork::geom_nodes(data = g,
+                          aes(x, y,
+                              color = log10(n),
+                              size = node_size)) +
+    labs(color = "number degs") + 
+    scale_color_viridis_c() + 
+    scale_size_identity() +
+    ggnetwork::theme_blank() +
+    hooke_theme_opts() +
+    theme(legend.position='none') + facet_wrap(~contrast)
+  return(p)
+  
+}
+
+plot_degs = function(cell_state_graph, 
+                     deg_table, 
+                     facet_group = "term", 
+                     arrow_unit = 7,
+                     node_size = 2,
+                     con_colour = "darkgrey",
+                     fract_expr = 0.0,
+                     mean_expr = 0.0,
+                     legend_position = "none", 
+                     fc_limits = c(-3,3)){ 
+  
+  deg_table = deg_table %>%
+    mutate(
+      delta_q_value = pmax(0.0001, perturb_to_ctrl_p_value),
+      p_value_sig_code = calc_sig_ind(perturb_to_ctrl_p_value, html=FALSE)) 
+  
+  deg_table[["contrast"]] = deg_table[[facet_group]]
+  deg_table$contrast = as.factor(deg_table$contrast)
+  
+  
+  g = left_join(g, target_deg_table, by = c("name"="cell_group", "term"), relationship = "many-to-many") 
+  
+  myPalette <- colorRampPalette(rev(RColorBrewer::brewer.pal(11, "Spectral")))
+  sc <- scale_colour_gradientn(colours = myPalette(100), limits=fc_limits)
+  p = p + ggnewscale::new_scale_fill() +
+    ggnetwork::geom_nodes(data = g ,
+                          aes(x, y,
+                              size = -log10(perturb_to_ctrl_p_value*node_size*1.2)),
+                          color=I("black")) + 
+    ggnetwork::geom_nodes(data = g,
+                          aes(x, y,
+                              color = perturb_to_ctrl_shrunken_lfc,
+                              size = -log10(perturb_to_ctrl_p_value*node_size))) +
+    ggnetwork::geom_nodetext(data = g,
+                             aes(x, y,
+                                 label = p_value_sig_code),
+                             color=I("black")) + 
+    # scale_size_identity() +
+    scale_size(range=c(1, node_size))+
+    ggnetwork::theme_blank() + 
+    sc + 
+    hooke_theme_opts() +
+    theme(legend.position='none') #+ facet_wrap(~gene_short_name)
+  
+  return(p)
+  
+}

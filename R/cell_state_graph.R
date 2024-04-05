@@ -19,7 +19,8 @@ setClass("cell_state_graph",
          slots = c(ccs = "cell_count_set", 
                    graph = "igraph", 
                    layout_info = "list", 
-                   g = "data.frame")
+                   g = "data.frame", 
+                   metadata = "SimpleList")
 )
 
 # setMethod("is.na", "cell_state_graph", function(x) FALSE)
@@ -52,7 +53,8 @@ new_cell_state_graph <- function(state_graph, ccs) {
                                 graph = state_graph,
                                 ccs = ccs, 
                                 layout_info = layout_info, 
-                                g = layout_res$g)
+                                g = layout_res$g,
+                                metadata = list())
     
     return(state_graph)
 }
@@ -108,16 +110,16 @@ get_graph_layout = function(ccs,
 # update anything about the layout information about a graph 
 update_graph_layout = function(cell_state_graph, 
                                color_nodes_by = NULL,
-                               label_nodes_by= NULL,
-                               group_nodes_by= NULL,
-                               arrow.gap=0.03,
+                               label_nodes_by = NULL,
+                               group_nodes_by = NULL,
+                               arrow.gap = 0.03,
                                arrow_unit = 7,
                                bar_unit = .075,
                                node_size = 2,
-                               min_edge_size=0.1,
-                               max_edge_size=2,
-                               fract_expr=0.0,
-                               mean_expr=0.0, 
+                               min_edge_size = 0.1,
+                               max_edge_size = 2,
+                               fract_expr = 0.0, 
+                               mean_expr = 0.0, 
                                con_colour = "darkgrey") {
   
   state_graph = cell_state_graph@graph
