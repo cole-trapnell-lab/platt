@@ -690,6 +690,7 @@ compare_gene_expression_within_node <- function(cell_group,
                                                 sig_thresh=0.05, 
                                                 min_cells_per_pseudobulk=NULL,
                                                 exclude_results_below_ambient=TRUE,
+                                                expected_effect_mode_interval=c(-10,10),
                                                 cores=1) {
   
   
@@ -829,11 +830,7 @@ compare_gene_expression_within_node <- function(cell_group,
   message("\tcomputing contrasts")
 
   cell_perturbations = left_join(cell_perturbations, perturb_sf_summary, by=c("term"="perturbation"))
-  
-  cell_perturbations = cell_perturbations %>% 
-    mutate(ash_mixcompdist = case_when(ctrl_detected_genes / detected_genes > 2 | ctrl_detected_genes / detected_genes < 0.5 ~ "halfuniform",
-                                       TRUE ~ "uniform"))
-  
+
   cell_perturbations = cell_perturbations %>% 
     mutate(perturb_effects = purrr:::map(.f = contrast_helper, 
                                          .x = term,
@@ -841,7 +838,7 @@ compare_gene_expression_within_node <- function(cell_group,
                                          PEM = pb_coeffs$coefficients, 
                                          PSEM = pb_coeffs$stdev.unscaled, 
                                          prefix = "perturb_to_ctrl",
-                                         ash.control=list(mixcompdist=ash_mixcompdist)))
+                                         ash.control=list(mode=expected_effect_mode_interval)))
   
   if (exclude_results_below_ambient & is.null(ambient_estimate_matrix) == FALSE){
     ambient_res = cell_perturbations %>%
@@ -935,10 +932,13 @@ contrast_helper = function(state_1,
                            ash.control=NULL){
   
   ash.mixcompdist = "uniform"
+  coefficient_mode = 0
   
   if (is.null(ash.control) == FALSE){
     if (is.null(ash.control[["mixcompdist"]]) == FALSE)
       ash.mixcompdist = ash.control[["mixcompdist"]]
+    if (is.null(ash.control[["mode"]]) == FALSE)
+      coefficient_mode = ash.control[["mode"]]
   }
   
   ids = intersect(rownames(PEM), rownames(PEM_2))
@@ -949,9 +949,35 @@ contrast_helper = function(state_1,
   state_2_effects = Matrix::rowSums(PEM_2[,state_2, drop=F])
   state_2_effects_se = sqrt(Matrix::rowSums(PSEM_2[,state_2, drop=F]^2))
   
+  log_mean_expression = log(exp(state_1_effects[ids]) + exp(state_2_effects[ids]))
+  
   effect_est = state_1_effects[ids] - state_2_effects[ids]
   se_est = sqrt(state_1_effects_se[ids]^2 + state_2_effects_se[ids]^2)
-  shrunkren_res = ashr::ash(effect_est, se_est, method="fdr", mixcompdist=ash.mixcompdist)
+  
+  up_down_large_effect_skew = NA
+  effect_skewness_classic = NA
+  if (length(coefficient_mode) >= 2){
+    extreme_effect_upper_thresh = max(coefficient_mode[1:2])
+    extreme_effect_lower_thresh = min(coefficient_mode[1:2])
+    
+    num_large_up_effects = sum(effect_est > extreme_effect_upper_thresh)
+    num_large_down_effects = sum(effect_est < extreme_effect_upper_thresh)
+    up_down_large_effect_skew = log(num_large_up_effects / num_large_down_effects)
+    #if (abs(up_down_large_effect_skew) > log(2)){
+    #  ash.mixcompdist = "halfuniform"
+    #}
+    
+    numerical_mode  <- function(x) {
+      median(x)
+    }
+    
+    effect_mode_range = effect_est[effect_est > extreme_effect_lower_thresh & effect_est < extreme_effect_upper_thresh]
+    coefficient_mode = numerical_mode(effect_mode_range)
+    
+    effect_est = effect_est - coefficient_mode
+  }
+  
+  shrunkren_res = ashr::ash(effect_est, se_est, method="fdr", mixcompdist=ash.mixcompdist, mode=0)
   
   contrast_res = tibble(id = ids, #row.names(PEM),
                         raw_lfc = effect_est,
@@ -959,7 +985,12 @@ contrast_helper = function(state_1,
                         raw_p_value = pnorm(effect_est, sd = se_est, lower.tail=FALSE),
                         shrunken_lfc = shrunkren_res$result$PosteriorMean,
                         shrunken_lfc_se = shrunkren_res$result$PosteriorSD,
-                        p_value = shrunkren_res$result$lfsr)
+                        p_value = shrunkren_res$result$lfsr,
+                        #ash_mixcompdist=ash.mixcompdist,
+                        effect_skew = up_down_large_effect_skew,
+                        log_mean_expression,
+                        coefficient_mode
+                        )
   
   if (!is.null(prefix)){
     colnames(contrast_res)[2:7] = paste(prefix, colnames(contrast_res)[2:7], sep="_")
