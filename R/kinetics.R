@@ -14,6 +14,8 @@ plot_cell_type_control_kinetics = function(control_ccm,
                                            min_log_abund = -5,
                                            log_scale=TRUE,
                                            group_nodes_by = "cell_type",
+                                           reference_batch=NULL,
+                                           raw_counts = FALSE,
                                            ...){
   
   
@@ -26,7 +28,7 @@ plot_cell_type_control_kinetics = function(control_ccm,
 
   if (is.null(batch_col)){
     wt_timepoint_pred_df = hooke:::estimate_abundances_over_interval(control_ccm, start_time, stop_time, knockout=FALSE, interval_col=interval_col, interval_step=interval_step, ...)
-  } else{
+  } else if (is.null(reference_batch)){
 
     batches = tibble(batch = unique(colData(control_ccm@ccs)[,batch_col]))
     batches = batches %>% mutate(tp_preds = purrr::map(.f = function(expt) {
@@ -46,11 +48,21 @@ plot_cell_type_control_kinetics = function(control_ccm,
       c('#EE7733', '#0077BB', '#228833', '#33BBEE', '#EE3377', '#CC3311',
         '#AA3377', '#009988', '#004488', '#DDAA33', '#99CC66','#D590DD')
     my_colors = colorRampPalette(c(vibrant.colors))(nrow(batches))
+  }else{
+    wt_timepoint_pred_df = hooke:::estimate_abundances_over_interval(control_ccm, 
+                                                                     start_time, 
+                                                                     stop_time,
+                                                                     knockout=FALSE, 
+                                                                     interval_col=interval_col, 
+                                                                     interval_step=interval_step, 
+                                                                     expt=reference_batch,
+                                                                     ...)
+    batches = tibble(batch = unique(colData(control_ccm@ccs)[,batch_col]))
+    vibrant.colors =
+      c('#EE7733', '#0077BB', '#228833', '#33BBEE', '#EE3377', '#CC3311',
+        '#AA3377', '#009988', '#004488', '#DDAA33', '#99CC66','#D590DD')
+    my_colors = colorRampPalette(c(vibrant.colors))(nrow(batches))
   }
-  
-  
-  
-  
   
   #print (wt_timepoint_pred_df)
   #print (ko_timepoint_pred_df)
@@ -61,16 +73,27 @@ plot_cell_type_control_kinetics = function(control_ccm,
 
   peak_wt_abundance = wt_timepoint_pred_df %>% group_by(cell_group) %>% slice_max(log_abund, n=1)
 
+  
   sel_ccs_counts = normalized_counts(control_ccm@ccs, norm_method="size_only", pseudocount=0)
-  #sel_ccs_counts = Matrix::t(Matrix::t(counts(control_ccm@ccs)) / exp(model.offset(control_ccm@model_aux[["model_frame"]])))
-  sel_ccs_counts_long = tibble::rownames_to_column(as.matrix(sel_ccs_counts) %>% as.data.frame, var="cell_group") %>%
-    pivot_longer(!cell_group, names_to="embryo", values_to="num_cells")
-
-  #sel_ccs_counts_long = summary(sel_ccs_counts)
-  #sel_ccs_counts_long = data.frame(cell_group = rownames(sel_ccs_counts)[sel_ccs_counts_long$i],
-  #                                 embryo = colnames(sel_ccs_counts)[sel_ccs_counts_long$j],
-  #                                 num_cells      = sel_ccs_counts_long$x)
-
+  
+  if (raw_counts == FALSE){
+    sample_metadata = colData(control_ccm@ccs) %>% as_tibble
+    
+    if (is.null(reference_batch) == FALSE)
+      sample_metadata$expt = reference_batch
+    
+    conditional_counts = estimate_abundances_cond(control_ccm, 
+                                                  newdata=sample_metadata, 
+                                                  cond_responses=Matrix::t(sel_ccs_counts),
+                                                  pln_model="reduced")
+    sel_ccs_counts_long =  conditional_counts %>% select(embryo=sample, cell_group, log_abund) %>% mutate(num_cells=exp(log_abund)) %>% select(-log_abund)
+    
+  }else{
+    sel_ccs_counts = Matrix::t(Matrix::t(counts(control_ccm@ccs)) / exp(model.offset(control_ccm@model_aux[["full_model_frame"]])))
+    sel_ccs_counts_long = tibble::rownames_to_column(as.matrix(sel_ccs_counts) %>% as.data.frame, var="cell_group") %>%
+     pivot_longer(!cell_group, names_to="embryo", values_to="num_cells")
+  }
+ 
   cell_group_metadata = collect_psg_node_metadata(control_ccm@ccs,
                                                           group_nodes_by=group_nodes_by,
                                                           color_nodes_by=group_nodes_by,
@@ -157,6 +180,8 @@ plot_cell_type_control_kinetics = function(control_ccm,
 
   if (log_scale)
     kinetic_plot = kinetic_plot + scale_y_log10()
+  
+  kinetic_plot = kinetic_plot + ylab("cells per sample")
 
 
   return(kinetic_plot)
