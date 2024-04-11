@@ -13,8 +13,8 @@ plot_cell_type_control_kinetics = function(control_ccm,
                                            q_val=0.01,
                                            min_log_abund = -5,
                                            log_scale=TRUE,
-                                           group_nodes_by = "cell_type",
-                                           ...){
+                                           group_nodes_by = "cell_type", 
+                                           newdata = tibble()){
   
   
   colData(control_ccm@ccs)[,interval_col] = as.numeric(colData(control_ccm@ccs)[,interval_col])
@@ -23,22 +23,34 @@ plot_cell_type_control_kinetics = function(control_ccm,
     start_time = min(colData(control_ccm@ccs)[,interval_col])
   if (is.null(stop_time))
     stop_time = max(colData(control_ccm@ccs)[,interval_col])
-
+  
+  if (nrow(newdata) > 0 ){
+    newdata = cross_join(tibble(knockout=FALSE) , newdata)
+  } else {
+    newdata = tibble(knockout=FALSE) 
+  }
+  
+  
   if (is.null(batch_col)){
-    wt_timepoint_pred_df = hooke:::estimate_abundances_over_interval(control_ccm, start_time, stop_time, knockout=FALSE, interval_col=interval_col, interval_step=interval_step, ...)
+    wt_timepoint_pred_df = estimate_abundances_over_interval(control_ccm, start_time, stop_time, 
+                                                             interval_col=interval_col, interval_step=interval_step,
+                                                             newdata = newdata)
   } else{
 
     batches = tibble(batch = unique(colData(control_ccm@ccs)[,batch_col]))
+    
     batches = batches %>% mutate(tp_preds = purrr::map(.f = function(expt) {
+      newdata[[batch_col]] = expt
       estimate_abundances_over_interval(control_ccm,
                                                 start_time,
                                                 stop_time,
-                                                knockout=FALSE,
+                                                # knockout=FALSE,
                                                 interval_col=interval_col,
                                                 interval_step=interval_step,
-                                        min_log_abund = min_log_abund,
-                                                expt, # FIXME: this should be generic, not hardcoded as "expt"
-                                                ...)
+                                                min_log_abund = min_log_abund,
+                                                newdata = newdata) #,
+                                                # expt, # FIXME: this should be generic, not hardcoded as "expt"
+                                                # ...,)
     }, .x=batch))
     wt_timepoint_pred_df = batches %>% select(tp_preds) %>% tidyr::unnest(tp_preds)
     
@@ -49,15 +61,11 @@ plot_cell_type_control_kinetics = function(control_ccm,
   }
   
   
-  
-  
-  
   #print (wt_timepoint_pred_df)
   #print (ko_timepoint_pred_df)
   timepoints = seq(start_time, stop_time, interval_step)
 
   #print (earliest_loss_tbl)
-
 
   peak_wt_abundance = wt_timepoint_pred_df %>% group_by(cell_group) %>% slice_max(log_abund, n=1)
 
@@ -177,7 +185,8 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
                                            control_start_time=start_time,
                                            control_stop_time=control_stop_time,
                                            group_nodes_by = "cell_type",
-                                           ...){
+                                           newdata = tibble()
+                                           ){
   
   colData(perturbation_ccm@ccs)[,interval_col] = as.numeric(colData(perturbation_ccm@ccs)[,interval_col])
 
@@ -185,9 +194,17 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
     start_time = min(colData(perturbation_ccm@ccs)[,interval_col])
   if (is.null(stop_time))
     stop_time = max(colData(perturbation_ccm@ccs)[,interval_col])
+  
+  if (nrow(newdata) > 0 ){
+    newdata = cross_join(tibble(knockout=FALSE) , newdata)
+  } else {
+    newdata = tibble(knockout=FALSE) 
+  }
 
-  wt_timepoint_pred_df = hooke:::estimate_abundances_over_interval(perturbation_ccm, start_time, stop_time, knockout=FALSE, interval_col=interval_col, interval_step=interval_step, ...)
-  ko_timepoint_pred_df = hooke:::estimate_abundances_over_interval(perturbation_ccm, start_time, stop_time, knockout=TRUE, interval_col=interval_col, interval_step=interval_step, ...)
+  wt_timepoint_pred_df = hooke:::estimate_abundances_over_interval(perturbation_ccm, start_time, stop_time, 
+                                                                   interval_col=interval_col, interval_step=interval_step, newdata = newdata)
+  ko_timepoint_pred_df = hooke:::estimate_abundances_over_interval(perturbation_ccm, start_time, stop_time,  
+                                                                   interval_col=interval_col, interval_step=interval_step, newdata = newdata)
 
   #print (wt_timepoint_pred_df)
   #print (ko_timepoint_pred_df)

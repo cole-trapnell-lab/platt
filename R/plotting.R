@@ -307,7 +307,7 @@ plot_state_graph_losses <- function(perturbation_ccm,
                                     control_ccm=perturbation_ccm,
                                     control_start_time=NULL,
                                     control_stop_time=NULL,
-                                    ...)
+                                    newdata = tibble())
 {
   loss_time = match.arg(loss_time)
 
@@ -350,19 +350,17 @@ plot_state_graph_losses <- function(perturbation_ccm,
     #print(edges)
   }
 
-
-
-  earliest_loss_tbl = hooke:::estimate_loss_timing(perturbation_ccm,
-                                                   start_time=start_time,
-                                                   stop_time=stop_time,
-                                                   interval_step = interval_step,
-                                                   interval_col=interval_col,
-                                                   log_abund_detection_thresh=log_abund_detection_thresh,
-                                                   q_val = q_val,
-                                                   control_ccm=control_ccm,
-                                                   control_start_time=control_start_time,
-                                                   control_stop_time=control_stop_time,
-                                                   ...)
+  earliest_loss_tbl = estimate_loss_timing(perturbation_ccm,
+                                           start_time=start_time,
+                                           stop_time=stop_time,
+                                           interval_step = interval_step,
+                                           interval_col=interval_col,
+                                           log_abund_detection_thresh=log_abund_detection_thresh,
+                                           q_val = q_val,
+                                           control_ccm=control_ccm,
+                                           control_start_time=control_start_time,
+                                           control_stop_time=control_stop_time,
+                                           newdata = newdata)
 
   #earliest_loss_tbl = earliest_loss_tbl %>% mutate(fill_alpha = ifelse(peak_time_in_ctrl_within_perturb_time_range, 1.0, 0.3))
   #print (earliest_loss_tbl)
@@ -2051,7 +2049,7 @@ get_max_abundance_contrast = function(ccm,
                                       stop_time = NULL, 
                                       ctrl_abundances = NULL, 
                                       interval_col = "timepoint", 
-                                      ...){
+                                      newdata = tibble()){
   
   timepoints = as.numeric(unique(colData(ccm@ccs@cds)[[interval_col]]))
   timepoints = timepoints[!is.na(timepoints)]
@@ -2063,10 +2061,18 @@ get_max_abundance_contrast = function(ccm,
     stop_time = max(timepoints)
   }
   
+  if (nrow(newdata) > 0 ){
+    newdata = cross_join(tibble(knockout=FALSE), newdata)
+  } else {
+    newdata = tibble(knockout=FALSE) 
+  }
+  
+  # CHECK THIS 
   perturb_effects = platt:::get_perturbation_effects(ccm, ...)
   
+  
   if (is.null(ctrl_abundances)) {
-    ctrl_abundances = get_extant_cell_types(ccm, start = start_time, stop = stop_time, knockout = F, ...) 
+    ctrl_abundances = get_extant_cell_types(ccm, start = start_time, stop = stop_time, newdata = newdata) 
   } else {
     ctrl_abundances = ctrl_abundances %>% filter(timepoint %in% unique(perturb_effects$time))
   }

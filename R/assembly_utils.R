@@ -8,13 +8,13 @@ get_time_window <- function(genotype, ccs, interval_col, perturbation_col = gene
 }
 
 #' @export
-get_perturbation_effects <- function(ccm, expt, interval_col="timepoint"){
+get_perturbation_effects <- function(ccm, expt, interval_col="timepoint", newdata = tibble()){
   timepoints = colData(ccm@ccs)[[interval_col]] %>% unique
   df = data.frame(time = timepoints) %>%
     mutate(genotype_eff = purrr::map(.f = make_contrast,
                                      .x = time,
                                      ccm = ccm,
-                                     expt = expt)) %>%
+                                     newdata = newdata)) %>%
     unnest(genotype_eff)
   return(df)
 }
@@ -176,9 +176,16 @@ fit_genotype_ccm = function(genotype,
 #' wrapper function to easily plot output of fit_genotype_ccm 
 #' @param ccm a cell_count_model object
 #' @export
-make_contrast = function(ccm, timepoint, ...) {
-  wt_cond = estimate_abundances(ccm, tibble(timepoint = timepoint, knockout = F, ...))
-  mt_cond = estimate_abundances(ccm, tibble(timepoint = timepoint, knockout = T, ...))
+make_contrast = function(ccm, timepoint, newdata = tibble()) {
+  
+  if (nrow(newdata) > 0 ){
+    newdata = cross_join(tibble(knockout=FALSE), newdata)
+  } else {
+    newdata = tibble(knockout=FALSE) 
+  }
+  
+  wt_cond = estimate_abundances(ccm, tibble(timepoint = timepoint, newdata = newdata))
+  mt_cond = estimate_abundances(ccm, tibble(timepoint = timepoint, newdata = newdata))
   tbl = compare_abundances(ccm, wt_cond, mt_cond)
   return(tbl)
 }
@@ -1258,9 +1265,17 @@ run_cds_assembly = function(cds,
 
 #' 
 #' @export
-collect_genotype_effects = function(ccm, timepoint=24, experiment="GAP16"){
-  control_abund = estimate_abundances(ccm, tibble(knockout=FALSE, timepoint=timepoint, expt=experiment))
-  knockout_abund = estimate_abundances(ccm, tibble(knockout=TRUE, timepoint=timepoint, expt=experiment))
+collect_genotype_effects = function(ccm, newdata = tibble()){
+  
+  if (nrow(newdata) > 0 ){
+    newdata_wt = cross_join(tibble(knockout=FALSE), newdata)
+    newdata_mt = cross_join(tibble(knockout=FALSE), newdata)
+  } else {
+    newdata_mt = newdata_wt= tibble(knockout=FALSE) 
+  }
+  
+  control_abund = estimate_abundances(ccm, newdata_wt)
+  knockout_abund = estimate_abundances(ccm, newdata_mt)
   genotype_comparison_tbl = compare_abundances(ccm, control_abund, knockout_abund)
 }
 
