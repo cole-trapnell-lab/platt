@@ -176,16 +176,18 @@ fit_genotype_ccm = function(genotype,
 #' wrapper function to easily plot output of fit_genotype_ccm 
 #' @param ccm a cell_count_model object
 #' @export
-make_contrast = function(ccm, timepoint, newdata = tibble()) {
+make_contrast = function(ccm, newdata = tibble()) {
   
   if (nrow(newdata) > 0 ){
-    newdata = cross_join(tibble(knockout=FALSE), newdata)
+    newdata_wt = cross_join(tibble(knockout=FALSE), newdata)
+    newdata_mt = cross_join(tibble(knockout=TRUE), newdata)
   } else {
-    newdata = tibble(knockout=FALSE) 
+    newdata_wt = tibble(knockout=FALSE) 
+    newdata_mt = tibble(knockout=TRUE) 
   }
   
-  wt_cond = estimate_abundances(ccm, tibble(timepoint = timepoint, newdata = newdata))
-  mt_cond = estimate_abundances(ccm, tibble(timepoint = timepoint, newdata = newdata))
+  wt_cond = estimate_abundances(ccm, newdata = newdata_wt)
+  mt_cond = estimate_abundances(ccm, newdata = newdata_mt)
   tbl = compare_abundances(ccm, wt_cond, mt_cond)
   return(tbl)
 }
