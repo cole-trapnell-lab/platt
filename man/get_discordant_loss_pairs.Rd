@@ -2,7 +2,7 @@
 % Please edit documentation in R/graph_assembly.R
 \name{get_discordant_loss_pairs}
 \alias{get_discordant_loss_pairs}
-\title{Generate a blacklist of state transition relationships based on a perturbation
+\title{Generate a denylist of state transition relationships based on a perturbation
 experiment.}
 \usage{
 get_discordant_loss_pairs(
@@ -16,15 +16,15 @@ get_discordant_loss_pairs(
   q_val,
   model_for_pcors = "reduced",
   min_pathfinding_lfc = 0,
-  ...
+  newdata = tibble()
 )
 }
 \description{
-This function generates a blacklist of edges between cell states based on
+This function generates a denylist of edges between cell states based on
 the idea that if cell state X is lost, and Y is not ever lost in the experiment
 Y can't come from X. This function is very simplistic right now. We could get
 more sophisticated by looking at the relative timing of losses, etc. We are
 also not accounting for power at all. We should be asking whether we have
 power to detect a change in state Y, and if not, exclude (X,Y) from the
-blacklist
+denylist
 }

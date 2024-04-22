@@ -19,8 +19,8 @@ assemble_mt_graph(
   expt = "GAP16",
   break_cycles = TRUE,
   component_col = "partition",
-  edge_whitelist = NULL,
-  edge_blacklist = NULL,
+  edge_allowlist = NULL,
+  edge_denylist = NULL,
   verbose = FALSE
 )
 }

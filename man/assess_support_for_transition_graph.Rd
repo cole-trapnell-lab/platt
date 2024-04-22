@@ -17,8 +17,7 @@ assess_support_for_transition_graph(
   interval_step = 2,
   min_interval = 4,
   max_interval = 24,
-  log_abund_detection_thresh = -5,
-  ...
+  log_abund_detection_thresh = -5
 )
 }
 \description{

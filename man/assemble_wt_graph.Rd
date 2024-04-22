@@ -26,8 +26,8 @@ assemble_wt_graph(
   q_val = 0.1,
   expt = "GAP16",
   break_cycles = TRUE,
-  edge_whitelist = NULL,
-  edge_blacklist = NULL,
+  edge_allowlist = NULL,
+  edge_denylist = NULL,
   component_col = "partition",
   verbose = FALSE
 )

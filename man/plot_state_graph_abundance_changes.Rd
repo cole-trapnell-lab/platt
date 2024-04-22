@@ -13,6 +13,8 @@ plot_state_graph_abundance_changes(
   group_nodes_by = NULL,
   label_edges_by = NULL,
   edge_weights = NULL,
+  size_nodes_by = NULL,
+  num_degs = NULL,
   fc_limits = c(-3, 3),
   arrow.gap = 0.03,
   arrow_unit = 2,

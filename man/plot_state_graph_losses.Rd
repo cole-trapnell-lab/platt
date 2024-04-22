@@ -38,7 +38,7 @@ plot_state_graph_losses(
   control_ccm = perturbation_ccm,
   control_start_time = NULL,
   control_stop_time = NULL,
-  ...
+  newdata = tibble()
 )
 }
 \description{
