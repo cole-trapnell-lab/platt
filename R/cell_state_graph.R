@@ -20,7 +20,7 @@ setClass("cell_state_graph",
                    graph = "igraph", 
                    layout_info = "list", 
                    g = "data.frame", 
-                   metadata = "SimpleList")
+                   metadata = "list")
 )
 
 # setMethod("is.na", "cell_state_graph", function(x) FALSE)
