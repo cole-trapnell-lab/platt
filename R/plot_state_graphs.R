@@ -42,7 +42,7 @@ plot_annotations = function(cell_state_graph,
 
 plot_abundance_changes = function(cell_state_graph, 
                                   comp_abund_table,
-                                  facet_group = "perturb_name",
+                                  facet_group = NULL,
                                   arrow_unit = 7,
                                   node_size = 2,
                                   con_colour = "darkgrey", 
@@ -52,8 +52,10 @@ plot_abundance_changes = function(cell_state_graph,
   g = cell_state_graph@g
   bezier_df = cell_state_graph@layout_info$bezier_df
   
-  comp_abund_table[["contrast"]] = comp_abund_table[[facet_group]]
-  comp_abund_table$contrast = as.factor(comp_abund_table$contrast)
+  if (is.null(facet_group) == FALSE) {
+    comp_abund_table[["contrast"]] = comp_abund_table[[facet_group]]
+    comp_abund_table$contrast = as.factor(comp_abund_table$contrast)
+  }
   min = fc_limits[1]
   max = fc_limits[2]
   comp_abund_table = comp_abund_table %>%
@@ -86,11 +88,14 @@ plot_abundance_changes = function(cell_state_graph,
                                  label = q_value_sig_code),
                              color=I("black")) +  
     scale_color_gradient2(low = "royalblue3", mid = "white", high="orangered3") + 
-    scale_size(range=c(1, 6)) +
+    scale_size(range=c(2, 6)) +
     scale_size_identity() +
     ggnetwork::theme_blank() +
     hooke_theme_opts() +
-    theme(legend.position=legend_position) + facet_wrap(~contrast)
+    theme(legend.position=legend_position) 
+  if (is.null(facet_group) == FALSE) {
+    p = p + facet_wrap(~contrast)
+  }
   
   return(p)
 }
