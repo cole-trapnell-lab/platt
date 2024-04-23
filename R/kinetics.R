@@ -1,5 +1,13 @@
-#' 
+#' plots the control 
 #' @param control_ccm
+#' @param cell_groups
+#' @param start_time
+#' @param stop_time
+#' @param interval_step 
+#' @param interval_col 
+#' @param batch_col 
+#' @param q_val
+#' @param newdata
 #' @export
 plot_cell_type_control_kinetics = function(control_ccm,
                                            cell_groups=NULL,
@@ -14,6 +22,7 @@ plot_cell_type_control_kinetics = function(control_ccm,
                                            min_log_abund = -5,
                                            log_scale=TRUE,
                                            group_nodes_by = "cell_type", 
+                                           nrow = 1,
                                            newdata = tibble()){
   
   
@@ -48,9 +57,7 @@ plot_cell_type_control_kinetics = function(control_ccm,
                                                 interval_col=interval_col,
                                                 interval_step=interval_step,
                                                 min_log_abund = min_log_abund,
-                                                newdata = newdata) #,
-                                                # expt, # FIXME: this should be generic, not hardcoded as "expt"
-                                                # ...,)
+                                                newdata = newdata)
     }, .x=batch))
     wt_timepoint_pred_df = batches %>% select(tp_preds) %>% tidyr::unnest(tp_preds)
     
@@ -123,7 +130,7 @@ plot_cell_type_control_kinetics = function(control_ccm,
     geom_point(data=sel_ccs_counts_long,
                aes(x = timepoint, y = num_cells +  exp(log_abund_detection_thresh), color=expt, alpha=0.5),
                position="jitter", size=0.5) + 
-    facet_wrap(~cell_group, scales="free_y", nrow = 1) + monocle3:::monocle_theme_opts()
+    facet_wrap(~cell_group, scales="free_y", nrow = nrow) + monocle3:::monocle_theme_opts()
   
   if (is.null(batch_col)) {
     
@@ -131,7 +138,7 @@ plot_cell_type_control_kinetics = function(control_ccm,
       geom_point(data=sel_ccs_counts_long,
                  aes(x = timepoint, y = num_cells +  exp(log_abund_detection_thresh)), alpha=0.5,
                  position="jitter", size=0.5) + 
-      facet_wrap(~cell_group, scales="free_y", nrow = 1) + monocle3:::monocle_theme_opts()
+      facet_wrap(~cell_group, scales="free_y", nrow = nrow) + monocle3:::monocle_theme_opts()
     kinetic_plot = kinetic_plot +
       # scale_color_manual(values = my_colors) +
       geom_line(aes(y = exp(log_abund) + exp(log_abund_detection_thresh)), linewidth=1)
@@ -170,6 +177,17 @@ plot_cell_type_control_kinetics = function(control_ccm,
   return(kinetic_plot)
 }
 
+#' 
+#' @param perturbation_ccm
+#' @param cell_groups
+#' @param start_time
+#' @param stop_time
+#' @param interval_col 
+#' @param q_val
+#' @param control_ccm
+#' @param control_state_time
+#' @param control_stop_time
+#' @param newdata 
 #' @export
 plot_cell_type_perturb_kinetics = function(perturbation_ccm,
                                            cell_groups=NULL,
