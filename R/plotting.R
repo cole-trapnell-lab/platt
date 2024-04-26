@@ -670,7 +670,7 @@ plot_state_graph_abundance_changes <- function(ccs,
       delta_q_value = pmax(0.0001, delta_q_value),
       q_value_sig_code = calc_sig_ind(delta_q_value, html=FALSE))
 
-  g = left_join(g, abund_fc_df, by=c("name"="cell_group"))
+  g = left_join(g, abund_fc_df, by=c("name"="cell_group"), relationship = "many-to-many")
 
   #g$gene_short_name = factor(g$gene_short_name, levels=genes)
   color_nodes_by = "delta_log_abund"
@@ -707,48 +707,50 @@ plot_state_graph_abundance_changes <- function(ccs,
                                       label.fontface="plain",
                                       con.linetype=label_conn_linetype,
                                       con.colour=con_colour,
-                                      show.legend = F) +
-        ggforce::geom_mark_rect(aes(x, y,
-                                    fill = contrast,
-                                    color = group_nodes_by,
-                                    label = group_nodes_by,
-                                    filter = group_nodes_by %in% label_subset),
-                                size=0.5,
-                                expand = unit(2, "mm"),
-                                label.buffer=unit(1, "mm"),
-                                radius = unit(1.5, "mm"),
-                                label.margin = margin(1, 1, 1, 1, "mm"),
-                                label.fontsize=group_label_font_size,
-                                label.fontface="plain",
-                                con.linetype=label_conn_linetype,
-                                con.colour=con_colour,
-                                show.legend = F)
+                                      show.legend = F)
+        
     } else {
-      # p = p + ggnetwork::geom_nodetext_repel(data = g %>% filter(group_nodes_by %in% label_subset),
-      #                                       mapping = aes(x, y,
-      #                                           label = group_nodes_by),
-      #                                           color=I("black"),
-      #                                       size=label_font_size/2)
       values = rep("white",length(label_subset))
       names(values) = label_subset
+      if (label_groups) {
+        p = p +
+          ggforce::geom_mark_rect(aes(x, y,
+                                      fill = contrast,
+                                      color = group_nodes_by,
+                                      label = group_nodes_by,
+                                      filter = group_nodes_by %in% label_subset),
+                                  size=0.5,
+                                  expand = unit(2, "mm"),
+                                  label.buffer=unit(1, "mm"),
+                                  radius = unit(1.5, "mm"),
+                                  label.margin = margin(1, 1, 1, 1, "mm"),
+                                  label.fontsize=group_label_font_size,
+                                  label.fontface="plain",
+                                  con.linetype=label_conn_linetype,
+                                  con.colour=con_colour,
+                                  show.legend = F) +
+          scale_color_manual(values = c(values))
+        
+      } else {
+        p = p +
+          ggforce::geom_mark_rect(aes(x, y,
+                                      fill = contrast,
+                                      color = group_nodes_by,
+                                      filter = group_nodes_by %in% label_subset),
+                                  size=0.5,
+                                  expand = unit(2, "mm"),
+                                  label.buffer=unit(1, "mm"),
+                                  radius = unit(1.5, "mm"),
+                                  label.margin = margin(1, 1, 1, 1, "mm"),
+                                  label.fontsize=group_label_font_size,
+                                  label.fontface="plain",
+                                  con.linetype=label_conn_linetype,
+                                  con.colour=con_colour,
+                                  show.legend = F) +
+          scale_color_manual(values = c(values))
+      }
 
-      p = p +
-        ggforce::geom_mark_rect(aes(x, y,
-                                    fill = contrast,
-                                    color = group_nodes_by,
-                                    label = group_nodes_by,
-                                    filter = group_nodes_by %in% label_subset),
-                                size=0.5,
-                                expand = unit(2, "mm"),
-                                label.buffer=unit(1, "mm"),
-                                radius = unit(1.5, "mm"),
-                                label.margin = margin(1, 1, 1, 1, "mm"),
-                                label.fontsize=group_label_font_size,
-                                label.fontface="plain",
-                                con.linetype=label_conn_linetype,
-                                con.colour=con_colour,
-                                show.legend = F) +
-        scale_color_manual(values = c(values))
+      
 
     }
 
@@ -2117,7 +2119,7 @@ plot_graph_simple = function( ccs,
     edges = state_graph
   }
   
-  node_metadata = platt:::collect_psg_node_metadata(ccs, color_nodes_by, label_nodes_by, group_nodes_by)
+  node_metadata = collect_psg_node_metadata(ccs, color_nodes_by, label_nodes_by, group_nodes_by)
   
   if (hide_unlinked_nodes){
     node_metadata = node_metadata %>% filter(id %in% edges$from | id %in% edges$to)
