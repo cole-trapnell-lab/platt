@@ -98,7 +98,8 @@ plot_cell_type_control_kinetics = function(control_ccm,
     
     conditional_counts = estimate_abundances_cond(control_ccm, 
                                                   newdata=sample_metadata, 
-                                                  cond_responses=Matrix::t(sel_ccs_counts),
+                                                  cond_responses= sel_ccs_counts, 
+                                                  # cond_responses=Matrix::t(sel_ccs_counts),
                                                   pln_model="reduced")
     sel_ccs_counts_long = conditional_counts %>% 
                           select(embryo=sample, cell_group, log_abund) %>% 
@@ -174,7 +175,7 @@ plot_cell_type_control_kinetics = function(control_ccm,
                  aes(x = timepoint, y = num_cells + exp(log_abund_detection_thresh), color=!!sym(batch_col)), 
                  alpha=0.5,
                  position="jitter", size=0.5) + 
-      facet_wrap(~cell_group, scales="free_y", nrow = 1) + monocle3:::monocle_theme_opts()
+      facet_wrap(~cell_group, scales="free_y", nrow = nrow) + monocle3:::monocle_theme_opts()
     kinetic_plot = kinetic_plot + 
       scale_color_manual(values = my_colors) +
       geom_line(aes(y = exp(log_abund) + exp(log_abund_detection_thresh), color=!!sym(batch_col)), linewidth=1)
