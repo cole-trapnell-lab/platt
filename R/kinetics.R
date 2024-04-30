@@ -87,7 +87,8 @@ plot_cell_type_control_kinetics = function(control_ccm,
   #print (earliest_loss_tbl)
 
   peak_wt_abundance = wt_timepoint_pred_df %>% group_by(cell_group) %>% slice_max(log_abund, n=1)
-
+  cell_group_order = peak_wt_abundance %>% arrange(timepoint, log_abund) %>% pull(cell_group)
+  
   sel_ccs_counts = normalized_counts(control_ccm@ccs, norm_method="size_only", pseudocount=0)
  
   if (raw_counts == FALSE) {
@@ -133,18 +134,20 @@ plot_cell_type_control_kinetics = function(control_ccm,
                                       select(sample, !!sym(interval_col), !!sym(batch_col)),
                                     by=c("embryo"="sample"))
   }
-  
 
+  
+  # if (is.null(cell_groups)){
+  #   cell_groups = unique(as.character(wt_timepoint_pred_df$cell_group)) %>% sort()
+  # }
+  
+  
+  wt_timepoint_pred_df$cell_group = factor(as.character(wt_timepoint_pred_df$cell_group), levels=cell_group_order)
+  sel_ccs_counts_long$cell_group = factor(as.character(sel_ccs_counts_long$cell_group), levels=cell_group_order)
+  
   if (is.null(cell_groups) == FALSE){
     wt_timepoint_pred_df = wt_timepoint_pred_df %>% filter(cell_group %in% cell_groups)
     sel_ccs_counts_long = sel_ccs_counts_long %>% filter(cell_group %in% cell_groups)
   }
-  
-  if (is.null(cell_groups)){
-    cell_groups = unique(as.character(wt_timepoint_pred_df$cell_group)) %>% sort()
-  }
-  wt_timepoint_pred_df$cell_group = factor(as.character(wt_timepoint_pred_df$cell_group), levels=cell_groups)
-  sel_ccs_counts_long$cell_group = factor(as.character(sel_ccs_counts_long$cell_group), levels=cell_groups)
   
   wt_timepoint_pred_df$timepoint = as.numeric(wt_timepoint_pred_df$timepoint)
   sel_ccs_counts_long$timepoint = as.numeric(sel_ccs_counts_long$timepoint)
@@ -337,6 +340,10 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
                                         stop_time,
                                         log_abund_detection_thresh=log_abund_detection_thresh,
                                         newdata = newdata_wt)
+  
+  cell_group_order = extant_wt_tbl %>% 
+                      group_by(cell_group) %>% slice_max(percent_max_abund, n=1) %>% 
+                      group_by(cell_group) %>% slice_min(timepoint, n=1) %>% pull(cell_group)
 
   sel_ccs_counts = normalized_counts(perturbation_ccm@ccs, norm_method="size_only", pseudocount=0)
   
@@ -382,20 +389,21 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
                                   colData(perturbation_ccm@ccs) %>% as.data.frame %>% select(sample, !!sym(interval_col), knockout, expt, gene_target),
                                   by=c("embryo"="sample"))
 
+
+  # INSERT TIME by peak abundances
+  perturb_vs_wt_nodes = left_join(perturb_vs_wt_nodes,
+                                  extant_wt_tbl %>% select(cell_group, !!sym(interval_col), present_above_thresh), by=c("cell_group" = "cell_group", "t1" = "timepoint"))
+  
+  # if (is.null(cell_groups)){
+  #   cell_groups = unique(as.character(perturb_vs_wt_nodes$cell_group)) %>% sort()
+  # }
+  perturb_vs_wt_nodes$cell_group = factor(as.character(perturb_vs_wt_nodes$cell_group), levels=cell_group_order)
+  sel_ccs_counts_long$cell_group = factor(as.character(sel_ccs_counts_long$cell_group), levels=cell_group_order)
+  
   if (is.null(cell_groups) == FALSE){
     sel_ccs_counts_long = sel_ccs_counts_long %>% filter(cell_group %in% cell_groups)
     perturb_vs_wt_nodes = perturb_vs_wt_nodes %>% filter(cell_group %in% cell_groups)
   }
-
-
-  perturb_vs_wt_nodes = left_join(perturb_vs_wt_nodes,
-                                  extant_wt_tbl %>% select(cell_group, !!sym(interval_col), present_above_thresh), by=c("cell_group" = "cell_group", "t1" = "timepoint"))
-  
-  if (is.null(cell_groups)){
-    cell_groups = unique(as.character(perturb_vs_wt_nodes$cell_group)) %>% sort()
-  }
-  perturb_vs_wt_nodes$cell_group = factor(as.character(perturb_vs_wt_nodes$cell_group), levels=cell_groups)
-  sel_ccs_counts_long$cell_group = factor(as.character(sel_ccs_counts_long$cell_group), levels=cell_groups)
 
   
   perturb_vs_wt_nodes$t1 = as.numeric(perturb_vs_wt_nodes$t1)
@@ -409,9 +417,16 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
     geom_point(data = perturb_vs_wt_nodes %>% filter(present_above_thresh & delta_log_abund < 0 & delta_q_value < q_val), 
                aes(x = !!sym(paste(interval_col, "_x", sep="")), 
                    y = 1.0*(exp(log_abund_y) + exp(log_abund_detection_thresh))), shape=8 ) +
-    geom_point(data=sel_ccs_counts_long,
+    geom_point(data=sel_ccs_counts_long %>% filter(knockout == T),
+               aes(x = !!sym(interval_col), y = num_cells+exp(log_abund_detection_thresh), shape = knockout),
+               color = "black", 
+               position="jitter",
+               size= 0.75) + 
+    geom_point(data=sel_ccs_counts_long%>% filter(knockout == F),
                 aes(x = !!sym(interval_col), y = num_cells+exp(log_abund_detection_thresh), shape = knockout),
-                color = "gray", position="jitter", alpha = 0.5, size= 0.75) +
+                color = "gray", 
+               position="jitter",
+               size= 0.75) +
     geom_line(aes(y = exp(log_abund_x) + exp(log_abund_detection_thresh), linetype = "Wild-type")) +
     geom_line(aes(y = exp(log_abund_y) + exp(log_abund_detection_thresh), linetype = "Knockout")) +
     ggh4x::stat_difference(aes(ymin = exp(log_abund_x)+exp(log_abund_detection_thresh), 
