@@ -227,7 +227,11 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
                                            control_start_time=start_time,
                                            control_stop_time=control_stop_time,
                                            group_nodes_by = "cell_type",
-                                           newdata = tibble()
+                                           newdata = tibble(),
+                                           nrow = 1,
+                                           batch_col = NULL,
+                                           reference_batch = NULL, 
+                                           raw_counts = FALSE
                                            ){
   
   colData(perturbation_ccm@ccs)[,interval_col] = as.numeric(colData(perturbation_ccm@ccs)[,interval_col])
@@ -238,18 +242,82 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
     stop_time = max(colData(perturbation_ccm@ccs)[,interval_col])
   
   if (nrow(newdata) > 0 ){
-    newdata = cross_join(tibble(knockout=FALSE) , newdata)
+    newdata_wt = cross_join(tibble(knockout=FALSE) , newdata)
+    newdata_mt = cross_join(tibble(knockout=TRUE) , newdata)
   } else {
-    newdata = tibble(knockout=FALSE) 
+    newdata_wt = tibble(knockout=FALSE) 
+    newdata_mt = tibble(knockout=TRUE) 
   }
-
-  wt_timepoint_pred_df = hooke:::estimate_abundances_over_interval(perturbation_ccm, start_time, stop_time, 
-                                                                   interval_col=interval_col, interval_step=interval_step, newdata = newdata)
-  ko_timepoint_pred_df = hooke:::estimate_abundances_over_interval(perturbation_ccm, start_time, stop_time,  
-                                                                   interval_col=interval_col, interval_step=interval_step, newdata = newdata)
-
-  #print (wt_timepoint_pred_df)
-  #print (ko_timepoint_pred_df)
+  
+  # do i need to include batch stuff here? 
+  
+  if (is.null(batch_col)) {
+    
+    wt_timepoint_pred_df = hooke:::estimate_abundances_over_interval(perturbation_ccm, 
+                                                                     start_time, 
+                                                                     stop_time, 
+                                                                     interval_col=interval_col, 
+                                                                     interval_step=interval_step, 
+                                                                     newdata = newdata_wt)
+    ko_timepoint_pred_df = hooke:::estimate_abundances_over_interval(perturbation_ccm, 
+                                                                     start_time, 
+                                                                     stop_time,  
+                                                                     interval_col=interval_col,
+                                                                     interval_step=interval_step, 
+                                                                     newdata = newdata_mt)
+    
+  } else if (is.null(reference_batch)) {
+    
+    batches = tibble(batch = unique(colData(perturbation_ccm@ccs)[,batch_col]))
+    
+    batches_wt = batches %>% mutate(tp_preds = purrr::map(.f = function(expt) {
+      newdata[[batch_col]] = expt
+      estimate_abundances_over_interval(perturbation_ccm,
+                                        start_time,
+                                        stop_time,
+                                        interval_col=interval_col,
+                                        interval_step=interval_step,
+                                        min_log_abund = min_log_abund,
+                                        newdata = newdata_wt)
+    }, .x=batch))
+    
+    wt_timepoint_pred_df = batches_wt %>% select(tp_preds) %>% tidyr::unnest(tp_preds)
+    
+    
+    batches_mt = batches %>% mutate(tp_preds = purrr::map(.f = function(expt) {
+      newdata[[batch_col]] = expt
+      estimate_abundances_over_interval(perturbation_ccm,
+                                        start_time,
+                                        stop_time,
+                                        interval_col=interval_col,
+                                        interval_step=interval_step,
+                                        min_log_abund = min_log_abund,
+                                        newdata = newdata_mt)
+    }, .x=batch))
+    
+    ko_timepoint_pred_df = batches_mt %>% select(tp_preds) %>% tidyr::unnest(tp_preds)
+    
+  } else {
+    
+    newdata_wt[[batch_col]] = reference_batch
+    newdata_mt[[batch_col]] = reference_batch
+    
+    wt_timepoint_pred_df = hooke:::estimate_abundances_over_interval(perturbation_ccm, 
+                                                                     start_time, 
+                                                                     stop_time, 
+                                                                     interval_col=interval_col, 
+                                                                     interval_step=interval_step, 
+                                                                     newdata = newdata_wt)
+    ko_timepoint_pred_df = hooke:::estimate_abundances_over_interval(perturbation_ccm, 
+                                                                     start_time, 
+                                                                     stop_time,  
+                                                                     interval_col=interval_col,
+                                                                     interval_step=interval_step, 
+                                                                     newdata = newdata_mt)
+    
+    
+  }
+  
   timepoints = seq(start_time, stop_time, interval_step)
 
   # Find the pairs of nodes that are both lost in the perturbation at the same time
@@ -265,10 +333,35 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
                                         start_time,
                                         stop_time,
                                         log_abund_detection_thresh=log_abund_detection_thresh,
-                                        knockout=FALSE,
-                                        ...)
+                                        newdata = newdata_wt)
 
   sel_ccs_counts = normalized_counts(perturbation_ccm@ccs, norm_method="size_only", pseudocount=0)
+  
+  # this is new
+  if (raw_counts == FALSE) {
+    sample_metadata = colData(perturbation_ccm@ccs) %>% as_tibble
+    
+    if (is.null(reference_batch) == FALSE)
+      sample_metadata$expt = reference_batch
+    
+    conditional_counts = estimate_abundances_cond(perturbation_ccm, 
+                                                  newdata=sample_metadata, 
+                                                  cond_responses= sel_ccs_counts, 
+                                                  # cond_responses=Matrix::t(sel_ccs_counts),
+                                                  pln_model="reduced")
+    sel_ccs_counts_long = conditional_counts %>% 
+      select(embryo=sample, cell_group, log_abund) %>% 
+      mutate(num_cells=exp(log_abund)) %>% select(-log_abund)
+    
+  } else{
+    sel_ccs_counts = Matrix::t(Matrix::t(counts(perturbation_ccm@ccs)) / exp(model.offset(perturbation_ccm@model_aux[["full_model_frame"]])))
+    sel_ccs_counts_long = tibble::rownames_to_column(as.matrix(sel_ccs_counts) %>% 
+                                                       as.data.frame, var="cell_group") %>%
+      pivot_longer(!cell_group, names_to="embryo", values_to="num_cells")
+  }
+  
+  # this is new
+  
   sel_ccs_counts_long = tibble::rownames_to_column(as.matrix(sel_ccs_counts) %>% as.data.frame, var="cell_group") %>%
     pivot_longer(!cell_group, names_to="embryo", values_to="num_cells")
 
@@ -322,10 +415,9 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
     ggh4x::stat_difference(aes(ymin = exp(log_abund_x)+exp(log_abund_detection_thresh), 
                                ymax = exp(log_abund_y) +exp(log_abund_detection_thresh)), alpha=0.5) + 
     scale_fill_manual(values = c("orangered3", "royalblue3", "lightgray")) + 
-    facet_wrap(~cell_group, scales="free_y", nrow=2) + monocle3:::monocle_theme_opts() + 
+    facet_wrap(~cell_group, scales="free_y", nrow=nrow) + monocle3:::monocle_theme_opts() + 
     # ggtitle(paste0(perturbation, " kinetics")) + 
-    geom_hline(yintercept=exp(log_abund_detection_thresh), color="lightgrey") + xlab("timepoint") + 
-    facet_wrap(~cell_group, scales="free_y", nrow=1)
+    geom_hline(yintercept=exp(log_abund_detection_thresh), color="lightgrey") + xlab("timepoint") 
   
   # kinetic_plot = ggplot(perturb_vs_wt_nodes, aes(x = !!sym(paste(interval_col, "_x", sep="")))) +
   #   geom_line(aes(y = exp(log_abund_x) +exp(log_abund_detection_thresh), linetype = "Wild-type")) +
@@ -345,6 +437,9 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
   
   if (log_scale)
     kinetic_plot = kinetic_plot + scale_y_log10()
+  
+  kinetic_plot = kinetic_plot + ylab("cells per sample")
+  
 
   return(kinetic_plot)
 }
