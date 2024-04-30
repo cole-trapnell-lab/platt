@@ -17,16 +17,18 @@ plot_cell_type_control_kinetics = function(control_ccm,
                                            log_abund_detection_thresh=-3,
                                            delta_log_abund_loss_thresh=0,
                                            interval_col="timepoint",
-                                           batch_col=NULL,
+                                           # batch_col=NULL,
                                            q_val=0.01,
                                            min_log_abund = -5,
                                            log_scale=TRUE,
                                            group_nodes_by = "cell_type", 
                                            nrow = 1,
                                            newdata = tibble(), 
-                                           reference_batch = NULL, 
+                                           color_points_by = NULL,
+                                           # reference_batch = NULL, 
                                            raw_counts = FALSE){
   
+  assertthat::assert_that(nrow(newdata)==1)
   
   colData(control_ccm@ccs)[,interval_col] = as.numeric(colData(control_ccm@ccs)[,interval_col])
 
@@ -41,48 +43,65 @@ plot_cell_type_control_kinetics = function(control_ccm,
     newdata = tibble(knockout=FALSE) 
   }
   
-  if (is.null(batch_col)){
-    wt_timepoint_pred_df = estimate_abundances_over_interval(control_ccm, start_time, stop_time, 
-                                                             interval_col=interval_col, interval_step=interval_step,
-                                                             newdata = newdata)
-  } else if (is.null(reference_batch)) {
-
-    batches = tibble(batch = unique(colData(control_ccm@ccs)[,batch_col]))
-    
-    batches = batches %>% mutate(tp_preds = purrr::map(.f = function(expt) {
-      newdata[[batch_col]] = expt
-      estimate_abundances_over_interval(control_ccm,
-                                                start_time,
-                                                stop_time,
-                                                interval_col=interval_col,
-                                                interval_step=interval_step,
-                                                min_log_abund = min_log_abund,
-                                                newdata = newdata)
-    }, .x=batch))
-    wt_timepoint_pred_df = batches %>% select(tp_preds) %>% tidyr::unnest(tp_preds)
-    
+  
+  wt_timepoint_pred_df = estimate_abundances_over_interval(control_ccm, 
+                                                           start_time,
+                                                           stop_time,
+                                                           interval_col = interval_col,
+                                                           interval_step = interval_step,
+                                                           newdata = newdata)
+  
+  
+  # if (is.null(batch_col)){
+  #   wt_timepoint_pred_df = estimate_abundances_over_interval(control_ccm, start_time, stop_time, 
+  #                                                            interval_col=interval_col, interval_step=interval_step,
+  #                                                            newdata = newdata)
+  # } else if (is.null(reference_batch)) {
+  # 
+  #   batches = tibble(batch = unique(colData(control_ccm@ccs)[,batch_col]))
+  #   
+  #   batches = batches %>% mutate(tp_preds = purrr::map(.f = function(expt) {
+  #     newdata[[batch_col]] = expt
+  #     estimate_abundances_over_interval(control_ccm,
+  #                                               start_time,
+  #                                               stop_time,
+  #                                               interval_col=interval_col,
+  #                                               interval_step=interval_step,
+  #                                               min_log_abund = min_log_abund,
+  #                                               newdata = newdata)
+  #   }, .x=batch))
+  #   wt_timepoint_pred_df = batches %>% select(tp_preds) %>% tidyr::unnest(tp_preds)
+  #   
+  #   vibrant.colors =
+  #     c('#EE7733', '#0077BB', '#228833', '#33BBEE', '#EE3377', '#CC3311',
+  #       '#AA3377', '#009988', '#004488', '#DDAA33', '#99CC66','#D590DD')
+  #   my_colors = colorRampPalette(c(vibrant.colors))(nrow(batches))
+  # } else {
+  #   
+  #   newdata[[batch_col]] = reference_batch
+  #   wt_timepoint_pred_df = estimate_abundances_over_interval(control_ccm, 
+  #                                                            start_time, 
+  #                                                            stop_time, 
+  #                                                            interval_col = interval_col, 
+  #                                                            interval_step=interval_step,
+  #                                                            newdata = newdata)
+  #   batches = tibble(batch = unique(colData(control_ccm@ccs)[,batch_col]))
+  #   vibrant.colors =
+  #     c('#EE7733', '#0077BB', '#228833', '#33BBEE', '#EE3377', '#CC3311',
+  #       '#AA3377', '#009988', '#004488', '#DDAA33', '#99CC66','#D590DD')
+  #   my_colors = colorRampPalette(c(vibrant.colors))(nrow(batches))
+  # }
+  
+  if (is.null(color_points_by)==FALSE) {
+    colors = tibble(batch = unique(colData(control_ccm@ccs)[,color_points_by]))
     vibrant.colors =
       c('#EE7733', '#0077BB', '#228833', '#33BBEE', '#EE3377', '#CC3311',
         '#AA3377', '#009988', '#004488', '#DDAA33', '#99CC66','#D590DD')
-    my_colors = colorRampPalette(c(vibrant.colors))(nrow(batches))
-  } else {
-    
-    newdata[[batch_col]] = reference_batch
-    wt_timepoint_pred_df = estimate_abundances_over_interval(control_ccm, 
-                                                             start_time, 
-                                                             stop_time, 
-                                                             interval_col = interval_col, 
-                                                             interval_step=interval_step,
-                                                             newdata = newdata)
-    batches = tibble(batch = unique(colData(control_ccm@ccs)[,batch_col]))
-    vibrant.colors =
-      c('#EE7733', '#0077BB', '#228833', '#33BBEE', '#EE3377', '#CC3311',
-        '#AA3377', '#009988', '#004488', '#DDAA33', '#99CC66','#D590DD')
-    my_colors = colorRampPalette(c(vibrant.colors))(nrow(batches))
+    my_colors = colorRampPalette(c(vibrant.colors))(nrow(colors))
   }
   
   
- timepoints = seq(start_time, stop_time, interval_step)
+  timepoints = seq(start_time, stop_time, interval_step)
 
   #print (earliest_loss_tbl)
 
@@ -94,8 +113,13 @@ plot_cell_type_control_kinetics = function(control_ccm,
   if (raw_counts == FALSE) {
     sample_metadata = colData(control_ccm@ccs) %>% as_tibble
     
-    if (is.null(reference_batch) == FALSE)
-      sample_metadata$expt = reference_batch
+    # if (is.null(reference_batch) == FALSE)
+      # sample_metadata$expt = reference_batch
+    
+    # override the columns with the newdata columns
+    for (c in colnames(newdata)) {
+      sample_metadata[[c]] = newdata[[c]]
+    }
     
     conditional_counts = estimate_abundances_cond(control_ccm, 
                                                   newdata=sample_metadata, 
@@ -123,7 +147,7 @@ plot_cell_type_control_kinetics = function(control_ccm,
                                   cell_group_metadata,
                                   by=c("cell_group"="id"))
   
-  if (is.null(batch_col)) {
+  if (is.null(color_points_by)) {
     sel_ccs_counts_long = left_join(sel_ccs_counts_long,
                                     colData(control_ccm@ccs) %>% as.data.frame %>%
                                       select(sample, !!sym(interval_col)),
@@ -131,7 +155,7 @@ plot_cell_type_control_kinetics = function(control_ccm,
   } else {
     sel_ccs_counts_long = left_join(sel_ccs_counts_long,
                                     colData(control_ccm@ccs) %>% as.data.frame %>%
-                                      select(sample, !!sym(interval_col), !!sym(batch_col)),
+                                      select(sample, !!sym(interval_col), !!sym(color_points_by)),
                                     by=c("embryo"="sample"))
   }
 
@@ -161,7 +185,7 @@ plot_cell_type_control_kinetics = function(control_ccm,
                position="jitter", size=0.5) + 
     facet_wrap(~cell_group, scales="free_y", nrow = nrow) + monocle3:::monocle_theme_opts()
   
-  if (is.null(batch_col)) {
+  if (is.null(color_points_by)) {
     
     kinetic_plot = ggplot(wt_timepoint_pred_df, aes(x = timepoint)) +
       geom_point(data=sel_ccs_counts_long,
@@ -175,13 +199,13 @@ plot_cell_type_control_kinetics = function(control_ccm,
   } else {
     kinetic_plot = ggplot(wt_timepoint_pred_df, aes(x = timepoint)) +
       geom_point(data=sel_ccs_counts_long,
-                 aes(x = timepoint, y = num_cells + exp(log_abund_detection_thresh), color=!!sym(batch_col)), 
+                 aes(x = timepoint, y = num_cells + exp(log_abund_detection_thresh), color=!!sym(color_points_by)), 
                  alpha=0.5,
                  position="jitter", size=0.5) + 
       facet_wrap(~cell_group, scales="free_y", nrow = nrow) + monocle3:::monocle_theme_opts()
     kinetic_plot = kinetic_plot + 
       scale_color_manual(values = my_colors) +
-      geom_line(aes(y = exp(log_abund) + exp(log_abund_detection_thresh), color=!!sym(batch_col)), linewidth=1)
+      geom_line(aes(y = exp(log_abund) + exp(log_abund_detection_thresh), color=!!sym(color_points_by)), linewidth=1)
       
   }
   
@@ -215,8 +239,6 @@ plot_cell_type_control_kinetics = function(control_ccm,
 #' @param control_state_time
 #' @param control_stop_time
 #' @param newdata 
-#' @param batch_col
-#' @param reference_batch 
 #' @param raw_counts
 #' @export
 plot_cell_type_perturb_kinetics = function(perturbation_ccm,
@@ -235,10 +257,12 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
                                            group_nodes_by = "cell_type",
                                            newdata = tibble(),
                                            nrow = 1,
-                                           batch_col = NULL,
-                                           reference_batch = NULL, 
                                            raw_counts = FALSE
                                            ){
+  
+  
+  # 
+  assertthat::assert_that(nrow(newdata)==1)
   
   colData(perturbation_ccm@ccs)[,interval_col] = as.numeric(colData(perturbation_ccm@ccs)[,interval_col])
 
@@ -255,74 +279,90 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
     newdata_mt = tibble(knockout=TRUE) 
   }
   
-  # do i need to include batch stuff here? 
   
-  if (is.null(batch_col)) {
-    
-    wt_timepoint_pred_df = hooke:::estimate_abundances_over_interval(perturbation_ccm, 
-                                                                     start_time, 
-                                                                     stop_time, 
-                                                                     interval_col=interval_col, 
-                                                                     interval_step=interval_step, 
-                                                                     newdata = newdata_wt)
-    ko_timepoint_pred_df = hooke:::estimate_abundances_over_interval(perturbation_ccm, 
-                                                                     start_time, 
-                                                                     stop_time,  
-                                                                     interval_col=interval_col,
-                                                                     interval_step=interval_step, 
-                                                                     newdata = newdata_mt)
-    
-  } else if (is.null(reference_batch)) {
-    
-    batches = tibble(batch = unique(colData(perturbation_ccm@ccs)[,batch_col]))
-    
-    batches_wt = batches %>% mutate(tp_preds = purrr::map(.f = function(expt) {
-      newdata[[batch_col]] = expt
-      estimate_abundances_over_interval(perturbation_ccm,
-                                        start_time,
-                                        stop_time,
-                                        interval_col=interval_col,
-                                        interval_step=interval_step,
-                                        min_log_abund = min_log_abund,
-                                        newdata = newdata_wt)
-    }, .x=batch))
-    
-    wt_timepoint_pred_df = batches_wt %>% select(tp_preds) %>% tidyr::unnest(tp_preds)
-    
-    
-    batches_mt = batches %>% mutate(tp_preds = purrr::map(.f = function(expt) {
-      newdata[[batch_col]] = expt
-      estimate_abundances_over_interval(perturbation_ccm,
-                                        start_time,
-                                        stop_time,
-                                        interval_col=interval_col,
-                                        interval_step=interval_step,
-                                        min_log_abund = min_log_abund,
-                                        newdata = newdata_mt)
-    }, .x=batch))
-    
-    ko_timepoint_pred_df = batches_mt %>% select(tp_preds) %>% tidyr::unnest(tp_preds)
-    
-  } else {
-    
-    newdata_wt[[batch_col]] = reference_batch
-    newdata_mt[[batch_col]] = reference_batch
-    
-    wt_timepoint_pred_df = hooke:::estimate_abundances_over_interval(perturbation_ccm, 
-                                                                     start_time, 
-                                                                     stop_time, 
-                                                                     interval_col=interval_col, 
-                                                                     interval_step=interval_step, 
-                                                                     newdata = newdata_wt)
-    ko_timepoint_pred_df = hooke:::estimate_abundances_over_interval(perturbation_ccm, 
-                                                                     start_time, 
-                                                                     stop_time,  
-                                                                     interval_col=interval_col,
-                                                                     interval_step=interval_step, 
-                                                                     newdata = newdata_mt)
-    
-    
-  }
+  # maybe this is actually handled by new data always
+  
+  wt_timepoint_pred_df = hooke:::estimate_abundances_over_interval(perturbation_ccm, 
+                                                                   start_time, 
+                                                                   stop_time, 
+                                                                   interval_col=interval_col, 
+                                                                   interval_step=interval_step, 
+                                                                   newdata = newdata_wt)
+  ko_timepoint_pred_df = hooke:::estimate_abundances_over_interval(perturbation_ccm, 
+                                                                   start_time, 
+                                                                   stop_time,  
+                                                                   interval_col=interval_col,
+                                                                   interval_step=interval_step, 
+                                                                   newdata = newdata_mt)
+  
+  # # do i need to include batch stuff here? 
+  # 
+  # if (is.null(batch_col)) {
+  #   
+  #   wt_timepoint_pred_df = hooke:::estimate_abundances_over_interval(perturbation_ccm, 
+  #                                                                    start_time, 
+  #                                                                    stop_time, 
+  #                                                                    interval_col=interval_col, 
+  #                                                                    interval_step=interval_step, 
+  #                                                                    newdata = newdata_wt)
+  #   ko_timepoint_pred_df = hooke:::estimate_abundances_over_interval(perturbation_ccm, 
+  #                                                                    start_time, 
+  #                                                                    stop_time,  
+  #                                                                    interval_col=interval_col,
+  #                                                                    interval_step=interval_step, 
+  #                                                                    newdata = newdata_mt)
+  #   
+  # } else if (is.null(reference_batch)) {
+  #   
+  #   batches = tibble(batch = unique(colData(perturbation_ccm@ccs)[,batch_col]))
+  #   
+  #   batches_wt = batches %>% mutate(tp_preds = purrr::map(.f = function(expt) {
+  #     newdata[[batch_col]] = expt
+  #     estimate_abundances_over_interval(perturbation_ccm,
+  #                                       start_time,
+  #                                       stop_time,
+  #                                       interval_col=interval_col,
+  #                                       interval_step=interval_step,
+  #                                       min_log_abund = min_log_abund,
+  #                                       newdata = newdata_wt)
+  #   }, .x=batch))
+  #   
+  #   wt_timepoint_pred_df = batches_wt %>% select(tp_preds) %>% tidyr::unnest(tp_preds)
+  #   
+  #   
+  #   batches_mt = batches %>% mutate(tp_preds = purrr::map(.f = function(expt) {
+  #     newdata[[batch_col]] = expt
+  #     estimate_abundances_over_interval(perturbation_ccm,
+  #                                       start_time,
+  #                                       stop_time,
+  #                                       interval_col=interval_col,
+  #                                       interval_step=interval_step,
+  #                                       min_log_abund = min_log_abund,
+  #                                       newdata = newdata_mt)
+  #   }, .x=batch))
+  #   
+  #   ko_timepoint_pred_df = batches_mt %>% select(tp_preds) %>% tidyr::unnest(tp_preds)
+  #   
+  # } else {
+  #   
+  #   newdata_wt[[batch_col]] = reference_batch
+  #   newdata_mt[[batch_col]] = reference_batch
+  #   
+  #   wt_timepoint_pred_df = hooke:::estimate_abundances_over_interval(perturbation_ccm, 
+  #                                                                    start_time, 
+  #                                                                    stop_time, 
+  #                                                                    interval_col=interval_col, 
+  #                                                                    interval_step=interval_step, 
+  #                                                                    newdata = newdata_wt)
+  #   ko_timepoint_pred_df = hooke:::estimate_abundances_over_interval(perturbation_ccm, 
+  #                                                                    start_time, 
+  #                                                                    stop_time,  
+  #                                                                    interval_col=interval_col,
+  #                                                                    interval_step=interval_step, 
+  #                                                                    newdata = newdata_mt)
+  #   
+  #   
+  # }
   
   timepoints = seq(start_time, stop_time, interval_step)
 
@@ -351,8 +391,13 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
   if (raw_counts == FALSE) {
     sample_metadata = colData(perturbation_ccm@ccs) %>% as_tibble
     
-    if (is.null(reference_batch) == FALSE)
-      sample_metadata$expt = reference_batch
+    # if (is.null(reference_batch) == FALSE)
+    #   sample_metadata$expt = reference_batch
+    
+    # override the columns with the newdata columns
+    for (c in colnames(newdata)) {
+      sample_metadata[[c]] = newdata[[c]]
+    }
     
     conditional_counts = estimate_abundances_cond(perturbation_ccm, 
                                                   newdata=sample_metadata, 
