@@ -212,6 +212,9 @@ plot_cell_type_control_kinetics = function(control_ccm,
 #' @param control_state_time
 #' @param control_stop_time
 #' @param newdata 
+#' @param batch_col
+#' @param reference_batch 
+#' @param raw_counts
 #' @export
 plot_cell_type_perturb_kinetics = function(perturbation_ccm,
                                            cell_groups=NULL,
@@ -400,23 +403,21 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
   
   kinetic_plot = ggplot(perturb_vs_wt_nodes, aes(x = !!sym(paste(interval_col, "_x", sep=""))))+ 
     
-    geom_point(aes(x = !!sym(paste(interval_col, "_x", sep="")), 
-                   y =1.0*(exp(log_abund_y) + exp(log_abund_detection_thresh))), 
-               shape=8, 
-               data=perturb_vs_wt_nodes %>% filter(present_above_thresh & delta_log_abund > 0 & delta_q_value < q_val)) +
-    geom_point(aes(x = !!sym(paste(interval_col, "_x", sep="")), y =1.0*(exp(log_abund_y) + exp(log_abund_detection_thresh))), 
-               shape=8, data=perturb_vs_wt_nodes %>% filter(present_above_thresh & delta_log_abund < 0 & delta_q_value < q_val)) +
-    geom_jitter(data=sel_ccs_counts_long,
-                aes(x = timepoint, y = num_cells+exp(log_abund_detection_thresh), shape=expt),
-                height=0,
-                width=2, color = "gray", size=0.5) +
+    geom_point(data = perturb_vs_wt_nodes %>% filter(present_above_thresh & delta_log_abund > 0 & delta_q_value < q_val), 
+               aes(x = !!sym(paste(interval_col, "_x", sep="")), 
+                   y = 1.0*(exp(log_abund_y) + exp(log_abund_detection_thresh))), shape=8) +
+    geom_point(data = perturb_vs_wt_nodes %>% filter(present_above_thresh & delta_log_abund < 0 & delta_q_value < q_val), 
+               aes(x = !!sym(paste(interval_col, "_x", sep="")), 
+                   y = 1.0*(exp(log_abund_y) + exp(log_abund_detection_thresh))), shape=8 ) +
+    geom_point(data=sel_ccs_counts_long,
+                aes(x = !!sym(interval_col), y = num_cells+exp(log_abund_detection_thresh), shape = knockout),
+                color = "gray", position="jitter", alpha = 0.5, size= 0.75) +
     geom_line(aes(y = exp(log_abund_x) + exp(log_abund_detection_thresh), linetype = "Wild-type")) +
     geom_line(aes(y = exp(log_abund_y) + exp(log_abund_detection_thresh), linetype = "Knockout")) +
     ggh4x::stat_difference(aes(ymin = exp(log_abund_x)+exp(log_abund_detection_thresh), 
                                ymax = exp(log_abund_y) +exp(log_abund_detection_thresh)), alpha=0.5) + 
     scale_fill_manual(values = c("orangered3", "royalblue3", "lightgray")) + 
     facet_wrap(~cell_group, scales="free_y", nrow=nrow) + monocle3:::monocle_theme_opts() + 
-    # ggtitle(paste0(perturbation, " kinetics")) + 
     geom_hline(yintercept=exp(log_abund_detection_thresh), color="lightgrey") + xlab("timepoint") 
   
   # kinetic_plot = ggplot(perturb_vs_wt_nodes, aes(x = !!sym(paste(interval_col, "_x", sep="")))) +
