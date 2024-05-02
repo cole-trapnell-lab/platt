@@ -222,6 +222,7 @@ assemble_partition = function(cds,
                               q_val = 0.1, 
                               vhat_method = "bootstrap",
                               num_bootstraps = 10,
+                              newdata = tibble(expt="GAP16"), 
                               batch_col = "expt",
                               expt = "GAP16",
                               min_lfc = 0, 
@@ -289,7 +290,7 @@ assemble_partition = function(cds,
     }
 
     #FIXME: probably need to pass additional args here sometimes:
-    wt_extant_cell_type_df = get_extant_cell_types(wt_ccm, start_time, stop_time, interval_col=interval_col, expt="GAP16")
+    wt_extant_cell_type_df = get_extant_cell_types(wt_ccm, start_time, stop_time, interval_col=interval_col, newdata = newdata)
   
     message ("Assembling wild-type graph...")
     wt_graph = assemble_wt_graph (cds,
@@ -375,7 +376,7 @@ assemble_partition = function(cds,
                         mutate(perturbation_table = purrr::map(.f = purrr::possibly(get_perturbation_effects),
                                                              .x = perturb_ccm,
                                                              interval_col = interval_col,
-                                                             expt = expt))
+                                                             newdata = tibble(expt = expt)))
 
 
     message ("Assembling mutant graphs...")
