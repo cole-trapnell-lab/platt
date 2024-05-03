@@ -271,6 +271,7 @@ assemble_partition = function(cds,
                                             ctrl_ids = ctrl_ids,
                                             sparsity_factor = sparsity_factor,
                                             perturbation_col = perturbation_col,
+                                            batch_col = batch_col, 
                                             verbose=verbose,
                                             num_threads = num_threads,
                                             backend=backend,
@@ -341,6 +342,7 @@ assemble_partition = function(cds,
                                                           verbose=verbose,
                                                           num_threads=num_threads,
                                                           backend=backend,
+                                                          batch_col = batch_col,
                                                           vhat_method=vhat_method,
                                                           num_bootstraps=num_bootstraps,
                                                           embryo_size_factors=embryo_size_factors))
@@ -658,9 +660,7 @@ assemble_wt_graph = function(cds,
                                                               links_between_components = links_between_components,  
                                                               edge_allowlist=edge_allowlist,
                                                               edge_denylist=edge_denylist,
-                                                              components=component_col,
-                                                              verbose=verbose,
-                                                              expt=expt)
+                                                              components=component_col)
   if (break_cycles) {
     print ("breaking cycles in control timeseries graph...")
     wt_state_transition_graph = platt:::break_cycles_in_state_transition_graph(wt_state_transition_graph, "support")
@@ -784,7 +784,6 @@ fit_mt_models = function(cds,
 assemble_mt_graph = function(wt_ccm,
                              perturb_models_tbl,
                              interval_col = "timepoint",
-                             batch_col="expt",
                              perturbation_col = "knockout",
                              start_time = NULL,
                              stop_time = NULL,
@@ -833,7 +832,6 @@ assemble_mt_graph = function(wt_ccm,
                                                                    stop_time = stop_time,
                                                                    perturbation_col = perturbation_col,
                                                                    interval_col = interval_col,
-                                                                   batch_col=batch_col,
                                                                    interval_step = interval_step,
                                                                    log_abund_detection_thresh = log_abund_detection_thresh,
                                                                    q_val = q_val,
@@ -981,86 +979,84 @@ subcluster_cds = function(cds,
 
 
 
-#' @export
-assemble_partition_from_cds = function(cds,
-                                       partition_name = NULL,
-                                       num_dim = NULL,
-                                       max_components = 3,
-                                       res_col = NULL,
-                                       resolution_fun = NULL,
-                                       min_res=5e-6,
-                                       max_res=1e-5,
-                                       cluster_k = 15,
-                                       final_resolution = resolution,
-                                       sample_group = "embryo",
-                                       cell_group = "cluster",
-                                       main_model_formula_str = NULL,
-                                       start_time = 18,
-                                       stop_time = 72,
-                                       interval_col="timepoint",
-                                       nuisance_model_formula_str = "~1",
-                                       ctrl_ids = NULL,
-                                       mt_ids = NULL,
-                                       sparsity_factor = 0.01,
-                                       perturbation_col = "gene_target",
-                                       max_num_cells=NULL,
-                                       verbose=FALSE,
-                                       num_threads=1,
-                                       backend="nlopt",
-                                       vhat_method="bootstrap",
-                                       min_lfc = 0, 
-                                       links_between_components = "none",
-                                       log_abund_detection_thresh = -5,
-                                       q_val = 0.1, 
-                                       num_bootstraps = 10,
-                                       batch_col = "expt", 
-                                       batches_excluded_from_assembly=c(),
-                                       component_col="partition",
-                                       embryo_size_factors=NULL) {
-  
-  # if a resolution column has been specified in column
-  # if (is.null(res_col) == FALSE) {
-  #     res = unique(colData(cds)[[res_col]])
-  #     if (length(res) > 1) {
-  #       stop("More than 1 resolution provided in column")
-  #     }
-  # } else {
-  #   res = default_resolution_fun(ncol(cds), min_res = min_res, max_res = max_res)
-  # }
-  # cds = cluster_cells(cds, resolution = res)
-
-
-  partition_results = assemble_partition(cds=cds,
-                                         sample_group=sample_group,
-                                         cell_group=cell_group,
-                                         partition_name=partition_name,
-                                         main_model_formula_str=main_model_formula_str,
-                                         start_time=start_time,
-                                         stop_time=stop_time,
-                                         interval_col=interval_col,
-                                         nuisance_model_formula_str=nuisance_model_formula_str,
-                                         ctrl_ids=ctrl_ids,
-                                         mt_ids=mt_ids,
-                                         sparsity_factor=sparsity_factor,
-                                         perturbation_col=perturbation_col,
-                                         max_num_cells=max_num_cells,
-                                         verbose=verbose,
-                                         num_threads=num_threads,
-                                         backend=backend,
-                                         q_val = q_val, 
-                                         vhat_method=vhat_method,
-                                         min_lfc = min_lfc, 
-                                         links_between_components = links_between_components,
-                                         log_abund_detection_thresh = log_abund_detection_thresh, 
-                                         batch_col = batch_col,
-                                         batches_excluded_from_assembly=batches_excluded_from_assembly,
-                                         num_bootstraps=num_bootstraps,
-                                         component_col=component_col,
-                                         embryo_size_factors=embryo_size_factors)
-
-  return(partition_results)
-
-}
+#' #' @export
+#' assemble_partition_from_cds = function(cds,
+#'                                        partition_name = NULL,
+#'                                        num_dim = NULL,
+#'                                        max_components = 3,
+#'                                        res_col = NULL,
+#'                                        resolution_fun = NULL,
+#'                                        min_res=5e-6,
+#'                                        max_res=1e-5,
+#'                                        cluster_k = 15,
+#'                                        final_resolution = resolution,
+#'                                        sample_group = "embryo",
+#'                                        cell_group = "cluster",
+#'                                        main_model_formula_str = NULL,
+#'                                        start_time = 18,
+#'                                        stop_time = 72,
+#'                                        interval_col="timepoint",
+#'                                        nuisance_model_formula_str = "~1",
+#'                                        ctrl_ids = NULL,
+#'                                        mt_ids = NULL,
+#'                                        sparsity_factor = 0.01,
+#'                                        perturbation_col = "gene_target",
+#'                                        max_num_cells=NULL,
+#'                                        verbose=FALSE,
+#'                                        num_threads=1,
+#'                                        backend="nlopt",
+#'                                        vhat_method="bootstrap",
+#'                                        min_lfc = 0, 
+#'                                        links_between_components = "none",
+#'                                        log_abund_detection_thresh = -5,
+#'                                        q_val = 0.1, 
+#'                                        num_bootstraps = 10,
+#'                                        batches_excluded_from_assembly=c(),
+#'                                        component_col="partition",
+#'                                        embryo_size_factors=NULL) {
+#'   
+#'   # if a resolution column has been specified in column
+#'   # if (is.null(res_col) == FALSE) {
+#'   #     res = unique(colData(cds)[[res_col]])
+#'   #     if (length(res) > 1) {
+#'   #       stop("More than 1 resolution provided in column")
+#'   #     }
+#'   # } else {
+#'   #   res = default_resolution_fun(ncol(cds), min_res = min_res, max_res = max_res)
+#'   # }
+#'   # cds = cluster_cells(cds, resolution = res)
+#' 
+#' 
+#'   partition_results = assemble_partition(cds=cds,
+#'                                          sample_group=sample_group,
+#'                                          cell_group=cell_group,
+#'                                          partition_name=partition_name,
+#'                                          main_model_formula_str=main_model_formula_str,
+#'                                          start_time=start_time,
+#'                                          stop_time=stop_time,
+#'                                          interval_col=interval_col,
+#'                                          nuisance_model_formula_str=nuisance_model_formula_str,
+#'                                          ctrl_ids=ctrl_ids,
+#'                                          mt_ids=mt_ids,
+#'                                          sparsity_factor=sparsity_factor,
+#'                                          perturbation_col=perturbation_col,
+#'                                          max_num_cells=max_num_cells,
+#'                                          verbose=verbose,
+#'                                          num_threads=num_threads,
+#'                                          backend=backend,
+#'                                          q_val = q_val, 
+#'                                          vhat_method=vhat_method,
+#'                                          min_lfc = min_lfc, 
+#'                                          links_between_components = links_between_components,
+#'                                          log_abund_detection_thresh = log_abund_detection_thresh,
+#'                                          batches_excluded_from_assembly=batches_excluded_from_assembly,
+#'                                          num_bootstraps=num_bootstraps,
+#'                                          component_col=component_col,
+#'                                          embryo_size_factors=embryo_size_factors)
+#' 
+#'   return(partition_results)
+#' 
+#' }
 
 
 # Need to convert the cluster IDs in each graph to cell_state IDs (which are what we'll use in the final model)
@@ -1151,7 +1147,7 @@ run_assembly = function(cds,
                         ...) {
 
   part_cds = get_partition_cds(cds, partition_group)
-  partition_results = assemble_partition_from_cds(part_cds,
+  partition_results = assemble_partition(part_cds,
                                                   recluster = recluster,
                                                   recursive_subcluster = recursive_subcluster,
                                                   interval_col = interval_col,
@@ -1213,7 +1209,7 @@ run_partition_assembly = function(wt_cds,
 
     comb_p_cds = get_partition_cds(comb_i_cds, p)
 
-    partition_results = assemble_partition_from_cds(comb_p_cds,
+    partition_results = assemble_partition(comb_p_cds,
                                                     recluster = T,
                                                     recursive_subcluster = F,
                                                     interval_col = "timepoint",
@@ -1247,7 +1243,7 @@ run_cds_assembly = function(cds,
 
     comb_p_cds = get_partition_cds(cds, p)
 
-    partition_results = assemble_partition_from_cds(comb_p_cds,
+    partition_results = assemble_partition(comb_p_cds,
                                                     recluster = recluster,
                                                     recursive_subcluster = F,
                                                     interval_col = "timepoint",
