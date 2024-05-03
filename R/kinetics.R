@@ -104,12 +104,18 @@ plot_cell_type_control_kinetics = function(control_ccm,
   timepoints = seq(start_time, stop_time, interval_step)
 
   #print (earliest_loss_tbl)
-
-  peak_wt_abundance = wt_timepoint_pred_df %>% group_by(cell_group) %>% slice_max(log_abund, n=1)
-  cell_group_order = peak_wt_abundance %>% arrange(timepoint, log_abund) %>% pull(cell_group)
+  extant_wt_tbl = get_extant_cell_types(control_ccm,
+                                        start_time,
+                                        stop_time,
+                                        log_abund_detection_thresh=log_abund_detection_thresh,
+                                        newdata = newdata)
+  
+  cell_group_order = extant_wt_tbl %>% 
+    group_by(cell_group) %>% slice_max(percent_max_abund, n=1) %>% 
+    group_by(cell_group) %>% slice_min(timepoint, n=1) %>% pull(cell_group)
   
   sel_ccs_counts = normalized_counts(control_ccm@ccs, norm_method="size_only", pseudocount=0)
- 
+  use_latent = T
   if (raw_counts == FALSE) {
     sample_metadata = colData(control_ccm@ccs) %>% as_tibble
     
@@ -130,7 +136,17 @@ plot_cell_type_control_kinetics = function(control_ccm,
                           select(embryo=sample, cell_group, log_abund) %>% 
                           mutate(num_cells=exp(log_abund)) %>% select(-log_abund)
     
-  } else{
+  } else if (use_latent) {
+  
+    latent_counts = Matrix::t(control_ccm@full_model_family$latent)
+    rownames(latent_counts) = rownames(control_ccm@ccs)
+    colnames(latent_counts) = colnames(control_ccm@ccs)
+    
+    sel_ccs_counts_long = tibble::rownames_to_column(as.matrix(latent_counts) %>% 
+                                                       as.data.frame, var="cell_group") %>%
+      pivot_longer(!cell_group, names_to="embryo", values_to="num_cells")
+    
+  } else {
     sel_ccs_counts = Matrix::t(Matrix::t(counts(control_ccm@ccs)) / exp(model.offset(control_ccm@model_aux[["full_model_frame"]])))
     sel_ccs_counts_long = tibble::rownames_to_column(as.matrix(sel_ccs_counts) %>% 
                           as.data.frame, var="cell_group") %>%
@@ -291,8 +307,8 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
   ko_timepoint_pred_df = hooke:::estimate_abundances_over_interval(perturbation_ccm, 
                                                                    start_time, 
                                                                    stop_time,  
-                                                                   interval_col=interval_col,
-                                                                   interval_step=interval_step, 
+                                                                   interval_col = interval_col,
+                                                                   interval_step = interval_step, 
                                                                    newdata = newdata_mt)
   
   # # do i need to include batch stuff here? 
@@ -431,9 +447,12 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
                                   by=c("cell_group"="id"))
 
   sel_ccs_counts_long = left_join(sel_ccs_counts_long,
-                                  colData(perturbation_ccm@ccs) %>% as.data.frame %>% select(sample, !!sym(interval_col), knockout, expt, gene_target),
+                                  colData(perturbation_ccm@ccs) %>% as.data.frame %>% select(sample, !!sym(interval_col), knockout, expt),
                                   by=c("embryo"="sample"))
 
+  
+  
+  
 
   # INSERT TIME by peak abundances
   perturb_vs_wt_nodes = left_join(perturb_vs_wt_nodes,
@@ -466,12 +485,12 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
                aes(x = !!sym(interval_col), y = num_cells+exp(log_abund_detection_thresh), shape = knockout),
                color = "black", 
                position="jitter",
-               size= 0.75) + 
+               size = 0.75) + 
     geom_point(data=sel_ccs_counts_long%>% filter(knockout == F),
                 aes(x = !!sym(interval_col), y = num_cells+exp(log_abund_detection_thresh), shape = knockout),
                 color = "gray", 
                position="jitter",
-               size= 0.75) +
+               size = 0.75) +
     geom_line(aes(y = exp(log_abund_x) + exp(log_abund_detection_thresh), linetype = "Wild-type")) +
     geom_line(aes(y = exp(log_abund_y) + exp(log_abund_detection_thresh), linetype = "Knockout")) +
     ggh4x::stat_difference(aes(ymin = exp(log_abund_x)+exp(log_abund_detection_thresh), 
