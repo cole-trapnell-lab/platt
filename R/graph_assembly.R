@@ -931,8 +931,12 @@ build_timeseries_transition_graph <- function(ccm,
   timepoints = seq(start_time, stop_time, interval_step)
 
   message("Estimating abundances over time interval")
-  timepoint_pred_df = estimate_abundances_over_interval(ccm, start_time, stop_time, 
-                                                        interval_col = interval_col, interval_step=interval_step, newdata = newdata)
+  timepoint_pred_df = estimate_abundances_over_interval(ccm, 
+                                                        start_time, 
+                                                        stop_time, 
+                                                        interval_col = interval_col, 
+                                                        interval_step = interval_step, 
+                                                        newdata = newdata)
 
   #' @noRd
   select_timepoints <- function(timepoint_pred_df, t1, t2, interval_col)  {
@@ -1473,31 +1477,41 @@ estimate_loss_timing <- function(perturbation_ccm,
   fraction_of_presence_window_lost_thresh = 0.5
   
   if (nrow(newdata) > 0 ){
-    newdata = cross_join(tibble(knockout=FALSE), newdata)
+    newdata_wt = cross_join(tibble(knockout=FALSE), newdata)
+    newdata_mt = cross_join(tibble(knockout=TRUE), newdata)
   } else {
-    newdata = tibble(knockout=FALSE) 
+    newdata_wt = tibble(knockout=FALSE)
+    newdata_mt = tibble(knockout=TRUE)
   }
 
-  wt_timepoint_pred_df = hooke:::estimate_abundances_over_interval(perturbation_ccm, start_time, stop_time, 
-                                                                   interval_col=interval_col, interval_step=interval_step, newdata = newdata)
-  ko_timepoint_pred_df = hooke:::estimate_abundances_over_interval(perturbation_ccm, start_time, stop_time,  
-                                                                   interval_col=interval_col, interval_step=interval_step, newdata = newdata)
+  wt_timepoint_pred_df = hooke:::estimate_abundances_over_interval(perturbation_ccm, 
+                                                                   start_time, 
+                                                                   stop_time, 
+                                                                   interval_col = interval_col, 
+                                                                   interval_step = interval_step, 
+                                                                   newdata = newdata_wt)
+  ko_timepoint_pred_df = hooke:::estimate_abundances_over_interval(perturbation_ccm, 
+                                                                   start_time, 
+                                                                   stop_time,  
+                                                                   interval_col = interval_col, 
+                                                                   interval_step = interval_step, 
+                                                                   newdata = newdata_mt)
   
   timepoints = seq(start_time, stop_time, interval_step)
 
   perturb_vs_wt_nodes = tibble(t1=timepoints) %>%
       mutate(comp_abund = purrr::map(.f = compare_ko_to_wt_at_timepoint,
                                      .x = t1,
-                                      perturbation_ccm=perturbation_ccm,
-                                      interval_col=interval_col,
+                                      perturbation_ccm = perturbation_ccm,
+                                      interval_col = interval_col,
                                       wt_pred_df = wt_timepoint_pred_df,
                                             ko_pred_df = ko_timepoint_pred_df)) %>% tidyr::unnest(comp_abund)
     
    extant_wt_tbl = get_extant_cell_types(control_ccm,
                                           control_start_time,
                                           control_stop_time,
-                                          log_abund_detection_thresh=log_abund_detection_thresh,
-                                          newdata = newdata)
+                                          log_abund_detection_thresh = log_abund_detection_thresh,
+                                          newdata = newdata_wt)
 
    changes_when_present_in_wt = left_join(perturb_vs_wt_nodes %>% select(cell_group,
                                                                         wt_time_present=t1,
@@ -1898,25 +1912,25 @@ assemble_timeseries_transitions <- function(ccm,
                                             q_val=0.01,
                                             start_time = NULL,
                                             stop_time = NULL,
-                                            interval_col="timepoint",
+                                            interval_col = "timepoint",
                                             interval_step = 2,
                                             min_interval = 4,
                                             max_interval = 24,
-                                            log_abund_detection_thresh=-5,
-                                            min_pathfinding_lfc=0,
-                                            make_dag=FALSE,
-                                            links_between_components=c("ctp", "none", "strongest-pcor", "strong-pcor"),
+                                            log_abund_detection_thresh = -5,
+                                            min_pathfinding_lfc = 0,
+                                            make_dag = FALSE,
+                                            links_between_components = c("ctp", "none", "strongest-pcor", "strong-pcor"),
                                             components = "partition",
-                                            edge_allowlist=NULL,
-                                            edge_denylist=NULL,
+                                            edge_allowlist = NULL,
+                                            edge_denylist = NULL,
                                             newdata = tibble()){
 
   message("Determining extant cell types")
   extant_cell_type_df = get_extant_cell_types(ccm,
                                               start_time,
                                               stop_time,
-                                              interval_col=interval_col,
-                                              log_abund_detection_thresh=log_abund_detection_thresh,
+                                              interval_col = interval_col,
+                                              log_abund_detection_thresh = log_abund_detection_thresh,
                                               newdata = newdata)
 
   # Now let's set up a directed graph that links the states between which cells *could* directly
@@ -1927,10 +1941,10 @@ assemble_timeseries_transitions <- function(ccm,
   message("Initializing pathfinding graph")
   pathfinding_graph = init_pathfinding_graph(ccm,
                                              extant_cell_type_df,
-                                             links_between_components=links_between_components,
+                                             links_between_components = links_between_components,
                                              components = components,
-                                             edge_allowlist=edge_allowlist,
-                                             edge_denylist=edge_denylist)
+                                             edge_allowlist = edge_allowlist,
+                                             edge_denylist = edge_denylist)
 
 
   G = build_timeseries_transition_graph(ccm,
@@ -2005,7 +2019,6 @@ assess_perturbation_effects = function(control_timeseries_ccm,
                                        q_val=0.01,
                                        start_time = NULL,
                                        stop_time = NULL,
-                                       perturbation_col = "knockout",
                                        interval_col = "timepoint",
                                        interval_step = 2,
                                        min_interval = 4,
@@ -2064,7 +2077,7 @@ assemble_transition_graph_from_perturbations <- function(control_timeseries_ccm,
                                                          q_val=0.01,
                                                          start_time = NULL,
                                                          stop_time = NULL,
-                                                         perturbation_col="knockout",
+                                                         # perturbation_col="knockout",
                                                          interval_col="timepoint",
                                                          interval_step = 2,
                                                          min_interval = 4,
@@ -2099,7 +2112,6 @@ assemble_transition_graph_from_perturbations <- function(control_timeseries_ccm,
                                                 stop_time,
                                                 interval_col=interval_col,
                                                 log_abund_detection_thresh=log_abund_detection_thresh,
-                                                perturbation_col=perturbation_col,
                                                 newdata = newdata)
 
     if (verbose)
@@ -2119,7 +2131,6 @@ assemble_transition_graph_from_perturbations <- function(control_timeseries_ccm,
                                                        q_val=q_val,
                                                        start_time = start_time,
                                                        stop_time = stop_time,
-                                                       perturbation_col=perturbation_col,
                                                        interval_col=interval_col,
                                                        interval_step = interval_step,
                                                        min_interval = min_interval,
@@ -2140,17 +2151,16 @@ assemble_transition_graph_from_perturbations <- function(control_timeseries_ccm,
     if (is.null(perturbation_ccm_tbl$perturb_summary_tbl)){
       perturbation_ccm_tbl = assess_perturbation_effects(control_timeseries_ccm,
                                                          perturbation_ccm_tbl,
-                                                         q_val=q_val,
+                                                         q_val = q_val,
                                                          start_time = start_time,
                                                          stop_time = stop_time,
-                                                         perturbation_col=perturbation_col,
-                                                         interval_col=interval_col,
+                                                         interval_col = interval_col,
                                                          interval_step = interval_step,
                                                          min_interval = min_interval,
                                                          max_interval = max_interval,
-                                                         log_abund_detection_thresh=log_abund_detection_thresh,
-                                                         min_lfc=min_pathfinding_lfc,
-                                                         verbose=verbose,
+                                                         log_abund_detection_thresh = log_abund_detection_thresh,
+                                                         min_lfc = min_pathfinding_lfc,
+                                                         verbose = verbose,
                                                          newdata = newdata)
     }
 
@@ -2265,7 +2275,7 @@ assemble_transition_graph_from_perturbations <- function(control_timeseries_ccm,
                                             q_val,
                                             start_time,
                                             stop_time,
-                                            perturbation_col,
+                                            # perturbation_col,
                                             interval_col,
                                             interval_step,
                                             min_interval,
@@ -2329,7 +2339,7 @@ assess_support_for_transition_graph <- function(control_timeseries_ccm,
                                                 q_val=0.01,
                                                 start_time = NULL,
                                                 stop_time = NULL,
-                                                perturbation_col="knockout",
+                                                # perturbation_col="knockout",
                                                 interval_col="timepoint",
                                                 interval_step = 2,
                                                 min_interval = 4,
@@ -2360,7 +2370,7 @@ assess_support_for_transition_graph <- function(control_timeseries_ccm,
     ungroup() %>%
     group_by(from, to) %>%
     summarize(num_perturbs_supporting=length(unique(perturb_name)),
-              #num_perturb_intervals_supporting=sum(num_intervals_supported),
+              # num_perturb_intervals_supporting=sum(num_intervals_supported),
               max_timeseries_path_score_supporting=max(timeseries_model_path_score),
               total_timeseries_path_score_supporting=sum(timeseries_model_path_score),
               max_perturb_path_score_supporting=max(perturb_model_path_score),

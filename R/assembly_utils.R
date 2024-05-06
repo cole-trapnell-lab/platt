@@ -8,7 +8,7 @@ get_time_window <- function(genotype, ccs, interval_col, perturbation_col = gene
 }
 
 #' @export
-get_perturbation_effects <- function(ccm, expt, interval_col="timepoint", newdata = tibble()){
+get_perturbation_effects <- function(ccm, interval_col="timepoint", newdata = tibble()){
   timepoints = colData(ccm@ccs)[[interval_col]] %>% unique
   df = data.frame(time = timepoints) %>%
     mutate(genotype_eff = purrr::map(.f = make_contrast,
@@ -215,6 +215,7 @@ assemble_partition = function(cds,
                               mt_ids = NULL,
                               sparsity_factor = 0.01,
                               perturbation_col = "gene_target",
+                              batch_col = "expt",
                               max_num_cells = NULL,
                               verbose=FALSE,
                               num_threads = 1,
@@ -222,9 +223,7 @@ assemble_partition = function(cds,
                               q_val = 0.1, 
                               vhat_method = "bootstrap",
                               num_bootstraps = 10,
-                              newdata = tibble(expt="GAP16"), 
-                              batch_col = "expt",
-                              expt = "GAP16",
+                              newdata = tibble(), 
                               min_lfc = 0, 
                               links_between_components=c("ctp", "none", "strongest-pcor", "strong-pcor"),
                               log_abund_detection_thresh = -5, 
@@ -266,18 +265,18 @@ assemble_partition = function(cds,
                                             main_model_formula_str = main_model_formula_str,
                                             start_time = start_time,
                                             stop_time = stop_time,
-                                            interval_col=interval_col,
+                                            interval_col = interval_col,
                                             nuisance_model_formula_str = nuisance_model_formula_str,
                                             ctrl_ids = ctrl_ids,
                                             sparsity_factor = sparsity_factor,
                                             perturbation_col = perturbation_col,
                                             batch_col = batch_col, 
-                                            verbose=verbose,
+                                            verbose = verbose,
                                             num_threads = num_threads,
-                                            backend=backend,
-                                            vhat_method=vhat_method,
-                                            num_bootstraps=num_bootstraps,
-                                            embryo_size_factors=embryo_size_factors))
+                                            backend = backend,
+                                            vhat_method = vhat_method,
+                                            num_bootstraps = num_bootstraps,
+                                            embryo_size_factors = embryo_size_factors))
 
     if (is.null(wt_ccm) || is.na(wt_ccm)){
       partition_results$wt_graph = list(NA)
@@ -301,7 +300,8 @@ assemble_partition = function(cds,
                                   main_model_formula_str = main_model_formula_str,
                                   start_time = start_time,
                                   stop_time = stop_time,
-                                  interval_col=interval_col,
+                                  interval_col = interval_col,
+                                  newdata = newdata, 
                                   #nuisance_model_formula_str = "~expt",
                                   links_between_components = links_between_components,
                                   ctrl_ids = ctrl_ids,
@@ -364,26 +364,26 @@ assemble_partition = function(cds,
                                                      q_val= q_val, 
                                                      start_time = start_time,
                                                      stop_time = stop_time,
-                                                     perturbation_col=perturbation_col,
-                                                     interval_col=interval_col,
-                                                     batch_col=batch_col,
-                                                     log_abund_detection_thresh= log_abund_detection_thresh, 
-                                                     min_lfc=min_lfc, 
-                                                     verbose=verbose,
-                                                     expt=expt)
+                                                     perturbation_col = perturbation_col,
+                                                     interval_col = interval_col,
+                                                     log_abund_detection_thresh = log_abund_detection_thresh, 
+                                                     min_lfc = min_lfc, 
+                                                     verbose = verbose, 
+                                                     newdata = newdata)
     
     # this makes a prediction for every measured timepoint
     # this is for useful to save for plotting later 
     perturb_models_tbl = perturb_models_tbl %>%
                         mutate(perturbation_table = purrr::map(.f = purrr::possibly(get_perturbation_effects),
-                                                             .x = perturb_ccm,
-                                                             interval_col = interval_col,
-                                                             newdata = tibble(expt = expt)))
+                                                              .x = perturb_ccm,
+                                                              interval_col = interval_col,
+                                                              newdata = newdata))
 
 
     message ("Assembling mutant graphs...")
     mt_graph = assemble_mt_graph (wt_ccm,
                                   perturb_models_tbl,
+                                  newdata = newdata, 
                                   start_time = start_time,
                                   stop_time = stop_time,
                                   interval_col=interval_col,
@@ -601,13 +601,14 @@ assemble_wt_graph = function(cds,
                              wt_ccm,
                              sample_group,
                              cell_group,
+                             newdata = tibble(),
                              main_model_formula_str = NULL,
                              num_breaks = 4,
                              nuisance_model_formula_str = "~1",
                              ctrl_ids = NULL,
                              mt_ids = NULL,
                              sparsity_factor = 1,
-                             vhat_method="wald",
+                             vhat_method = "bootstrap",
                              interval_col = "timepoint",
                              perturbation_col = "knockout",
                              start_time = NULL,
@@ -616,12 +617,11 @@ assemble_wt_graph = function(cds,
                              links_between_components=c("ctp", "none", "strongest-pcor", "strong-pcor"),
                              log_abund_detection_thresh=-5,
                              q_val = 0.1,
-                             expt = "GAP16",
                              break_cycles = TRUE,
-                             edge_allowlist=NULL,
-                             edge_denylist=NULL,
-                             component_col="partition",
-                             verbose=FALSE){
+                             edge_allowlist = NULL,
+                             edge_denylist = NULL,
+                             component_col = "partition",
+                             verbose = FALSE){
 
 
   if (is.null(ctrl_ids)) {
@@ -651,16 +651,17 @@ assemble_wt_graph = function(cds,
   }
 
   wt_state_transition_graph = assemble_timeseries_transitions(wt_ccm,
-                                                              start_time=start_time,
-                                                              stop_time=stop_time,
+                                                              start_time = start_time,
+                                                              stop_time = stop_time,
                                                               interval_col= interval_col,
                                                               interval_step = interval_step,
-                                                              log_abund_detection_thresh=log_abund_detection_thresh,
+                                                              log_abund_detection_thresh = log_abund_detection_thresh,
                                                               q_val = q_val,
                                                               links_between_components = links_between_components,  
-                                                              edge_allowlist=edge_allowlist,
-                                                              edge_denylist=edge_denylist,
-                                                              components=component_col)
+                                                              edge_allowlist = edge_allowlist,
+                                                              edge_denylist = edge_denylist,
+                                                              components = component_col, 
+                                                              newdata = newdata)
   if (break_cycles) {
     print ("breaking cycles in control timeseries graph...")
     wt_state_transition_graph = platt:::break_cycles_in_state_transition_graph(wt_state_transition_graph, "support")
@@ -687,10 +688,11 @@ fit_mt_models = function(cds,
                          ctrl_ids = NULL,
                          mt_ids = NULL,
                          sparsity_factor = 1,
-                         vhat_method="bootstrap",
+                         vhat_method = "bootstrap",
                          interval_col = "timepoint",
                          perturbation_col = "knockout",
-                         batch_col="expt",
+                         batch_col = "expt",
+                         newdata = tibble(),
                          start_time = NULL,
                          stop_time = NULL,
                          interval_step = 2,
@@ -698,7 +700,6 @@ fit_mt_models = function(cds,
                          q_val = 0.1,
                          edge_allowlist = NULL,
                          edge_denylist = NULL,
-                         expt = "GAP16",
                          keep_cds=TRUE,
                          verbose=FALSE,
                          num_threads=1,
@@ -769,12 +770,12 @@ fit_mt_models = function(cds,
                                            #assembly_time_stop=stop_time,
                                            edge_allowlist = edge_allowlist,
                                            edge_denylist = edge_denylist,
-                                           penalize_by_distance=penalize_by_distance,
-                                           independent_spline_for_ko=independent_spline_for_ko,
+                                           penalize_by_distance = penalize_by_distance,
+                                           independent_spline_for_ko = independent_spline_for_ko,
                                            num_threads = num_threads,
-                                           vhat_method=vhat_method,
+                                           vhat_method = vhat_method,
                                            backend = backend,
-                                           num_bootstraps=num_bootstraps))
+                                           num_bootstraps = num_bootstraps))
 
   return(perturb_models_tbl)
 }
@@ -789,21 +790,21 @@ assemble_mt_graph = function(wt_ccm,
                              stop_time = NULL,
                              interval_step = 2,
                              links_between_components = "none", 
-                             log_abund_detection_thresh=-5,
+                             log_abund_detection_thresh = -5,
                              q_val = 0.1,
-                             expt = "GAP16",
+                             newdata = tibble(),
                              break_cycles = TRUE,
-                             component_col="partition",
-                             edge_allowlist=NULL,
-                             edge_denylist=NULL,
-                             verbose=FALSE){
+                             component_col = "partition",
+                             edge_allowlist = NULL,
+                             edge_denylist = NULL,
+                             verbose = FALSE){
 
 
   if (is.null(wt_ccm) || is.na(wt_ccm)){
     stop("No control timeseries cell count model. Skipping.")
   }
 
-  wt_cds = wt_ccm@ccs@cds #cds[, colData(cds)[[perturbation_col]] %in% ctrl_ids]
+  wt_cds = wt_ccm@ccs@cds 
 
   timepoints = unique(colData(wt_cds)[[interval_col]])
   timepoints = timepoints[!is.na(timepoints)]
@@ -835,12 +836,12 @@ assemble_mt_graph = function(wt_ccm,
                                                                    interval_step = interval_step,
                                                                    log_abund_detection_thresh = log_abund_detection_thresh,
                                                                    q_val = q_val,
-                                                                   expt = expt,
+                                                                   newdata = newdata, 
                                                                    links_between_components = links_between_components,
-                                                                   edge_allowlist=edge_allowlist,
-                                                                   edge_denylist=edge_denylist,
-                                                                   components=component_col,
-                                                                   verbose=verbose)
+                                                                   edge_allowlist = edge_allowlist,
+                                                                   edge_denylist = edge_denylist,
+                                                                   components = component_col,
+                                                                   verbose = verbose)
   if (break_cycles) {
     print ("breaking cycles in perturbation graph...")
     mutant_supergraph = platt:::break_cycles_in_state_transition_graph(mutant_supergraph, "total_perturb_path_score_supporting")
