@@ -2,7 +2,6 @@
 
 export(assemble_mt_graph)
 export(assemble_partition)
-export(assemble_partition_from_cds)
 export(assemble_timeseries_transitions)
 export(assemble_transition_graph_from_perturbations)
 export(assemble_wt_graph)

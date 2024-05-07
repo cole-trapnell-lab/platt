@@ -13,14 +13,13 @@ plot_cell_type_control_kinetics(
   log_abund_detection_thresh = -3,
   delta_log_abund_loss_thresh = 0,
   interval_col = "timepoint",
-  batch_col = NULL,
   q_val = 0.01,
   min_log_abund = -5,
   log_scale = TRUE,
   group_nodes_by = "cell_type",
   nrow = 1,
   newdata = tibble(),
-  reference_batch = NULL,
+  color_points_by = NULL,
   raw_counts = FALSE
 )
 }
