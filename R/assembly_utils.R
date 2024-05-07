@@ -10,12 +10,15 @@ get_time_window <- function(genotype, ccs, interval_col, perturbation_col = gene
 #' @export
 get_perturbation_effects <- function(ccm, interval_col="timepoint", newdata = tibble()){
   timepoints = colData(ccm@ccs)[[interval_col]] %>% unique
-  df = data.frame(time = timepoints) %>%
+  df = data.frame(timepoint = timepoints)
+  
+  df = cross_join(df, newdata) %>% 
+    group_split(row_number(), .keep = FALSE) %>%
+    purrr::map_df(tidyr::nest) %>% 
     mutate(genotype_eff = purrr::map(.f = make_contrast,
-                                     .x = time,
-                                     ccm = ccm,
-                                     newdata = newdata)) %>%
-    unnest(genotype_eff)
+                                     .x = data,
+                                     ccm = ccm)) %>% 
+    unnest(c(data, genotype_eff))
   return(df)
 }
 
@@ -364,7 +367,7 @@ assemble_partition = function(cds,
                                                      q_val= q_val, 
                                                      start_time = start_time,
                                                      stop_time = stop_time,
-                                                     perturbation_col = perturbation_col,
+                                                     # perturbation_col = perturbation_col,
                                                      interval_col = interval_col,
                                                      log_abund_detection_thresh = log_abund_detection_thresh, 
                                                      min_lfc = min_lfc, 
@@ -388,7 +391,7 @@ assemble_partition = function(cds,
                                   stop_time = stop_time,
                                   interval_col=interval_col,
                                   links_between_components = links_between_components,
-                                  perturbation_col = perturbation_col,
+                                  # perturbation_col = perturbation_col,
                                   component_col=component_col,
                                   verbose=verbose)
 
@@ -785,7 +788,7 @@ fit_mt_models = function(cds,
 assemble_mt_graph = function(wt_ccm,
                              perturb_models_tbl,
                              interval_col = "timepoint",
-                             perturbation_col = "knockout",
+                             # perturbation_col = "knockout",
                              start_time = NULL,
                              stop_time = NULL,
                              interval_step = 2,
@@ -831,7 +834,7 @@ assemble_mt_graph = function(wt_ccm,
                                                                    perturb_models_tbl,
                                                                    start_time = start_time,
                                                                    stop_time = stop_time,
-                                                                   perturbation_col = perturbation_col,
+                                                                   # perturbation_col = perturbation_col,
                                                                    interval_col = interval_col,
                                                                    interval_step = interval_step,
                                                                    log_abund_detection_thresh = log_abund_detection_thresh,
