@@ -64,9 +64,9 @@ collect_psg_node_metadata <- function(ccs,
     metadata_cols = c(metadata_cols, label_nodes_by) %>% unique()
 
   #G = edges %>% select(from, to, n, scaled_weight, distance_from_root)  %>% igraph::graph_from_data_frame(directed = T)
-  cell_group_metadata = ccs@cds_coldata[,metadata_cols, drop=F] %>%
+  cell_group_metadata = ccs@cds_coldata[,c("cell",metadata_cols), drop=F] %>%
     as.data.frame
-  cell_group_metadata$cell_group = ccs@metadata[["cell_group_assignments"]] %>% pull(cell_group)
+  cell_group_metadata$cell_group = ccs@metadata[["cell_group_assignments"]][cell_group_metadata$cell,] %>% pull(cell_group)
 
   if (is.null(color_nodes_by) == FALSE){
     color_by_metadata = cell_group_metadata %>% select(cell_group, !!sym(color_nodes_by)) %>%

@@ -6,6 +6,7 @@
 
 
 
+
 # # get edge info
 # edge_info = function(state_graph) {
 #     stopifnot( methods::is( state_graph, "cell_state_graph" ) )
