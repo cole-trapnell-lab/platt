@@ -65,6 +65,7 @@ get_graph_layout = function(ccs,
                             color_nodes_by = NULL,
                             label_nodes_by= NULL,
                             group_nodes_by= NULL,
+                            hide_unlinked_nodes = TRUE,
                             arrow.gap=0.03) {
   
   
@@ -86,15 +87,19 @@ get_graph_layout = function(ccs,
     group_nodes_by = ccs@info$cell_group
   }
   
-  node_metadata = platt:::collect_psg_node_metadata(ccs, color_nodes_by, label_nodes_by, group_nodes_by)
-  node_metadata = node_metadata %>% filter(id %in% edges$from | id %in% edges$to)
+  node_metadata = collect_psg_node_metadata(ccs, color_nodes_by, label_nodes_by, group_nodes_by)
+  if (hide_unlinked_nodes){
+    node_metadata = node_metadata %>% filter(id %in% edges$from | id %in% edges$to)
+  }
   
   edges = edges %>% dplyr::ungroup()
+  edges = edges %>% select(from, to)
+  edges$weight = 1
   edges = edges %>% filter(from %in% node_metadata$id & to %in% node_metadata$id)
   
   G = edges %>% distinct() %>% igraph::graph_from_data_frame(directed = T, vertices=node_metadata)
   
-  layout_info = platt:::layout_state_graph(G, node_metadata, NULL, weighted=FALSE)
+  layout_info = layout_state_graph(G, node_metadata, edge_labels=NULL, weighted=FALSE)
   
   gvizl_coords = layout_info$gvizl_coords
   bezier_df = layout_info$bezier_df
