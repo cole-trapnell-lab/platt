@@ -25,6 +25,8 @@ plot_cell_type_control_kinetics = function(control_ccm,
                                            nrow = 1,
                                            newdata = tibble(), 
                                            color_points_by = NULL,
+                                           size = 0.5, 
+                                           alpha = 0.5, 
                                            # reference_batch = NULL, 
                                            raw_counts = FALSE){
   
@@ -197,16 +199,16 @@ plot_cell_type_control_kinetics = function(control_ccm,
   kinetic_plot = 
     ggplot(wt_timepoint_pred_df, aes(x = timepoint)) +
     geom_point(data=sel_ccs_counts_long,
-               aes(x = timepoint, y = num_cells +  exp(log_abund_detection_thresh), color=expt, alpha=0.5),
-               position="jitter", size=0.5) + 
+               aes(x = timepoint, y = num_cells +  exp(log_abund_detection_thresh), color=expt, alpha=alpha),
+               position="jitter", size=size) + 
     facet_wrap(~cell_group, scales="free_y", nrow = nrow) + monocle3:::monocle_theme_opts()
   
   if (is.null(color_points_by)) {
     
     kinetic_plot = ggplot(wt_timepoint_pred_df, aes(x = timepoint)) +
       geom_point(data=sel_ccs_counts_long,
-                 aes(x = timepoint, y = num_cells +  exp(log_abund_detection_thresh)), alpha=0.5,
-                 position="jitter", size=0.5) + 
+                 aes(x = timepoint, y = num_cells +  exp(log_abund_detection_thresh)), alpha = alpha,
+                 position="jitter", size=size) + 
       facet_wrap(~cell_group, scales="free_y", nrow = nrow) + monocle3:::monocle_theme_opts()
     kinetic_plot = kinetic_plot +
       # scale_color_manual(values = my_colors) +
@@ -216,8 +218,8 @@ plot_cell_type_control_kinetics = function(control_ccm,
     kinetic_plot = ggplot(wt_timepoint_pred_df, aes(x = timepoint)) +
       geom_point(data=sel_ccs_counts_long,
                  aes(x = timepoint, y = num_cells + exp(log_abund_detection_thresh), color=!!sym(color_points_by)), 
-                 alpha=0.5,
-                 position="jitter", size=0.5) + 
+                 alpha= alpha,
+                 position="jitter", size=size) + 
       facet_wrap(~cell_group, scales="free_y", nrow = nrow) + monocle3:::monocle_theme_opts()
     kinetic_plot = kinetic_plot + 
       scale_color_manual(values = my_colors) +
@@ -273,6 +275,8 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
                                            group_nodes_by = "cell_type",
                                            newdata = tibble(),
                                            nrow = 1,
+                                           size = 0.75, 
+                                           alpha = 0.5, 
                                            raw_counts = FALSE
                                            ){
   
@@ -485,16 +489,16 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
                aes(x = !!sym(interval_col), y = num_cells+exp(log_abund_detection_thresh), shape = knockout),
                color = "black", 
                position="jitter",
-               size = 0.75) + 
+               size = size) + 
     geom_point(data=sel_ccs_counts_long%>% filter(knockout == F),
                 aes(x = !!sym(interval_col), y = num_cells+exp(log_abund_detection_thresh), shape = knockout),
                 color = "gray", 
                position="jitter",
-               size = 0.75) +
+               size = size) +
     geom_line(aes(y = exp(log_abund_x) + exp(log_abund_detection_thresh), linetype = "Wild-type")) +
     geom_line(aes(y = exp(log_abund_y) + exp(log_abund_detection_thresh), linetype = "Knockout")) +
     ggh4x::stat_difference(aes(ymin = exp(log_abund_x)+exp(log_abund_detection_thresh), 
-                               ymax = exp(log_abund_y) +exp(log_abund_detection_thresh)), alpha=0.5) + 
+                               ymax = exp(log_abund_y) +exp(log_abund_detection_thresh)), alpha= alpha) + 
     scale_fill_manual(values = c("orangered3", "royalblue3", "lightgray")) + 
     facet_wrap(~cell_group, scales="free_y", nrow=nrow) + monocle3:::monocle_theme_opts() + 
     geom_hline(yintercept=exp(log_abund_detection_thresh), color="lightgrey") + xlab("timepoint") 
