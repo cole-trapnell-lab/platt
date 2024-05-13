@@ -2043,13 +2043,17 @@ assess_perturbation_effects = function(control_timeseries_ccm,
       min_lfc=min_lfc,
       log_abund_detection_thresh=log_abund_detection_thresh,
       newdata = newdata))
+  
 
   # Perform a global correction for multiple testing
   perturbs = perturbation_ccm_tbl %>%
+    filter(!is.na(perturb_summary_tbl)) %>% 
     dplyr::select(perturb_name, perturb_summary_tbl)
 
   # Start from the q values, as these are already corrected for the number of cell types in the model
-  perturbs = perturbs %>% tidyr::unnest(cols= c(perturb_summary_tbl))%>%
+  perturbs = perturbs %>% 
+    filter(!is.na(perturb_summary_tbl)) %>% 
+    tidyr::unnest(cols= c(perturb_summary_tbl))%>%
     ungroup() %>%
     mutate(loss_when_present_q_val = p.adjust(loss_when_present_q_val, method="bonferroni"),
            loss_when_present_q_val = ifelse(is.na(loss_when_present_q_val), 1, loss_when_present_q_val),
