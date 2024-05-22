@@ -149,7 +149,7 @@ plot_cell_type_control_kinetics = function(control_ccm,
       pivot_longer(!cell_group, names_to="embryo", values_to="num_cells")
     
   } else {
-    sel_ccs_counts = Matrix::t(Matrix::t(counts(control_ccm@ccs)) / exp(model.offset(control_ccm@model_aux[["full_model_frame"]])))
+    sel_ccs_counts = Matrix::t(Matrix::t(counts(control_ccm@ccs)) / exp(control_ccm@model_aux[["full_model_offsets"]]))
     sel_ccs_counts_long = tibble::rownames_to_column(as.matrix(sel_ccs_counts) %>% 
                           as.data.frame, var="cell_group") %>%
                           pivot_longer(!cell_group, names_to="embryo", values_to="num_cells")
@@ -429,7 +429,7 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
       mutate(num_cells=exp(log_abund)) %>% select(-log_abund)
     
   } else{
-    sel_ccs_counts = Matrix::t(Matrix::t(counts(perturbation_ccm@ccs)) / exp(model.offset(perturbation_ccm@model_aux[["full_model_frame"]])))
+    sel_ccs_counts = Matrix::t(Matrix::t(counts(perturbation_ccm@ccs)) / exp(perturbation_ccm@model_aux[["full_model_offsets"]]))
     sel_ccs_counts_long = tibble::rownames_to_column(as.matrix(sel_ccs_counts) %>% 
                                                        as.data.frame, var="cell_group") %>%
       pivot_longer(!cell_group, names_to="embryo", values_to="num_cells")
