@@ -10,6 +10,8 @@ plot_annotations = function(cell_state_graph,
   
   if (is.null(color_nodes_by)){
     color_nodes_by = cell_state_graph@ccs@info$cell_group
+  } else {
+    cell_state_graph@g[["color_nodes_by"]] = color_nodes_by
   }
   
   g = cell_state_graph@g
@@ -21,15 +23,21 @@ plot_annotations = function(cell_state_graph,
                        arrow = arrow(angle=30, length = unit(arrow_unit, "pt"), type="closed"), 
                        linejoin='mitre')
   
-  p = p + ggnetwork::geom_nodes(data = g,
+  p = p + 
+    ggnetwork::geom_nodes(data = g,
+                          aes(x, y) ,
+                          color=I("black"), size=node_size*1.2) +
+    ggnetwork::geom_nodes(data = g,
                                 aes(x, y,
-                                    color = color_nodes_by),
+                                    # color = !!sym(color_nodes_by)),
+                                  color = color_nodes_by),
                                 size = node_size)  +
     labs(fill = color_nodes_by)
   
   p = p + scale_size_identity() +
     ggnetwork::theme_blank() +
     hooke_theme_opts() +
+    scale_color_manual(values = hooke:::get_colors(length(igraph::V(cell_state_graph@graph)$name), type="vibrant")) +
     theme(legend.position=legend_position)
   
   return(p)
@@ -277,38 +285,42 @@ plot_degs = function(cell_state_graph,
                      legend_position = "none", 
                      fc_limits = c(-3,3)){ 
   
-  deg_table = deg_table %>%
-    mutate(
-      delta_q_value = pmax(0.0001, perturb_to_ctrl_p_value),
-      p_value_sig_code = calc_sig_ind(perturb_to_ctrl_p_value, html=FALSE)) 
+  # deg_table = deg_table %>%
+  #   mutate(
+  #     delta_q_value = pmax(0.0001, perturb_to_ctrl_p_value),
+  #     p_value_sig_code = calc_sig_ind(perturb_to_ctrl_p_value, html=FALSE)) 
+  # 
+  # deg_table[["contrast"]] = deg_table[[facet_group]]
+  # deg_table$contrast = as.factor(deg_table$contrast)
   
-  deg_table[["contrast"]] = deg_table[[facet_group]]
-  deg_table$contrast = as.factor(deg_table$contrast)
+  g = cell_state_graph@g
+  bezier_df = cell_state_graph@layout_info$bezier_df
   
+  # g = left_join(g, deg_table, by = c("name"="cell_group", "term"), relationship = "many-to-many") 
   
-  g = left_join(g, deg_table, by = c("name"="cell_group", "term"), relationship = "many-to-many") 
+  g = left_join(g, deg_table, by = c("name"="cell_group"), relationship = "many-to-many") 
   
-  myPalette <- colorRampPalette(rev(RColorBrewer::brewer.pal(11, "Spectral")))
-  sc <- scale_colour_gradientn(colours = myPalette(100), limits=fc_limits)
-  p = p + ggnewscale::new_scale_fill() +
-    ggnetwork::geom_nodes(data = g ,
-                          aes(x, y,
-                              size = -log10(perturb_to_ctrl_p_value*node_size*1.2)),
-                          color=I("black")) + 
+  # myPalette <- colorRampPalette(rev(RColorBrewer::brewer.pal(11, "Spectral")))
+  # sc <- scale_colour_gradientn(colours = myPalette(100), limits=fc_limits)
+  
+  p <- ggplot(aes(x,y), data = g) + 
+    ggplot2::geom_path(aes(x, y, group = edge_name), 
+                       colour = con_colour, data = bezier_df %>% distinct(), 
+                       arrow = arrow(angle=30, length = unit(arrow_unit, "pt"), type="closed"), 
+                       linejoin='mitre')
+  p =  p + 
+    ggnewscale::new_scale_fill() +
     ggnetwork::geom_nodes(data = g,
-                          aes(x, y,
-                              color = perturb_to_ctrl_shrunken_lfc,
-                              size = -log10(perturb_to_ctrl_p_value*node_size))) +
-    ggnetwork::geom_nodetext(data = g,
-                             aes(x, y,
-                                 label = p_value_sig_code),
-                             color=I("black")) + 
-    # scale_size_identity() +
-    scale_size(range=c(1, node_size))+
+                          aes(x, y) ,
+                          color=I("black"), size=node_size*1.2) +
+    ggnetwork::geom_nodes(data = g ,
+                          mapping = aes(x, y, color = n),
+                          size = node_size) + 
     ggnetwork::theme_blank() + 
-    sc + 
+    # sc + 
+    scale_color_viridis_c(option="B")+
     hooke_theme_opts() +
-    theme(legend.position='none') #+ facet_wrap(~gene_short_name)
+    theme(legend.position='none')
   
   return(p)
   
