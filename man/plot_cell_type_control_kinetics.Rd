@@ -20,6 +20,8 @@ plot_cell_type_control_kinetics(
   nrow = 1,
   newdata = tibble(),
   color_points_by = NULL,
+  size = 0.5,
+  alpha = 0.5,
   raw_counts = FALSE
 )
 }

@@ -12,7 +12,6 @@ assess_support_for_transition_graph(
   q_val = 0.01,
   start_time = NULL,
   stop_time = NULL,
-  perturbation_col = "knockout",
   interval_col = "timepoint",
   interval_step = 2,
   min_interval = 4,
