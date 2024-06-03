@@ -2,16 +2,32 @@ Package: platt
 Title: What the Package Does (One Line, Title Case)
 Version: 0.0.0.9000
 Authors@R: 
-    person("First", "Last", , "first.last@example.com", role = c("aut", "cre"),
-           comment = c(ORCID = "YOUR-ORCID-ID"))
+    person(given = "Madelein",
+           family = "Duran",
+           role = c("aut", "cre"),
+           email = "duran@uw.edu")
+    person(given = "Cole",
+           family = "Trapnell",
+           role = c("aut", "cre"),
+           email = "coletrap@uw.edu")
 Description: What the package does (one paragraph).
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.2.3
+LinkingTo: 
+    Rcpp
+Depends: 
+    Biobase, 
+    monocle3,
+    PLNmodels,
+    hooke
 Imports:
     ashr (>= 2.2-63),
     speedglm (>= 0.3-2),
+    splines
 Suggests: 
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
+VignetteBuilder: knitr
+Language: en-US
