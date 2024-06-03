@@ -429,7 +429,7 @@ compare_genes_over_graph <- function(ccs,
     select(-gene_classes) # otherwise it is duplicated 
   
   cell_states = cell_states %>% tidyr::unnest(gene_class_scores) %>% 
-    left_join(rowData(pb_cds) %>% as.data.frame %>%  select(id, gene_short_name), by = c("gene_id" = "id")) %>% 
+    left_join(rowData(pb_cds) %>% as.data.frame %>% select(id, gene_short_name), by = c("gene_id" = "id")) %>% 
     group_by(cell_state) %>% tidyr::nest() %>% dplyr::rename(gene_class_scores = data)
   
   
@@ -643,6 +643,12 @@ compare_genes_within_state_graph = function(ccs,
                                                 nuisance_model_formula_str = nuisance_model_formula_str,
                                                 min_cells_per_pseudobulk=min_cells_per_pseudobulk))
   
+  
+  # df %>% 
+  #   tidyr::unnest(genes_within_cell_group) %>% tidyr::unnest(perturb_effects) %>% 
+  #   left_join(rowData(pb_cds) %>% as.data.frame %>%  select(id, gene_short_name), by = c("id" = "id")) #%>% 
+  #   group_by(cell_state) %>% tidyr::nest() %>% dplyr::rename(gene_class_scores = data)
+  
   return(df)
   
 }
@@ -827,6 +833,7 @@ compare_gene_expression_within_node <- function(cell_group,
     cell_perturbations = cell_perturbations %>% 
       tidyr::unnest(perturb_to_ambient) %>% 
       left_join(ctrl_to_ambient, by = "id") %>% 
+      left_join(rowData(pb_cds) %>% as.data.frame %>% select(id, gene_short_name), by = c("id" = "id")) %>% 
       group_by(term) %>% tidyr::nest()
       
     
@@ -844,6 +851,12 @@ compare_gene_expression_within_node <- function(cell_group,
                                          PSEM = pb_coeffs$stdev.unscaled, 
                                          prefix = "perturb_to_ctrl",
                                          ash.control=list(mode=expected_effect_mode_interval)))
+  cell_perturbations = cell_perturbations %>% 
+    tidyr::unnest(perturb_effects) %>% 
+    left_join(rowData(pb_cds) %>% as.data.frame %>% select(id, gene_short_name), by = c("id" = "id"))  %>% 
+    group_by(term) %>% tidyr::nest() %>% dplyr::rename(perturb_effects = data)
+    
+  
   
   if (exclude_results_below_ambient & is.null(ambient_estimate_matrix) == FALSE){
     ambient_res = cell_perturbations %>%
@@ -856,7 +869,10 @@ compare_gene_expression_within_node <- function(cell_group,
                             dplyr::select(-data) %>% 
                             tidyr::unnest(perturb_effects),
                             ambient_res, by=c("term", "id"))
-    cell_perturbations = perturb_res %>% group_by(term) %>% tidyr::nest()
+    
+    cell_perturbations = perturb_res %>%
+      group_by(term) %>% tidyr::nest()
+    
   }
   
   

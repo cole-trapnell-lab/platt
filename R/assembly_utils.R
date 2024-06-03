@@ -38,7 +38,7 @@ fit_genotype_ccm = function(genotype,
                             interval_col = "timepoint",
                             perturbation_col = "gene_target",
                             batch_col = "expt", 
-                            ctrl_ids=c("ctrl-uninj", "ctrl-inj", "ctrl-noto", "ctrl-mafba", "ctrl-hgfa", "ctrl-tbx16", "ctrl-met"),
+                            ctrl_ids = c("ctrl-uninj", "ctrl-inj", "ctrl-noto", "ctrl-mafba", "ctrl-hgfa", "ctrl-tbx16", "ctrl-met"),
                             assembly_time_start=NULL,
                             assembly_time_stop=NULL,
                             num_time_breaks=NULL,
@@ -536,8 +536,8 @@ fit_wt_model = function(cds,
   }
 
   wt_ccs = new_cell_count_set(wt_cds,
-                              sample_group,
-                              cell_group,
+                              sample_group = sample_group,
+                              cell_group = cell_group,
                               keep_cds = keep_cds,
                               norm_method="size_factors")
 
@@ -727,8 +727,8 @@ fit_mt_models = function(cds,
   
   
   ccs = new_cell_count_set(cds,
-                           sample_group,
-                           cell_group,
+                           sample_group = sample_group,
+                           cell_group = cell_group,
                            keep_cds = keep_cds,
                            norm_method="size_factors")
 
