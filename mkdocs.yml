@@ -3,13 +3,6 @@ site_author: Maddy Duran
 site_url: https://cole-trapnell-lab.github.io/platt
 nav:
   - Overview: index.md
-  - Background: background.md
-  - Installation: install.md
-  - Data Type Requirements: data_type.md
-  - Example Datasets: data.md
-  - Differential Abundance: about.md
-  - Time Series Analysis: advanced.md
-  - Reference: reference.md
 
 theme:
   palette:
