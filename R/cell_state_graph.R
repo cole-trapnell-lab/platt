@@ -9,13 +9,13 @@ setOldClass(c("PLNfit"), prototype=structure(list(), class="PLNfit"))
 #' The main class used by Platt to store state graphs
 #'
 #' @field ccs cell_count_set, the Hooke cell count set
-#' @field
 #' @name cell_state_graph
 #' @rdname cell_state_graph
 #' @aliases cell_state_graph-class
 #' @import igraph
 #' @exportClass cell_state_graph
 setClass("cell_state_graph",
+         contains = "cell_count_set",
          slots = c(ccs = "cell_count_set", 
                    graph = "igraph", 
                    layout_info = "list", 
@@ -31,9 +31,8 @@ setClass("cell_state_graph",
 #'
 #' @param graph input graph
 #' @param ccs input cell count set
-#' @name cell_state_graph
 #' @return a new cell_state_graph object
-#' @export cell_state_graph
+#' @export 
 new_cell_state_graph <- function(state_graph, ccs) {
     assertthat::assert_that(is(state_graph, 'igraph'))
     assertthat::assert_that(is(ccs, 'cell_count_set'))

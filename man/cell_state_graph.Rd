@@ -4,19 +4,7 @@
 \name{cell_state_graph}
 \alias{cell_state_graph}
 \alias{cell_state_graph-class}
-\alias{new_cell_state_graph}
 \title{The cell_state_graph class}
-\usage{
-new_cell_state_graph(state_graph, ccs)
-}
-\arguments{
-\item{ccs}{input cell count set}
-
-\item{graph}{input graph}
-}
-\value{
-a new cell_state_graph object
-}
 \description{
 The main class used by Platt to store state graphs
 }
