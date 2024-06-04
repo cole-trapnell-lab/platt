@@ -1,11 +1,9 @@
-# Platt
-
-See the [Platt website](https://cole-trapnell-lab.github.io/platt/) for a more comprehensive introduction. 
-
-
-## Installation
+# Installation
 
 Platt runs in the [R statistical computing environment](https://www.r-project.org/). It requires R >= 3.5.0. Platt is currently only available for Github install. 
+
+> **_NOTE:_** Platt is currently in the beta phase of its development. The documentation on this page is also still under construction. Not all features currently implemented have been completely documented. Please report any issues to your [github page](https://github.com/cole-trapnell-lab/platt/issues). 
+
 
 ### Required software
 
@@ -31,4 +29,8 @@ Finally, install the Platt package as follows:
 
 ```r
 devtools::install_github("cole-trapnell-lab/platt")
+```
+
+```r
+devtools::install_github("cole-trapnell-lab/platt", ref="develop")
 ```

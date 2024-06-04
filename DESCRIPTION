@@ -1,8 +1,8 @@
 Package: platt
-Title: What the Package Does (One Line, Title Case)
+Title: Lineage graph construction from time series and perturbation data
 Version: 0.0.0.9000
 Authors@R: 
-    person(given = "Madelein",
+    person(given = "Madeleine",
            family = "Duran",
            role = c("aut", "cre"),
            email = "duran@uw.edu")

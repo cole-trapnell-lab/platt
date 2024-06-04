@@ -59,6 +59,12 @@ new_cell_state_graph <- function(state_graph, ccs) {
 }
 
 
+#'
+#' @param ccs
+#' @param state_graph
+#' @param color_nodes_by
+#' @param label_nodes_by
+#' @param group_nodes_by
 get_graph_layout = function(ccs, 
                             state_graph,
                             color_nodes_by = NULL,
@@ -111,7 +117,11 @@ get_graph_layout = function(ccs,
 
 
 
-# update anything about the layout information about a graph 
+#' update anything about the layout information about a graph 
+#' @param cell_state_graph
+#' @param color_nodes_by description
+#' @param label_nodes_by description
+#' @param group_nodes_by 
 update_graph_layout = function(cell_state_graph, 
                                color_nodes_by = NULL,
                                label_nodes_by = NULL,
@@ -142,10 +152,3 @@ update_graph_layout = function(cell_state_graph,
 
 }
   
-
-# bar_unit = .075,
-# 
-# min_edge_size=0.1,
-# max_edge_size=2,
-
-
