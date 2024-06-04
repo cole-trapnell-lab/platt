@@ -4,7 +4,7 @@
 \name{platt-package}
 \alias{platt}
 \alias{platt-package}
-\title{platt: What the Package Does (One Line, Title Case)}
+\title{platt: Lineage graph construction from time series and perturbation data}
 \description{
 What the package does (one paragraph).
 }

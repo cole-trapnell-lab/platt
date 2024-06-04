@@ -15,7 +15,7 @@ setOldClass(c("PLNfit"), prototype=structure(list(), class="PLNfit"))
 #' @import igraph
 #' @exportClass cell_state_graph
 setClass("cell_state_graph",
-         contains = "cell_count_set",
+         # contains = "cell_count_set",
          slots = c(ccs = "cell_count_set", 
                    graph = "igraph", 
                    layout_info = "list", 
