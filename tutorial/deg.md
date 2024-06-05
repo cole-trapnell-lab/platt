@@ -1,3 +1,30 @@
+# Running a single DEG comparison 
+
+The function `compare_gene_expression_within_node`
+* `cell_group`
+* `ccs`
+* `pb_cds`
+* `control_ids`
+```
+compare_gene_expression_within_node(cell_group, 
+                                    ccs,
+                                    pb_cds, 
+                                    control_ids)
+```
+
+The function `compare_genes_in_cell_state()`
+* `cell_state`
+* `state_graph`
+* `estimate_matrix`
+* `stderr_matrix`
+
+```
+compare_genes_in_cell_state(cell_state, 
+                            state_graph,
+                            estimate_matrix, 
+                            stderr_matrix)
+```
+
 # Running DEGs over a graph
 
 The function `compare_genes_within_state_graph()`

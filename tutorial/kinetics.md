@@ -27,6 +27,7 @@ plot_cell_type_control_kinetics(muscle_wt_ccm,
                                 raw_counts = F)
 
 ```
+![](assets/fast_muscle_wt_kinetics.png)
 
 # Plotting perturbation kinetics
 
@@ -42,7 +43,7 @@ tbx16_msgn1_ccm = fit_mt_models(skeletal_muscle_comb_cds,
 
 
 ```
-
+![](assets/fast_muscle_tbx16msgn1_kinetics.png)
 
 The function`plot_cell_type_perturb_kinetics()`
 * `mt_ccm`

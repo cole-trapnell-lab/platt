@@ -6,6 +6,30 @@ Before we build our own graphs, let's use a basic graph example
 my_graph = data.frame(from = c(), to = c()) %>% igraph::graph_from_data_frame() 
 ```
 
+### Manipulating graphs
+
+Get the parents
+* `state_graph`
+* `cell_state`
+```
+get_parents(state_graph, cell_state)
+```
+
+Get the children
+* `state_graph`
+* `cell_state` 
+```
+get_children(state_graph, cell_state)
+```
+
+Get the siblings
+* `state_graph`
+* `cell_state`
+```
+get_siblings(state_graph, cell_state)
+```
+
+
 ### Making a cell_state_graph object
 
 * `state_graph` - an igraph object

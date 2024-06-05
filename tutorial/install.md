@@ -31,6 +31,10 @@ Finally, install the Platt package as follows:
 devtools::install_github("cole-trapnell-lab/platt")
 ```
 
+If you wish to install the develop branch of Platt, execute:
+
 ```r
 devtools::install_github("cole-trapnell-lab/platt", ref="develop")
 ```
+See our [Github repository](https://github.com/cole-trapnell-lab/platt) for more details.
+
