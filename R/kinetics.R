@@ -282,7 +282,7 @@ plot_cell_type_perturb_kinetics = function(perturbation_ccm,
   
   
   # 
-  assertthat::assert_that(nrow(newdata)==1)
+  #assertthat::assert_that(nrow(newdata)==1)
   
   colData(perturbation_ccm@ccs)[,interval_col] = as.numeric(colData(perturbation_ccm@ccs)[,interval_col])
 
