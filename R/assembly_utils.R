@@ -36,7 +36,7 @@ get_perturbation_effects <- function(ccm, interval_col="timepoint", newdata = ti
 #' @param perturbation_col
 #' @param batch_col
 #' @param ctrl_ids
-#' @import splines
+#' @importFrom splines ns
 #' @export
 fit_genotype_ccm = function(genotype,
                             ccs,
