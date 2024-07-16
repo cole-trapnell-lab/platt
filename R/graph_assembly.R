@@ -362,13 +362,13 @@ get_discordant_loss_pairs <- function(perturbation_ccm,
     perturb_stop_time = control_stop_time
 
   if (nrow(newdata) > 0 ){
-    newdata = cross_join(tibble(knockout=FALSE), newdata)
+    newdata_wt = cross_join(tibble(knockout=FALSE), newdata)
   } else {
-    newdata = tibble(knockout=FALSE) 
+    newdata_wt = tibble(knockout=FALSE) 
   }
   
   wt_timepoint_pred_df = estimate_abundances_over_interval(control_timeseries_ccm, control_start_time, control_stop_time, 
-                                                           interval_col=interval_col, interval_step=interval_step, newdata = newdata)
+                                                           interval_col=interval_col, interval_step=interval_step, newdata = newdata_wt)
   peak_wt_abundance = wt_timepoint_pred_df %>% group_by(cell_group) %>% slice_max(log_abund, n=1)
   peak_outside_perturbation_window = peak_wt_abundance %>%
     filter(!!sym(interval_col) > perturb_stop_time | !!sym(interval_col) < perturb_start_time) %>%
@@ -1476,10 +1476,11 @@ estimate_loss_timing <- function(perturbation_ccm,
 
   fraction_of_presence_window_lost_thresh = 0.5
   
-  if (nrow(newdata) > 0 ){
+  if (nrow(newdata) > 0){
     newdata_wt = cross_join(tibble(knockout=FALSE), newdata)
     newdata_mt = cross_join(tibble(knockout=TRUE), newdata)
-  } else {
+  } 
+  else {
     newdata_wt = tibble(knockout=FALSE)
     newdata_mt = tibble(knockout=TRUE)
   }
@@ -2106,9 +2107,9 @@ assemble_transition_graph_from_perturbations <- function(control_timeseries_ccm,
     # FIXME: "knockout" is hard coded and should be a user-defined term in the model
     
     if (nrow(newdata) > 0 ){
-      newdata = cross_join(tibble(knockout=FALSE), newdata)
+      newdata_wt = cross_join(tibble(knockout=FALSE), newdata)
     } else {
-      newdata = tibble(knockout=FALSE) 
+      newdata_wt = tibble(knockout=FALSE) 
     }
     
     extant_cell_type_df = get_extant_cell_types(control_timeseries_ccm,
@@ -2116,7 +2117,7 @@ assemble_transition_graph_from_perturbations <- function(control_timeseries_ccm,
                                                 stop_time,
                                                 interval_col=interval_col,
                                                 log_abund_detection_thresh=log_abund_detection_thresh,
-                                                newdata = newdata)
+                                                newdata = newdata_wt)
 
     if (verbose)
       message ("Setting up pathfinding graph")
