@@ -12,6 +12,12 @@ get_perturbation_effects <- function(ccm, interval_col="timepoint", newdata = ti
   timepoints = colData(ccm@ccs)[[interval_col]] %>% unique
   df = data.frame(timepoint = timepoints)
   
+  if (nrow(newdata) > 0){
+    df = cross_join(df, newdata)
+  } else {
+    df = df
+  }
+  
   df = cross_join(df, newdata) %>% 
     group_split(row_number(), .keep = FALSE) %>%
     purrr::map_df(tidyr::nest) %>% 
