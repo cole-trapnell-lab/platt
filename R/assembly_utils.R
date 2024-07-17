@@ -433,7 +433,13 @@ assemble_partition = function(cds,
 
       merge_wt_graph_nodes =  igraph::as_data_frame(wt_graph, what="vertices")
       merge_mt_graph_nodes =  igraph::as_data_frame(mt_graph, what="vertices")
-      merge_annotated_graph_nodes = data.frame(name=stringr::str_c(partition_name, row.names(wt_ccm@ccs), sep="-"))
+      
+      if (cell_group == "cell_state") {
+        merge_annotated_graph_nodes = data.frame(name=stringr::str_c(partition_name, row.names(wt_ccm@ccs), sep="-"))
+      } else {
+        merge_annotated_graph_nodes = data.frame(name=row.names(wt_ccm@ccs))
+      }
+      
       merge_annotated_graph_nodes = left_join(merge_annotated_graph_nodes, merge_mt_graph_nodes)
 
       mt_only = setdiff(merge_mt_graph_edges %>% select(from, to), merge_wt_graph_edges %>% 
