@@ -236,6 +236,7 @@ assemble_partition = function(cds,
                               vhat_method = "bootstrap",
                               num_bootstraps = 10,
                               newdata = tibble(), 
+                              edge_allowlist = NULL, 
                               min_lfc = 0, 
                               links_between_components=c("ctp", "none", "strongest-pcor", "strong-pcor"),
                               log_abund_detection_thresh = -5, 
@@ -288,6 +289,7 @@ assemble_partition = function(cds,
                                             num_threads = num_threads,
                                             backend = backend,
                                             vhat_method = vhat_method,
+                                            edge_allowlist = edge_allowlist, 
                                             num_bootstraps = num_bootstraps,
                                             embryo_size_factors = embryo_size_factors))
 
@@ -318,6 +320,7 @@ assemble_partition = function(cds,
                                   #nuisance_model_formula_str = "~expt",
                                   links_between_components = links_between_components,
                                   ctrl_ids = ctrl_ids,
+                                  edge_allowlist = edge_allowlist, 
                                   sparsity_factor = sparsity_factor,
                                   perturbation_col = perturbation_col,
                                   component_col=component_col,
@@ -326,7 +329,12 @@ assemble_partition = function(cds,
     if (is.null(wt_graph) == FALSE){
       #partition_results$wt_ccm = list(wt_ccm)
       igraph::E(wt_graph)$assembly_group = partition_name
-      igraph::V(wt_graph)$name = stringr::str_c(partition_name, igraph::V(wt_graph)$name, sep="-")
+      if (cell_group == "cell_state") {
+        igraph::V(wt_graph)$name = stringr::str_c(partition_name, igraph::V(wt_graph)$name, sep="-")
+      } else {
+        igraph::V(wt_graph)$name = igraph::V(wt_graph)$name
+        
+      }
       partition_results$wt_graph = list(wt_graph)
 
       # partition_results$wt_state_graph_plot = list(plot_state_graph_annotations(wt_ccm, wt_graph,
@@ -357,6 +365,7 @@ assemble_partition = function(cds,
                                                           backend=backend,
                                                           keep_ccs=keep_ccs,
                                                           batch_col = batch_col,
+                                                          # edge_allowlist = edge_allowlist, 
                                                           vhat_method=vhat_method,
                                                           num_bootstraps=num_bootstraps,
                                                           embryo_size_factors=embryo_size_factors))
@@ -403,14 +412,20 @@ assemble_partition = function(cds,
                                   interval_col=interval_col,
                                   links_between_components = links_between_components,
                                   # perturbation_col = perturbation_col,
+                                  # edge_allowlist = edge_allowlist, 
                                   component_col=component_col,
                                   verbose=verbose)
 
     #partition_results$wt_ccm = list(wt_ccm)
     if (is.null(mt_graph) == FALSE){
       igraph::E(mt_graph)$assembly_group = partition_name
-      igraph::V(mt_graph)$name = stringr::str_c(partition_name, igraph::V(mt_graph)$name, sep="-")
-
+      
+      if (cell_group == "cell_state") {
+        igraph::V(mt_graph)$name = stringr::str_c(partition_name, igraph::V(mt_graph)$name, sep="-")
+      } else {
+        igraph::V(mt_graph)$name = igraph::V(mt_graph)$name
+        
+      }
       merge_wt_graph_edges = igraph::as_data_frame(wt_graph)
       merge_mt_graph_edges = igraph::as_data_frame(mt_graph)
 
