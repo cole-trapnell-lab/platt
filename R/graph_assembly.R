@@ -2063,7 +2063,10 @@ assess_perturbation_effects = function(control_timeseries_ccm,
            gain_when_present_q_val = ifelse(is.na(gain_when_present_q_val), 1, gain_when_present_q_val),
            is_gained_when_present = gain_when_present_q_val < q_val)
   perturbs = perturbs %>% tidyr::nest(perturb_summary_tbl = !perturb_name)
-  perturbation_ccm_tbl$perturb_summary_tbl = perturbs$perturb_summary_tbl
+  
+  perturbation_ccm_tbl$perturb_summary_tbl= NULL
+  perturbation_ccm_tbl = left_join(perturbation_ccm_tbl, perturbs, by = "perturb_name")
+  # perturbation_ccm_tbl$perturb_summary_tbl = perturbs$perturb_summary_tbl
 
   return (perturbation_ccm_tbl)
 }
