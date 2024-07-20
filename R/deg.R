@@ -490,8 +490,8 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
     select(id, extra_stats) %>%
     tidyr::unnest(extra_stats)
   
-  raw_coefficient_table = left_join(raw_coefficient_table, extra_model_stats) %>%
-    left_join(model_tbl %>% select(id, disp_fit, dispersion)) %>%
+  raw_coefficient_table = left_join(raw_coefficient_table, extra_model_stats %>% select(id, RSS, df.residual), by="id") %>%
+    # left_join(model_tbl %>% select(id, disp_fit, dispersion), by = "id") %>%
     #coefficient_table(pb_group_models) %>%
     #dplyr::select(gene_short_name, id, term, estimate, std_err, p_value, status) %>%
     filter(grepl(term_to_keep, term)) %>% 
