@@ -572,6 +572,7 @@ compare_genes_within_state_graph = function(ccs,
                                             min_samples_detected = 2,
                                             min_cells_per_pseudobulk = NULL,
                                             cores = 1,
+                                            write_dir = NULL,
                                             ...) {
   
   # to do make sure that ccs and state graph match 
@@ -631,6 +632,10 @@ compare_genes_within_state_graph = function(ccs,
     ambient_stderr_matrix = ambient_coeffs$stdev.unscaled
   }
   
+  if (is.null(write_dir) == FALSE & !file.exists(write_dir)) {
+    dir.create(write_dir)
+  }
+  
   df = data.frame(cell_group = cell_groups) %>% 
     mutate(genes_within_cell_group = purrr::map(.f = purrr:::possibly(compare_gene_expression_within_node,NA_real_),
                                                 .x = cell_group, 
@@ -641,7 +646,8 @@ compare_genes_within_state_graph = function(ccs,
                                                 ambient_stderr_matrix = ambient_coeffs$stdev.unscaled, 
                                                 cores = cores, 
                                                 nuisance_model_formula_str = nuisance_model_formula_str,
-                                                min_cells_per_pseudobulk=min_cells_per_pseudobulk))
+                                                min_cells_per_pseudobulk=min_cells_per_pseudobulk, 
+                                                write_dir = write_dir))
   
   
   # df %>% 
@@ -702,6 +708,7 @@ compare_gene_expression_within_node <- function(cell_group,
                                                 min_cells_per_pseudobulk=NULL,
                                                 exclude_results_below_ambient=TRUE,
                                                 expected_effect_mode_interval=c(-10,10),
+                                                write_dir = NULL, 
                                                 cores=1) {
   
   
@@ -885,6 +892,12 @@ compare_gene_expression_within_node <- function(cell_group,
     
   }
   
+  if (is.null(write_dir) == FALSE) {
+    
+    write.csv(cell_perturbations %>% tidyr::unnest(data) %>% mutate(cell_group = cell_group), 
+              file = paste0(write_dir, "/", cell_group, "within_node_degs.csv"))
+    
+  }
   
   return(cell_perturbations) 
   
