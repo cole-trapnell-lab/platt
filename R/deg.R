@@ -632,8 +632,10 @@ compare_genes_within_state_graph = function(ccs,
     ambient_stderr_matrix = ambient_coeffs$stdev.unscaled
   }
   
-  if (is.null(write_dir) == FALSE & !file.exists(write_dir)) {
-    dir.create(write_dir)
+  if (is.null(write_dir) == FALSE) {
+    if (!file.exists(write_dir)){
+      dir.create(write_dir)
+    }
   }
   
   df = data.frame(cell_group = cell_groups) %>% 
