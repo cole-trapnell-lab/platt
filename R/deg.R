@@ -897,7 +897,7 @@ compare_gene_expression_within_node <- function(cell_group,
   if (is.null(write_dir) == FALSE) {
     
     write.csv(cell_perturbations %>% tidyr::unnest(data) %>% mutate(cell_group = cell_group), 
-              file = paste0(write_dir, "/", cell_group, "within_node_degs.csv"))
+              file = paste0(write_dir, "/", cell_group, "_within_node_degs.csv"))
     
   } else {
     return(cell_perturbations) 
