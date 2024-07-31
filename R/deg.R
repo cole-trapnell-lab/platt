@@ -213,7 +213,7 @@ unnest_degs = function(ccs,
     dplyr::select(cell_state, gene_id, interpretation, pattern_match_score, pattern_activity_score)
   
   cell_states = left_join(cell_states,
-                          rowData(ccs@cds) %>% as_tibble %>% select(id, gene_short_name), by=c("gene_id"="id"))
+                          rowData(ccs@cds) %>% as_tibble %>% dplyr::select(id, gene_short_name), by=c("gene_id"="id"))
   
   cell_states = left_join(cell_states,
                           collect_psg_node_metadata(ccs, color_nodes_by=NULL, group_nodes_by = NULL, label_nodes_by=label_nodes_by), 
@@ -426,10 +426,10 @@ compare_genes_over_graph <- function(ccs,
       .y = gene_classes,
       state_graph,
       pb_coeffs$coefficients)) %>% 
-    select(-gene_classes) # otherwise it is duplicated 
+    dplyr::select(-gene_classes) # otherwise it is duplicated 
   
   cell_states = cell_states %>% tidyr::unnest(gene_class_scores) %>% 
-    left_join(rowData(pb_cds) %>% as.data.frame %>% select(id, gene_short_name), by = c("gene_id" = "id")) %>% 
+    left_join(rowData(pb_cds) %>% as.data.frame %>% dplyr::select(id, gene_short_name), by = c("gene_id" = "id")) %>% 
     group_by(cell_state) %>% tidyr::nest() %>% dplyr::rename(gene_class_scores = data)
   
   
@@ -487,10 +487,10 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   extra_model_stats = model_tbl %>%
     dplyr::mutate(extra_stats = purrr::map(.f = purrr::possibly(
       extract_extra_model_stats, NA_real_), .x = model, newdata=colData(cds) %>% as.data.frame)) %>%
-    select(id, extra_stats) %>%
+    dplyr::select(id, extra_stats) %>%
     tidyr::unnest(extra_stats)
   
-  raw_coefficient_table = left_join(raw_coefficient_table, extra_model_stats %>% select(id, RSS, df.residual), by="id") %>%
+  raw_coefficient_table = left_join(raw_coefficient_table, extra_model_stats %>% dplyr::select(id, RSS, df.residual), by="id") %>%
     # left_join(model_tbl %>% select(id, disp_fit, dispersion), by = "id") %>%
     #coefficient_table(pb_group_models) %>%
     #dplyr::select(gene_short_name, id, term, estimate, std_err, p_value, status) %>%
@@ -842,7 +842,7 @@ compare_gene_expression_within_node <- function(cell_group,
     cell_perturbations = cell_perturbations %>% 
       tidyr::unnest(perturb_to_ambient) %>% 
       left_join(ctrl_to_ambient, by = "id") %>% 
-      left_join(rowData(pb_cds) %>% as.data.frame %>% select(id, gene_short_name), by = c("id" = "id")) %>% 
+      left_join(rowData(pb_cds) %>% as.data.frame %>% dplyr::select(id, gene_short_name), by = c("id" = "id")) %>% 
       group_by(term) %>% tidyr::nest() %>% dplyr::rename("ambient_effects"=data)
       
     
@@ -895,6 +895,9 @@ compare_gene_expression_within_node <- function(cell_group,
   }
   
   if (is.null(write_dir) == FALSE) {
+    
+    cell_group_no_spaces = gsub("[[:punct:]]", "", cell_group)
+    cell_group_no_spaces = gsub(" ", "_", cell_group_no_spaces)
     
     write.csv(cell_perturbations %>% tidyr::unnest(data) %>% mutate(cell_group = cell_group), 
               file = paste0(write_dir, "/", cell_group, "_within_node_degs.csv"))
@@ -968,6 +971,7 @@ fit_genotype_deg = function(ccm,
 #' @param PSEM standard error matrix for state 1
 #' @param PEM_2 estimate matrix for state 2, defaults to PEM if not specified 
 #' @param PSEM_2 standard error matrix for state 2, defaults to PSEM if not specified 
+#' @param ash.control parameters to input to ashr
 contrast_helper = function(state_1, 
                            state_2, 
                            PEM, 
@@ -1028,7 +1032,7 @@ contrast_helper = function(state_1,
   contrast_res = tibble(id = ids, #row.names(PEM),
                         raw_lfc = effect_est,
                         raw_lfc_se = se_est,
-                        raw_p_value = pnorm(effect_est, sd = se_est, lower.tail=FALSE),
+                        raw_p_value = pnorm(abs(effect_est), sd = se_est, lower.tail=FALSE),
                         shrunken_lfc = shrunkren_res$result$PosteriorMean,
                         shrunken_lfc_se = shrunkren_res$result$PosteriorSD,
                         p_value = shrunkren_res$result$lfsr,
