@@ -692,6 +692,7 @@ get_cell_type_perturb_kinetics_data = function(perturbation_ccm,
 
 plot_cell_type_perturb_kinetics_from_res = function(perturb_vs_wt_nodes, 
                                                     sel_ccs_counts_long, 
+                                                    cell_groups = NULL, 
                                                      interval_step=1,
                                                      log_abund_detection_thresh=-3,
                                                      delta_log_abund_loss_thresh=0,
@@ -708,6 +709,11 @@ plot_cell_type_perturb_kinetics_from_res = function(perturb_vs_wt_nodes,
                                                      raw_counts = FALSE) {
   
   
+  if (is.null(cell_groups) == FALSE) {
+    
+    perturb_vs_wt_nodes = perturb_vs_wt_nodes %>% filter(cell_group %in% cell_groups) 
+    sel_ccs_counts_long = sel_ccs_counts_long %>% filter(cell_group %in% cell_groups) 
+  }
 
   kinetic_plot = ggplot(perturb_vs_wt_nodes, aes(x = !!sym(paste(interval_col, "_x", sep=""))))+ 
     
