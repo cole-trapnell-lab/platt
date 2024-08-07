@@ -52,6 +52,7 @@ plot_abundance_changes = function(cell_state_graph,
                                   comp_abund_table,
                                   facet_group = NULL,
                                   scale_node = FALSE,
+                                  plot_labels = FALSE, 
                                   arrow_unit = 7,
                                   node_size = 2,
                                   node_scale = 1,
@@ -106,6 +107,8 @@ plot_abundance_changes = function(cell_state_graph,
       hooke_theme_opts() +
       theme(legend.position=legend_position)
     
+    
+    
   } else {
     
     p = p + ggnewscale::new_scale_color() +
@@ -119,6 +122,9 @@ plot_abundance_changes = function(cell_state_graph,
                                aes(x, y,
                                    label = q_value_sig_code),
                                color=I("black")) +  
+      ggrepel::geom_text_repel(data= g %>% select(x, y, name) %>% distinct(), 
+                               aes(x, y, label=name),
+                               color=I("black")) +
       scale_color_gradient2(low = "royalblue3", mid = "white", high="orangered3") + 
       # scale_size(range=c(2, 6)) +
       scale_size_identity() +
@@ -126,8 +132,12 @@ plot_abundance_changes = function(cell_state_graph,
       hooke_theme_opts() +
       theme(legend.position=legend_position) 
     
-     
-    
+  }
+  
+  if (plot_labels) {
+    p = p + ggrepel::geom_text_repel(data= g %>% select(x, y, name) %>% distinct(), 
+                             aes(x, y, label=name),
+                             color=I("black")) 
   }
   
   
@@ -222,7 +232,7 @@ plot_gene_expr = function(cell_state_graph,
 
 
 plot_deviation_plot = function(cell_state_graph, 
-                               deviation, 
+                               deviation_table, 
                                facet_group = NULL, 
                                arrow_unit = 7,
                                node_size = 2,
@@ -234,7 +244,7 @@ plot_deviation_plot = function(cell_state_graph,
   g = cell_state_graph@g
   bezier_df = cell_state_graph@layout_info$bezier_df
   
-  g = left_join(g, deviation, by=c("name"="cell_group"), relationship = "many-to-many")
+  g = left_join(g, deviation_table, by=c("name"="cell_group"), relationship = "many-to-many")
   
   if (is.null(facet_group) == FALSE) {
     g[["contrast"]] = g[[facet_group]]  
@@ -253,10 +263,13 @@ plot_deviation_plot = function(cell_state_graph,
                           aes(x, y,
                               size = node_size * 1.2), 
                           color=I("black")) +
-    ggnetwork::geom_nodes(data = g,
+    ggnetwork::geom_nodes(data = g %>% filter(!is.na(deviation)),
                           aes(x, y,
-                              color = log10(n),
+                              color = log10(deviation+1),
                               size = node_size)) +
+    ggnetwork::geom_nodes(data = g %>% filter(is.na(deviation)),
+                          aes(x, y,
+                              size = node_size), color="white") +
     labs(color = "number degs") + 
     scale_color_viridis_c() + 
     scale_size_identity() +
@@ -270,6 +283,53 @@ plot_deviation_plot = function(cell_state_graph,
   
   return(p)
   
+}
+
+
+plot_deg_change =function(cell_state_graph, 
+                          deg_table, 
+                          facet_group = "term", 
+                          arrow_unit = 7,
+                          node_size = 2,
+                          con_colour = "darkgrey",
+                          fract_expr = 0.0,
+                          mean_expr = 0.0,
+                          legend_position = "none", 
+                          fc_limits = c(-3,3)){ 
+  
+  g = cell_state_graph@g
+  bezier_df = cell_state_graph@layout_info$bezier_df
+  
+  # g = left_join(g, deg_table, by = c("name"="cell_group", "term"), relationship = "many-to-many") 
+  
+  g = left_join(g, deg_table, by = c("name"="cell_group"), relationship = "many-to-many") 
+  
+  # myPalette <- colorRampPalette(rev(RColorBrewer::brewer.pal(11, "Spectral")))
+  # sc <- scale_colour_gradientn(colours = myPalette(100), limits=fc_limits)
+  
+  p <- ggplot(aes(x,y), data = g) + 
+    ggplot2::geom_path(aes(x, y, group = edge_name), 
+                       colour = con_colour, data = bezier_df %>% distinct(), 
+                       arrow = arrow(angle=30, length = unit(arrow_unit, "pt"), type="closed"), 
+                       linejoin='mitre')
+  p =  p + 
+    ggnewscale::new_scale_fill() +
+    ggnetwork::geom_nodes(data = g,
+                          aes(x, y) ,
+                          color=I("black"), size=node_size*1.2) +
+    ggnetwork::geom_nodes(data = g ,
+                          mapping = aes(x, y, color = n),
+                          size = node_size) + 
+    ggnetwork::theme_blank() + 
+    # sc + 
+    scale_color_viridis_c(option="B")+
+    hooke_theme_opts() +
+    theme(legend.position='none')
+  
+  return(p)
+  
+  
+    
 }
 
 #' this plotting function 
