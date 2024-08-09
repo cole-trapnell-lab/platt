@@ -6,7 +6,11 @@ plot_annotations = function(cell_state_graph,
                             arrow_unit = 7,
                             node_size = 2,
                             con_colour = "darkgrey", 
-                            legend_position = "none") {
+                            legend_position = "none", 
+                            min_edge_size=0.1,
+                            max_edge_size=2,
+                            edge_weights=NULL, 
+                            plot_labels=T) {
   
   if (is.null(color_nodes_by)){
     color_nodes_by = cell_state_graph@ccs@info$cell_group
@@ -14,31 +18,75 @@ plot_annotations = function(cell_state_graph,
     cell_state_graph@g[["color_nodes_by"]] = color_nodes_by
   }
   
+  group_nodes_by = cell_state_graph@metadata$group_nodes_by
+  
   g = cell_state_graph@g
   bezier_df = cell_state_graph@layout_info$bezier_df
+ 
   
   p <- ggplot(aes(x,y), data=g) + 
-    ggplot2::geom_path(aes(x, y, group = edge_name), 
-                       colour = con_colour, data = bezier_df %>% distinct(), 
+    ggplot2::geom_path(aes(x, y, group = edge_name, linetype=unsupported_edge), 
+                       colour = con_colour, 
+                       data = bezier_df %>% distinct(), 
                        arrow = arrow(angle=30, length = unit(arrow_unit, "pt"), type="closed"), 
                        linejoin='mitre')
   
-  p = p + 
-    ggnetwork::geom_nodes(data = g,
-                          aes(x, y) ,
-                          color=I("black"), size=node_size*1.2) +
-    ggnetwork::geom_nodes(data = g,
-                                aes(x, y,
-                                    # color = !!sym(color_nodes_by)),
-                                  color = color_nodes_by),
-                                size = node_size)  +
-    labs(fill = color_nodes_by)
+  if (is.null(group_nodes_by) == FALSE) {
+    
+    p =  p + 
+      ggnetwork::geom_nodes(data = g,
+                            aes(x, y) ,
+                            color=I("black"), size=node_size*1.2) +
+      # ggnetwork::geom_nodes(data = g,
+      #                       aes(x, y,
+      #                           color = color_nodes_by),
+      #                       size = node_size)  +
+      labs(fill = color_nodes_by)
+    
+    p = p + ggforce::geom_mark_rect(aes(x, y,
+                                        fill = group_nodes_by),
+                                    size=0,
+                                    expand = unit(2, "mm"),
+                                    radius = unit(1.5, "mm"),
+                                    data=g)
+    
+  } else {
+    p = p + 
+      ggnetwork::geom_nodes(data = g,
+                            aes(x, y) ,
+                            color=I("black"), size=node_size*1.2) +
+      ggnetwork::geom_nodes(data = g,
+                            aes(x, y,
+                                color = color_nodes_by),
+                            size = node_size)  +
+      labs(fill = color_nodes_by)
+    
+  }
+  
+  
+  if (plot_labels) {
+    p = p + ggrepel::geom_text_repel(data= g %>% select(x, y, name) %>% distinct(), 
+                                     aes(x, y, label=name),
+                                     color=I("black")) 
+  }
+  
   
   p = p + scale_size_identity() +
     ggnetwork::theme_blank() +
     hooke_theme_opts() +
     scale_color_manual(values = hooke:::get_colors(length(igraph::V(cell_state_graph@graph)$name), type="vibrant")) +
     theme(legend.position=legend_position)
+  
+  # plot an invisible point to help with nodes not being cut off
+  x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
+  y_range = range(g$y) + c(-node_size*1.2, node_size*1.2)
+  point_df = expand.grid("x" = x_range, "y" = y_range)
+  p = p + geom_point(df,
+             mapping = aes(x,y), color="white", alpha=0)
+  
+
+
+  
   
   return(p)
 }
@@ -145,6 +193,13 @@ plot_abundance_changes = function(cell_state_graph,
     p = p + facet_wrap(~contrast)
   }
   
+  
+  x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
+  y_range = range(g$y) + c(-node_size*1.2, node_size*1.2)
+  point_df = expand.grid("x" = x_range, "y" = y_range)
+  p = p + geom_point(df,
+                     mapping = aes(x,y), color="white", alpha=0)
+  
   return(p)
 }
 
@@ -227,6 +282,12 @@ plot_gene_expr = function(cell_state_graph,
     scale_size_identity() +
     scale_size(range=c(1, 5)) + 
     hooke_theme_opts() + theme(legend.position = "none") 
+  
+  x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
+  y_range = range(g$y) + c(-node_size*1.2, node_size*1.2)
+  point_df = expand.grid("x" = x_range, "y" = y_range)
+  p = p + geom_point(df,
+                     mapping = aes(x,y), color="white", alpha=0)
   return(p)
 }
 
@@ -239,7 +300,8 @@ plot_deviation_plot = function(cell_state_graph,
                                con_colour = "darkgrey",
                                fract_expr = 0.0,
                                mean_expr = 0.0,
-                               legend_position = "none"){
+                               legend_position = "none", 
+                               plot_labels=F){
   
   g = cell_state_graph@g
   bezier_df = cell_state_graph@layout_info$bezier_df
@@ -277,16 +339,28 @@ plot_deviation_plot = function(cell_state_graph,
     hooke_theme_opts() +
     theme(legend.position='none') 
   
+  if (plot_labels) {
+    p = p + ggrepel::geom_text_repel(data= g %>% select(x, y, name) %>% distinct(), 
+                                     aes(x, y, label=name),
+                                     color=I("black")) 
+  }
+  
   if (is.null(facet_group) == FALSE) {
     p = p + facet_wrap(~contrast)
   }
+  
+  x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
+  y_range = range(g$y) + c(-node_size*1.2, node_size*1.2)
+  point_df = expand.grid("x" = x_range, "y" = y_range)
+  p = p + geom_point(df,
+                     mapping = aes(x,y), color="white", alpha=0)
   
   return(p)
   
 }
 
 
-plot_deg_change =function(cell_state_graph, 
+plot_deg_change = function(cell_state_graph, 
                           deg_table, 
                           facet_group = "term", 
                           arrow_unit = 7,
@@ -325,6 +399,13 @@ plot_deg_change =function(cell_state_graph,
     scale_color_viridis_c(option="B")+
     hooke_theme_opts() +
     theme(legend.position='none')
+  
+  
+  x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
+  y_range = range(g$y) + c(-node_size*1.2, node_size*1.2)
+  point_df = expand.grid("x" = x_range, "y" = y_range)
+  p = p + geom_point(df,
+                     mapping = aes(x,y), color="white", alpha=0)
   
   return(p)
   
@@ -381,6 +462,12 @@ plot_degs = function(cell_state_graph,
     scale_color_viridis_c(option="B")+
     hooke_theme_opts() +
     theme(legend.position='none')
+  
+  x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
+  y_range = range(g$y) + c(-node_size*1.2, node_size*1.2)
+  point_df = expand.grid("x" = x_range, "y" = y_range)
+  p = p + geom_point(df,
+                     mapping = aes(x,y), color="white", alpha=0)
   
   return(p)
   
