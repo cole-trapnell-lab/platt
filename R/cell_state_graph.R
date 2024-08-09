@@ -33,7 +33,14 @@ setClass("cell_state_graph",
 #' @param ccs input cell count set
 #' @return a new cell_state_graph object
 #' @export 
-new_cell_state_graph <- function(state_graph, ccs) {
+new_cell_state_graph <- function(state_graph, 
+                                 ccs, 
+                                 color_nodes_by = NULL,
+                                 label_nodes_by= NULL,
+                                 group_nodes_by= NULL, 
+                                 edge_weights=NULL, 
+                                 min_edge_size=0.1,
+                                 max_edge_size=2) {
     assertthat::assert_that(is(state_graph, 'igraph'))
     assertthat::assert_that(is(ccs, 'cell_count_set'))
     
@@ -43,17 +50,39 @@ new_cell_state_graph <- function(state_graph, ccs) {
       edges = state_graph
     }
     
-    layout_res = get_graph_layout(ccs, state_graph)
+    layout_res = get_graph_layout(ccs, 
+                                  state_graph, 
+                                  color_nodes_by = color_nodes_by, 
+                                  label_nodes_by = label_nodes_by, 
+                                  group_nodes_by = group_nodes_by)
+    
     layout_info = layout_res$layout_info
     gvizl_coords = layout_info$gvizl_coords
     bezier_df = layout_info$bezier_df
+    
+    
+    if (is.null(edge_weights) == FALSE){
+      bezier_df = left_join(bezier_df, edges)
+      bezier_df = bezier_df %>% mutate(edge_score =  (weight - min(weight, na.rm=TRUE)) / max(weight, na.rm=TRUE),
+                                       edge_thickness = ((max_edge_size - min_edge_size) * edge_score) + min_edge_size,
+                                       unsupported_edge = ifelse(is.na(weight), TRUE, FALSE),
+                                       edge_thickness = replace_na(edge_thickness, min_edge_size))
+    }else{
+      bezier_df$edge_thickness = (max_edge_size + min_edge_size) / 2
+      bezier_df$unsupported_edge = FALSE
+    }
+    layout_info$bezier_df = bezier_df
+    
     
     state_graph <- methods::new("cell_state_graph",
                                 graph = state_graph,
                                 ccs = ccs, 
                                 layout_info = layout_info, 
                                 g = layout_res$g,
-                                metadata = list())
+                                metadata = list(color_nodes_by = color_nodes_by, 
+                                                label_nodes_by= label_nodes_by,
+                                                group_nodes_by= group_nodes_by, 
+                                                bezier_df = bezier_df))
     
     return(state_graph)
 }
