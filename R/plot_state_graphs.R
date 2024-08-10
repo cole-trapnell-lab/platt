@@ -81,7 +81,7 @@ plot_annotations = function(cell_state_graph,
   x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
   y_range = range(g$y) + c(-node_size*1.2, node_size*1.2)
   point_df = expand.grid("x" = x_range, "y" = y_range)
-  p = p + geom_point(df,
+  p = p + geom_point(point_df,
              mapping = aes(x,y), color="white", alpha=0)
   
 
