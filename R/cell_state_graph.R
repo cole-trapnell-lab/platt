@@ -40,7 +40,8 @@ new_cell_state_graph <- function(state_graph,
                                  group_nodes_by= NULL, 
                                  edge_weights=NULL, 
                                  min_edge_size=0.1,
-                                 max_edge_size=2) {
+                                 max_edge_size=2, 
+                                 hide_unlinked_nodes = F) {
     assertthat::assert_that(is(state_graph, 'igraph'))
     assertthat::assert_that(is(ccs, 'cell_count_set'))
     
@@ -54,7 +55,8 @@ new_cell_state_graph <- function(state_graph,
                                   state_graph, 
                                   color_nodes_by = color_nodes_by, 
                                   label_nodes_by = label_nodes_by, 
-                                  group_nodes_by = group_nodes_by)
+                                  group_nodes_by = group_nodes_by, 
+                                  hide_unlinked_nodes = hide_unlinked_nodes)
     
     layout_info = layout_res$layout_info
     gvizl_coords = layout_info$gvizl_coords
