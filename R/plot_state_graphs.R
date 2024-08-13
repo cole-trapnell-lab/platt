@@ -67,14 +67,15 @@ plot_annotations = function(cell_state_graph,
   if (plot_labels) {
     p = p + ggrepel::geom_text_repel(data= g %>% select(x, y, name) %>% distinct(), 
                                      aes(x, y, label=name),
-                                     color=I("black")) 
+                                     color=I("black"), 
+                                     box.padding = 0.5) 
   }
   
   
   p = p + scale_size_identity() +
     ggnetwork::theme_blank() +
     hooke_theme_opts() +
-    scale_color_manual(values = hooke:::get_colors(length(igraph::V(cell_state_graph@graph)$name), type="vibrant")) +
+    scale_color_manual(values = hooke:::get_colors(length(unique(g$name)), type="vibrant")) +
     theme(legend.position=legend_position)
   
   # plot an invisible point to help with nodes not being cut off
@@ -197,7 +198,7 @@ plot_abundance_changes = function(cell_state_graph,
   x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
   y_range = range(g$y) + c(-node_size*1.2, node_size*1.2)
   point_df = expand.grid("x" = x_range, "y" = y_range)
-  p = p + geom_point(df,
+  p = p + geom_point(point_df,
                      mapping = aes(x,y), color="white", alpha=0)
   
   return(p)
@@ -286,7 +287,7 @@ plot_gene_expr = function(cell_state_graph,
   x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
   y_range = range(g$y) + c(-node_size*1.2, node_size*1.2)
   point_df = expand.grid("x" = x_range, "y" = y_range)
-  p = p + geom_point(df,
+  p = p + geom_point(point_df,
                      mapping = aes(x,y), color="white", alpha=0)
   return(p)
 }
@@ -352,7 +353,7 @@ plot_deviation_plot = function(cell_state_graph,
   x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
   y_range = range(g$y) + c(-node_size*1.2, node_size*1.2)
   point_df = expand.grid("x" = x_range, "y" = y_range)
-  p = p + geom_point(df,
+  p = p + geom_point(point_df,
                      mapping = aes(x,y), color="white", alpha=0)
   
   return(p)
@@ -404,7 +405,7 @@ plot_deg_change = function(cell_state_graph,
   x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
   y_range = range(g$y) + c(-node_size*1.2, node_size*1.2)
   point_df = expand.grid("x" = x_range, "y" = y_range)
-  p = p + geom_point(df,
+  p = p + geom_point(point_df,
                      mapping = aes(x,y), color="white", alpha=0)
   
   return(p)
@@ -466,7 +467,7 @@ plot_degs = function(cell_state_graph,
   x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
   y_range = range(g$y) + c(-node_size*1.2, node_size*1.2)
   point_df = expand.grid("x" = x_range, "y" = y_range)
-  p = p + geom_point(df,
+  p = p + geom_point(point_df,
                      mapping = aes(x,y), color="white", alpha=0)
   
   return(p)
