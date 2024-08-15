@@ -780,6 +780,9 @@ compare_gene_expression_within_node <- function(cell_group,
   
   pb_coeffs = collect_coefficients_for_shrinkage(cg_pb_cds, pb_group_models, abs_expr_thresh, term_to_keep = "perturbation") #coefficient_table(pb_group_models) %>%
   
+  rm(pb_group_models) # DO NOT REMOVE. This is important for keeping the memory footprint of this analysis light.
+  #gc()
+  
   # estimates_for_controls = Matrix::rowSums(pb_coeffs$coefficients[,control_ids, drop=F])
   # stderrs_for_controls = sqrt(Matrix::rowSums(pb_coeffs$stdev.unscaled[,control_ids, drop=F]^2))
   
@@ -900,7 +903,9 @@ compare_gene_expression_within_node <- function(cell_group,
     cell_group_no_spaces = gsub(" ", "_", cell_group_no_spaces)
     
     write.csv(cell_perturbations %>% tidyr::unnest(data) %>% mutate(cell_group = cell_group), 
-              file = paste0(write_dir, "/", cell_group, "_within_node_degs.csv"))
+              file = paste0(write_dir, "/", cell_group, "_within_node_degs.csv"),
+              row.names=FALSE)
+    return(NULL)
     
   } else {
     return(cell_perturbations) 
