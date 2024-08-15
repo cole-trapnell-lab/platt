@@ -286,8 +286,12 @@ estimate_ambient_rna <- function(ccs,
                           model_formula_str="~ 1",
                           cores=cores)
   
+  
   message("\tcollecting coefficients")
   ambient_coeffs = collect_coefficients_for_shrinkage(pb_cds, pb_ambient, abs_expr_thresh, term_to_keep = "(Intercept)") 
+  
+  rm(pb_ambient)
+  gc()
   
   # Scale the "number of cells" up by the fraction of ambient RNA to arrive 
   # at transcript count estimates coming from the soup 
@@ -781,7 +785,7 @@ compare_gene_expression_within_node <- function(cell_group,
   pb_coeffs = collect_coefficients_for_shrinkage(cg_pb_cds, pb_group_models, abs_expr_thresh, term_to_keep = "perturbation") #coefficient_table(pb_group_models) %>%
   
   rm(pb_group_models) # DO NOT REMOVE. This is important for keeping the memory footprint of this analysis light.
-  #gc()
+  gc()
   
   # estimates_for_controls = Matrix::rowSums(pb_coeffs$coefficients[,control_ids, drop=F])
   # stderrs_for_controls = sqrt(Matrix::rowSums(pb_coeffs$stdev.unscaled[,control_ids, drop=F]^2))
