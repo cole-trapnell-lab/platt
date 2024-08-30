@@ -542,7 +542,7 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   
   std_dev.unscaled = stderr_matrix^2 /  sigma_df$sigma
   
-  coefs_for_shrinkage = list(coefficients = estimate_matrix,
+  coefs_for_shrinkage = tibble(coefficients = estimate_matrix,
                              stdev.unscaled = stderr_matrix,
                              sigma = sigma_df$sigma,
                              df.residual = sigma_df$df.residual,
@@ -577,6 +577,7 @@ compare_genes_within_state_graph = function(ccs,
                                             min_cells_per_pseudobulk = NULL,
                                             cores = 1,
                                             write_dir = NULL,
+                                            max_simultaneous_genes=NULL,
                                             ...) {
   
   # to do make sure that ccs and state graph match 
@@ -651,6 +652,7 @@ compare_genes_within_state_graph = function(ccs,
                                                 ambient_estimate_matrix = ambient_coeffs$coefficients, 
                                                 ambient_stderr_matrix = ambient_coeffs$stdev.unscaled, 
                                                 cores = cores, 
+                                                max_simultaneous_genes=max_simultaneous_genes,
                                                 nuisance_model_formula_str = nuisance_model_formula_str,
                                                 min_cells_per_pseudobulk=min_cells_per_pseudobulk, 
                                                 write_dir = write_dir))
@@ -665,32 +667,6 @@ compare_genes_within_state_graph = function(ccs,
   
 }
 
-
-
-extract_dispersion_helper = function(model, model_summary) {
-  disp_res = if (class(model)[1] == "speedglm") {
-    model_summary$dispersion
-  } else if (class(model)[1] == "negbin"){
-    model_summary$dispersion
-  } else if (class(model) == "zeroinfl"){
-    model_summary$dispersion
-  } else {
-    model_summary$dispersion
-  }
-}
-
-
-update_summary <- function(model_tbl, dispersion_type=c("max", "fitted", "estimated"), min_dispersion=1){
-  dispersion_type = match.arg(dispersion_type)
-  model_tbl = model_tbl %>% mutate(
-    disp_for_test = case_when(
-      dispersion_type == "estimated" ~ dispersion,
-      dispersion_type == "fitted" ~ disp_fit,
-      dispersion_type == "max" ~ pmax(disp_fit, dispersion, min_dispersion),
-      .default = dispersion),
-    model_summary = purrr::map2(model, .y=disp_for_test, .f=summary))
-  return(model_tbl)
-}
 
 #' called in compare_genes_within_state_graph
 #' @param cell_group
@@ -715,7 +691,8 @@ compare_gene_expression_within_node <- function(cell_group,
                                                 exclude_results_below_ambient=TRUE,
                                                 expected_effect_mode_interval=c(-10,10),
                                                 write_dir = NULL, 
-                                                cores=1) {
+                                                cores=1,
+                                                max_simultaneous_genes = NULL) {
   
   
   # now fit models per cell group
@@ -728,13 +705,13 @@ compare_gene_expression_within_node <- function(cell_group,
     group_by(perturbation) %>%
     summarize(mean_log_sf = mean(log(Size_Factor)))
   mean_ctrl_sf = perturb_sf_summary %>% filter(perturbation %in% control_ids) %>% 
-      pull(mean_log_sf) %>% mean
-   
+    pull(mean_log_sf) %>% mean
+  
   perturb_sf_summary = perturb_sf_summary %>% mutate(ctrl_log_sf = mean_ctrl_sf)
-
+  
   pb_group_by_term =  tibble::tibble(pb_id=row.names(colData(cg_pb_cds)),
                                      pb_group=colData(cg_pb_cds)$perturbation)
-
+  
   mean_expr_mat = monocle3::aggregate_gene_expression(cg_pb_cds,
                                                       cell_group_df=pb_group_by_term,
                                                       norm_method="size_only",
@@ -773,19 +750,50 @@ compare_gene_expression_within_node <- function(cell_group,
     full_model_str = paste0(full_model_str, " + ", nuisance_model_formula_str)
   }
   
-  pb_group_models = fit_models(cg_pb_cds,
-                               model_formula_str = full_model_str,
-                               cores=cores) %>% 
-    dplyr::select(gene_short_name, id, model, model_summary, status)
+  if (is.null(max_simultaneous_genes)){
+    max_simultaneous_genes = nrow(cg_pb_cds)
+  }
+  message (paste0("\tregressing with formula ", full_model_str))
+  message (paste0("\tUsing max_simultaneous_genes = ", max_simultaneous_genes))
   
-  #pb_coeffs = collect_coefficients_for_limma(cg_pb_cds, pb_group_models, abs_expr_thresh) #coefficient_table(pb_group_models) %>%
+  #fit_model_blocks = ceiling(rcg_pb_cds) / max_simultaneous_genes)
+  #print (ceiling(seq_along(row.names(cg_pb_cds))/max_simultaneous_genes))
   
-  message ("\tcollecting coefficients")
+  gene_blocks = split(row.names(cg_pb_cds), ceiling(seq_along(row.names(cg_pb_cds))/max_simultaneous_genes))
+  #print (head(gene_blocks))
+  coeffs_for_blocks = lapply(gene_blocks, function(gb){
+    gb = unlist(gb)
+    #print (gb)
+    gb_cds = cg_pb_cds[gb,]
+    #print (gb_cds)
+    pb_group_models = fit_models(gb_cds,
+                                 model_formula_str = full_model_str,
+                                 cores=cores) %>% 
+      dplyr::select(gene_short_name, id, model, model_summary, status)
+    
+    #pb_coeffs = collect_coefficients_for_limma(cg_pb_cds, pb_group_models, abs_expr_thresh) #coefficient_table(pb_group_models) %>%
+    
+    #message ("\tcollecting coefficients")
+    
+    pb_coeffs = collect_coefficients_for_shrinkage(gb_cds, pb_group_models, abs_expr_thresh, term_to_keep = "perturbation") #coefficient_table(pb_group_models) %>%
+    
+    rm(pb_group_models) # DO NOT REMOVE. This is important for keeping the memory footprint of this analysis light.
+    gc()
+    
+    return(pb_coeffs)
+  })
   
-  pb_coeffs = collect_coefficients_for_shrinkage(cg_pb_cds, pb_group_models, abs_expr_thresh, term_to_keep = "perturbation") #coefficient_table(pb_group_models) %>%
+  pb_coeffs = list()
+  pb_coeffs$coefficients = do.call(rbind, lapply(coeffs_for_blocks, function(b){b$coefficients}))
+  pb_coeffs$stdev.unscaled = do.call(rbind, lapply(coeffs_for_blocks, function(b){b$stdev.unscaled}))
+  #pb_coeffs$sigma = do.call(rbind, lapply(coeffs_for_blocks, function(b){b$sigma}))
+  pb_coeffs$sigma = do.call(c, lapply(coeffs_for_blocks, function(b){b$sigma}))
+  pb_coeffs$df.residual = do.call(c, lapply(coeffs_for_blocks, function(b){b$df.residual}))
+  pb_coeffs$trend = do.call(c, lapply(coeffs_for_blocks, function(b){b$trend}))
+  pb_coeffs$est_dispersion = do.call(c, lapply(coeffs_for_blocks, function(b){b$est_dispersion}))
+  pb_coeffs$disp_fit = do.call(c, lapply(coeffs_for_blocks, function(b){ b$disp_fit }))
+
   
-  rm(pb_group_models) # DO NOT REMOVE. This is important for keeping the memory footprint of this analysis light.
-  gc()
   
   # estimates_for_controls = Matrix::rowSums(pb_coeffs$coefficients[,control_ids, drop=F])
   # stderrs_for_controls = sqrt(Matrix::rowSums(pb_coeffs$stdev.unscaled[,control_ids, drop=F]^2))
@@ -796,11 +804,14 @@ compare_gene_expression_within_node <- function(cell_group,
     perturbation_ids = intersect(perturbation_ids, colnames(pb_coeffs$coefficients))
   }
   
+  print (perturbation_ids)
+  
   #perturbation_ids = setdiff(colnames(estimate_matrix))
   cell_perturbations = tibble(term = unique(perturbation_ids))
   
   
   if (is.null(ambient_estimate_matrix) == FALSE) {
+    message ("\tcomparing to ambient")
     compare_perturb_to_ambient = function(perturb_name, 
                                           estimate_matrix, 
                                           stderr_matrix, 
@@ -829,7 +840,7 @@ compare_gene_expression_within_node <- function(cell_group,
     
     # add ctrl comparison 
     ctrl_to_ambient = contrast_helper("Control", 
-                                       "Intercept",
+                                      "Intercept",
                                       PEM = pb_coeffs$coefficients, 
                                       PSEM = pb_coeffs$stdev.unscaled,
                                       PEM_2 = ambient_estimate_matrix[row.names(pb_coeffs$coefficients),,drop=F], 
@@ -838,27 +849,28 @@ compare_gene_expression_within_node <- function(cell_group,
     
     cell_perturbations = cell_perturbations %>% 
       mutate(perturb_to_ambient = purrr:::map(.f = contrast_helper, 
-                                           .x = term,
-                                           state_2 = "Intercept", 
-                                           PEM = pb_coeffs$coefficients, 
-                                           PSEM = pb_coeffs$stdev.unscaled, 
-                                           PEM_2 = ambient_estimate_matrix[row.names(pb_coeffs$coefficients),,drop=F], 
-                                           PSEM_2 = ambient_stderr_matrix[row.names(pb_coeffs$coefficients),,drop=F], 
-                                           prefix = "perturb_to_ambient"))
+                                              .x = term,
+                                              state_2 = "Intercept", 
+                                              PEM = pb_coeffs$coefficients, 
+                                              PSEM = pb_coeffs$stdev.unscaled, 
+                                              PEM_2 = ambient_estimate_matrix[row.names(pb_coeffs$coefficients),,drop=F], 
+                                              PSEM_2 = ambient_stderr_matrix[row.names(pb_coeffs$coefficients),,drop=F], 
+                                              prefix = "perturb_to_ambient"))
     
     cell_perturbations = cell_perturbations %>% 
       tidyr::unnest(perturb_to_ambient) %>% 
       left_join(ctrl_to_ambient, by = "id") %>% 
       left_join(rowData(pb_cds) %>% as.data.frame %>% dplyr::select(id, gene_short_name), by = c("id" = "id")) %>% 
       group_by(term) %>% tidyr::nest() %>% dplyr::rename("ambient_effects"=data)
-      
+    
     
   }
   
-  message("\tcomputing contrasts")
-
+  
+  
   cell_perturbations = left_join(cell_perturbations, perturb_sf_summary, by=c("term"="perturbation"))
-
+  
+  message(paste("\tcomputing contrasts for", unique(perturbation_ids)))
   cell_perturbations = cell_perturbations %>% 
     mutate(perturb_effects = purrr:::map(.f = contrast_helper, 
                                          .x = term,
@@ -867,19 +879,21 @@ compare_gene_expression_within_node <- function(cell_group,
                                          PSEM = pb_coeffs$stdev.unscaled, 
                                          prefix = "perturb_to_ctrl",
                                          ash.control=list(mode=expected_effect_mode_interval)))
+  message(paste("\tcontrasts complete for", unique(perturbation_ids)))
   
   # cell_perturbations = cell_perturbations %>% 
   #   tidyr::unnest(perturb_effects) %>% 
   #   left_join(rowData(pb_cds) %>% as.data.frame %>% select(id, gene_short_name), by = c("id" = "id"))  %>% 
   #   group_by(term) %>% tidyr::nest() %>% dplyr::rename(perturb_effects = data)
-    
+  
   
   
   if (exclude_results_below_ambient & is.null(ambient_estimate_matrix) == FALSE){
+    message("\tfiltering contrast for ambient RNA")
     ambient_res = cell_perturbations %>%
       tidyr::unnest(ambient_effects) %>% 
       dplyr::filter((ctrl_to_ambient_p_value < 0.05 & ctrl_to_ambient_shrunken_lfc > 0) | 
-             (perturb_to_ambient_p_value < 0.05 & perturb_to_ambient_shrunken_lfc > 0)) %>%
+                      (perturb_to_ambient_p_value < 0.05 & perturb_to_ambient_shrunken_lfc > 0)) %>%
       dplyr::select(term, id)
     
     # perturb_res = left_join(cell_perturbations %>%
@@ -896,17 +910,22 @@ compare_gene_expression_within_node <- function(cell_group,
     perturb_res = perturb_res %>% 
       left_join(rowData(pb_cds) %>% as.data.frame %>% select(id, gene_short_name), by = c("id" = "id"))
     
-    cell_perturbations = perturb_res %>%
-      group_by(term) %>% tidyr::nest()
+    #cell_perturbations = perturb_res %>%
+    #  group_by(term) %>% tidyr::nest()
     
   }
   
   if (is.null(write_dir) == FALSE) {
     
+    message(paste("\twriting output to", write_dir))
+    #message(head(cell_perturbations))
+    
     cell_group_no_spaces = gsub("[[:punct:]]", "", cell_group)
     cell_group_no_spaces = gsub(" ", "_", cell_group_no_spaces)
+    print(colnames(cell_perturbations))
+    deg_out = cell_perturbations %>% tidyr::unnest(perturb_effects)
     
-    write.csv(cell_perturbations %>% tidyr::unnest(data) %>% mutate(cell_group = cell_group), 
+    write.csv(deg_out %>% mutate(cell_group = cell_group), 
               file = paste0(write_dir, "/", cell_group, "_within_node_degs.csv"),
               row.names=FALSE)
     return(NULL)
@@ -917,6 +936,33 @@ compare_gene_expression_within_node <- function(cell_group,
   
 }
 
+
+
+
+extract_dispersion_helper = function(model, model_summary) {
+  disp_res = if (class(model)[1] == "speedglm") {
+    model_summary$dispersion
+  } else if (class(model)[1] == "negbin"){
+    model_summary$dispersion
+  } else if (class(model) == "zeroinfl"){
+    model_summary$dispersion
+  } else {
+    model_summary$dispersion
+  }
+}
+
+
+update_summary <- function(model_tbl, dispersion_type=c("max", "fitted", "estimated"), min_dispersion=1){
+  dispersion_type = match.arg(dispersion_type)
+  model_tbl = model_tbl %>% mutate(
+    disp_for_test = case_when(
+      dispersion_type == "estimated" ~ dispersion,
+      dispersion_type == "fitted" ~ disp_fit,
+      dispersion_type == "max" ~ pmax(disp_fit, dispersion, min_dispersion),
+      .default = dispersion),
+    model_summary = purrr::map2(model, .y=disp_for_test, .f=summary))
+  return(model_tbl)
+}
 
 
 
