@@ -644,7 +644,7 @@ compare_genes_within_state_graph = function(ccs,
   }
   
   df = data.frame(cell_group = cell_groups) %>% 
-    mutate(genes_within_cell_group = purrr::map(.f = purrr:::possibly(compare_gene_expression_within_node,NA_real_),
+    mutate(genes_within_cell_group = purrr::map(.f = compare_gene_expression_within_node,
                                                 .x = cell_group, 
                                                 pb_cds = pb_cds, 
                                                 ccs = ccs,
@@ -793,7 +793,7 @@ compare_gene_expression_within_node <- function(cell_group,
   pb_coeffs$est_dispersion = do.call(c, lapply(coeffs_for_blocks, function(b){b$est_dispersion}))
   pb_coeffs$disp_fit = do.call(c, lapply(coeffs_for_blocks, function(b){ b$disp_fit }))
 
-  
+  assertthat::assert_that(nrow(pb_coeffs$coefficients) == nrow(cg_pb_cds))
   
   # estimates_for_controls = Matrix::rowSums(pb_coeffs$coefficients[,control_ids, drop=F])
   # stderrs_for_controls = sqrt(Matrix::rowSums(pb_coeffs$stdev.unscaled[,control_ids, drop=F]^2))
