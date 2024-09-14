@@ -469,8 +469,13 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
     dplyr::mutate(mean_expr = purrr::map(model, mean_expr_helper, new_data=colData(cds
     )%>% as.data.frame)) %>% tidyr::unnest(mean_expr)
   
-  disp_fit = mgcv::gam(log(dispersion)~s(log(mean_expr), bs="cs"), data=model_tbl)
-  model_tbl$disp_fit = exp(predict(disp_fit))
+  tryCatch({
+    disp_fit = mgcv::gam(log(dispersion)~s(log(mean_expr), bs="cs"), data=model_tbl)
+    model_tbl$disp_fit = exp(predict(disp_fit))
+  }, error = function(e){
+    model_tbl$disp_fit = 1
+  })
+  
   #model_tbl$disp_fit = 1
   
   model_tbl = update_summary(model_tbl, dispersion_type="fitted")
