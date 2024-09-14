@@ -468,18 +468,20 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   model_tbl <- model_tbl %>%
     dplyr::mutate(mean_expr = purrr::map(model, mean_expr_helper, new_data=colData(cds
     )%>% as.data.frame)) %>% tidyr::unnest(mean_expr)
-  model_tbl$disp_fit = 1
+  model_tbl$disp_fit = rep(1.0, nrow(model_tbl))
   tryCatch({
     disp_fit = mgcv::gam(log(dispersion)~s(log(mean_expr), bs="cs"), data=model_tbl)
     model_tbl$disp_fit = exp(predict(disp_fit))
   }, error = function(e){
-    model_tbl$disp_fit = 1
+    print (e)
+    model_tbl$disp_fit = rep(1.0, nrow(model_tbl))
   })
   
   #model_tbl$disp_fit = 1
   
   model_tbl = update_summary(model_tbl, dispersion_type="fitted")
   
+  print ("\tdispersions updated")
   
   raw_coefficient_table = coefficient_table(model_tbl)
   
@@ -778,7 +780,7 @@ compare_gene_expression_within_node <- function(cell_group,
     
     #pb_coeffs = collect_coefficients_for_limma(cg_pb_cds, pb_group_models, abs_expr_thresh) #coefficient_table(pb_group_models) %>%
     
-    #message ("\tcollecting coefficients")
+    message ("\tcollecting coefficients")
     
     pb_coeffs = collect_coefficients_for_shrinkage(gb_cds, pb_group_models, abs_expr_thresh, term_to_keep = "perturbation") #coefficient_table(pb_group_models) %>%
     
