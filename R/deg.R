@@ -474,6 +474,7 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
     model_tbl$disp_fit = exp(predict(disp_fit))
   }, error = function(e){
     print (e)
+    print (head(model_tbl[,c("mean_expr", "dispersion")]))
     model_tbl$disp_fit = rep(1.0, nrow(model_tbl))
   })
   
@@ -495,6 +496,8 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
     }
   }
   
+  print ("\tcomputing extra model stats")
+  
   extra_model_stats = model_tbl %>%
     dplyr::mutate(extra_stats = purrr::map(.f = purrr::possibly(
       extract_extra_model_stats, NA_real_), .x = model, newdata=colData(cds) %>% as.data.frame)) %>%
@@ -513,6 +516,8 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   if (term_to_keep != "(Intercept)"){
     estimate_matrix = estimate_matrix %>% mutate(term = factor(term, levels=unique(colData(cds)[,term_to_keep])))
   }
+  
+  print ("\tpivoting coefficient table")
   estimate_matrix = estimate_matrix %>% tidyr::pivot_wider(names_from=term, values_from=estimate, values_fill=0)
   
   gene_ids = estimate_matrix$id
