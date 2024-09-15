@@ -546,8 +546,8 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   #  estimate_matrix[fail_gene_ids,] = log(abs_expr_thresh)
   #  stderr_matrix[fail_gene_ids,] = Inf
   #}
+
   
-  print ("\tcollecting fit quality stats")
   sigma_df = raw_coefficient_table %>% dplyr::select(id, RSS, df.residual, mean_expr, disp_fit, dispersion) %>% distinct() %>% as.data.frame
   row.names(sigma_df) = sigma_df$id
   sigma_df$id = NULL
@@ -555,7 +555,7 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   sigma_df$sigma = sigma_df$RSS / sigma_df$df.residual
   
   std_dev.unscaled = stderr_matrix^2 /  sigma_df$sigma
-  print ("\treporting final coefficients")
+  
   coefs_for_shrinkage = tibble(coefficients = estimate_matrix,
                              stdev.unscaled = stderr_matrix,
                              sigma = sigma_df$sigma,
@@ -787,10 +787,10 @@ compare_gene_expression_within_node <- function(cell_group,
     
     #pb_coeffs = collect_coefficients_for_limma(cg_pb_cds, pb_group_models, abs_expr_thresh) #coefficient_table(pb_group_models) %>%
     
-    message ("\tcollecting coefficients...")
+    message ("\tcollecting coefficients")
     
     pb_coeffs = collect_coefficients_for_shrinkage(gb_cds, pb_group_models, abs_expr_thresh, term_to_keep = "perturbation") #coefficient_table(pb_group_models) %>%
-    message ("\tdone!")
+    
     rm(pb_group_models) # DO NOT REMOVE. This is important for keeping the memory footprint of this analysis light.
     gc()
     
