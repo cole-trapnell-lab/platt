@@ -486,9 +486,18 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   print ("\tdispersions updated")
   
   raw_coefficient_table = coefficient_table(model_tbl)
-
+  
+  # For models that FAIL, term will be NA we set their term from NA to whatever the caller
+  # requested, just so there is at least one entry in the matrices for such genes
+  raw_coefficient_table = raw_coefficient_table %>% 
+      mutate(term = ifelse(is.na(term),
+             term_to_keep,
+             term))
+  
+  
   #print (head(raw_coefficient_table))
   raw_coefficient_table %>% select(id, term, estimate) %>% print
+  
 
   extract_extra_model_stats = function(model, newdata){
     if (class(model)[1] == "speedglm") {
