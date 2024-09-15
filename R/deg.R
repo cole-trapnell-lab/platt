@@ -487,14 +487,6 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   
   raw_coefficient_table = coefficient_table(model_tbl)
   
-  # For models that FAIL, term will be NA we set their term from NA to whatever the caller
-  # requested, just so there is at least one entry in the matrices for such genes
-  raw_coefficient_table = raw_coefficient_table %>% 
-      mutate(term = ifelse(is.na(term),
-             term_to_keep,
-             term))
-  
-  
   #print (head(raw_coefficient_table))
   raw_coefficient_table %>% select(id, term, estimate) %>% print
   
@@ -525,9 +517,17 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
     mutate(term = stringr::str_replace_all(term, term_to_keep, "")) %>% 
     mutate(term = stringr::str_replace(term,"\\(\\)","Intercept"))
   
+  fail_gene_ids = model_tbl %>% filter(status == "FAIL") %>% select(id)
+  term_to_keep_levels = unique(colData(cds)[,term_to_keep])
+  #term_table = tibble(term=stringr::str_c(term_to_keep, term_to_keep_levels))
+  term_table = tibble(term=term_to_keep_levels)
+  
+  fail_coeff_rows = tidyr::crossing(coeff_table, term_table) %>% mutate(estimate = NA_real_)
+  raw_coefficient_table = bind_rows(raw_coefficient_table, fail_coeff_rows)
+  
   estimate_matrix = raw_coefficient_table %>% dplyr::select(id, term, estimate)
   if (term_to_keep != "(Intercept)"){
-    estimate_matrix = estimate_matrix %>% mutate(term = factor(term, levels=unique(colData(cds)[,term_to_keep])))
+    estimate_matrix = estimate_matrix %>% mutate(term = factor(term, levels=term_to_keep_levels))
   }
   estimate_matrix = estimate_matrix %>% mutate(id = factor(id, levels=model_tbl$id))
   
@@ -543,7 +543,7 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   
   stderr_matrix = raw_coefficient_table %>% dplyr::select(id, term, std_err)
   if (term_to_keep != "(Intercept)"){
-    stderr_matrix = stderr_matrix %>% mutate(term = factor(term, levels=unique(colData(cds)[,term_to_keep])))
+    stderr_matrix = stderr_matrix %>% mutate(term = factor(term, levels=term_to_keep_levels))
   }
   stderr_matrix = stderr_matrix %>% mutate(id = factor(id, levels=model_tbl$id))
   
@@ -558,11 +558,11 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   
   # collect the ids of any genes that threw an exception in fit_models and
   # set their estimates and std_errors to NA
-  fail_gene_ids = model_tbl %>% filter(status == "FAIL") %>% pull(id)
-  if (length(fail_gene_ids) > 0){
+  
+  if (length(fail_gene_ids$id) > 0){
    print ("\tzero-ing out failed gene models")
-   estimate_matrix[fail_gene_ids,] = log(abs_expr_thresh)
-   stderr_matrix[fail_gene_ids,] = Inf
+   estimate_matrix[fail_gene_ids$id,] = log(abs_expr_thresh)
+   stderr_matrix[fail_gene_ids$id,] = Inf
   }
 
   
