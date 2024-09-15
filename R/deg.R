@@ -516,9 +516,10 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   if (term_to_keep != "(Intercept)"){
     estimate_matrix = estimate_matrix %>% mutate(term = factor(term, levels=unique(colData(cds)[,term_to_keep])))
   }
+  estimate_matrix = estimate_matrix %>% mutate(id = factor(id, levels=model_tbl$id))
   
   print ("\tpivoting coefficient table")
-  estimate_matrix = estimate_matrix %>% tidyr::pivot_wider(names_from=term, values_from=estimate, values_fill=0)
+  estimate_matrix = estimate_matrix %>% tidyr::pivot_wider(names_from=term, values_from=estimate, id_expand = TRUE, values_fill=0)
   
   gene_ids = estimate_matrix$id
   estimate_matrix$id = NULL
@@ -530,7 +531,8 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   if (term_to_keep != "(Intercept)"){
     stderr_matrix = stderr_matrix %>% mutate(term = factor(term, levels=unique(colData(cds)[,term_to_keep])))
   }
-  stderr_matrix = stderr_matrix %>% tidyr::pivot_wider(names_from=term, values_from=std_err, values_fill=0)
+  stderr_matrix = stderr_matrix %>% mutate(id = factor(id, levels=model_tbl$id))
+  stderr_matrix = stderr_matrix %>% tidyr::pivot_wider(names_from=term, values_from=std_err, id_expand = TRUE, values_fill=0)
   
   gene_ids = stderr_matrix$id
   stderr_matrix$id = NULL
@@ -540,12 +542,12 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   
   # collect the ids of any genes that threw an exception in fit_models and
   # set their estimates and std_errors to NA
-  #fail_gene_ids = model_tbl %>% filter(status == "FAIL") %>% pull(id)
-  #if (length(fail_gene_ids) > 0){
-  #  print ("\tzero-ing out failed gene models")
-  #  estimate_matrix[fail_gene_ids,] = log(abs_expr_thresh)
-  #  stderr_matrix[fail_gene_ids,] = Inf
-  #}
+  fail_gene_ids = model_tbl %>% filter(status == "FAIL") %>% pull(id)
+  if (length(fail_gene_ids) > 0){
+   print ("\tzero-ing out failed gene models")
+   estimate_matrix[fail_gene_ids,] = log(abs_expr_thresh)
+   stderr_matrix[fail_gene_ids,] = Inf
+  }
 
   
   sigma_df = raw_coefficient_table %>% dplyr::select(id, RSS, df.residual, mean_expr, disp_fit, dispersion) %>% distinct() %>% as.data.frame
@@ -556,6 +558,7 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   
   std_dev.unscaled = stderr_matrix^2 /  sigma_df$sigma
   
+  print ("\treporting final stats")
   coefs_for_shrinkage = tibble(coefficients = estimate_matrix,
                              stdev.unscaled = stderr_matrix,
                              sigma = sigma_df$sigma,
