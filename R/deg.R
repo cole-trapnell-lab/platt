@@ -540,12 +540,12 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   
   # collect the ids of any genes that threw an exception in fit_models and
   # set their estimates and std_errors to NA
-  fail_gene_ids = model_tbl %>% filter(status == "FAIL") %>% pull(id)
-  if (length(fail_gene_ids) > 0){
-    print ("\tzero-ing out failed gene models")
-    estimate_matrix[fail_gene_ids,] = log(abs_expr_thresh)
-    stderr_matrix[fail_gene_ids,] = Inf
-  }
+  #fail_gene_ids = model_tbl %>% filter(status == "FAIL") %>% pull(id)
+  #if (length(fail_gene_ids) > 0){
+  #  print ("\tzero-ing out failed gene models")
+  #  estimate_matrix[fail_gene_ids,] = log(abs_expr_thresh)
+  #  stderr_matrix[fail_gene_ids,] = Inf
+  #}
   
   print ("\tcollecting fit quality stats")
   sigma_df = raw_coefficient_table %>% dplyr::select(id, RSS, df.residual, mean_expr, disp_fit, dispersion) %>% distinct() %>% as.data.frame
