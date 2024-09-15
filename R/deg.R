@@ -481,10 +481,12 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   #model_tbl$disp_fit = 1
   
   model_tbl = update_summary(model_tbl, dispersion_type="fitted")
+  print (head(model_tbl))
   
   print ("\tdispersions updated")
   
   raw_coefficient_table = coefficient_table(model_tbl)
+  print (head(raw_coefficient_table))
   
   extract_extra_model_stats = function(model, newdata){
     if (class(model)[1] == "speedglm") {
