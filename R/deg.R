@@ -574,6 +574,12 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   
   std_dev.unscaled = stderr_matrix^2 /  sigma_df$sigma
   
+  print ("estimates")
+  print (head(estimate_matrix))
+  
+  print ("std errs")
+  print (head(stderr_matrix))
+  
   print ("\treporting final stats")
   coefs_for_shrinkage = tibble(coefficients = estimate_matrix,
                              stdev.unscaled = stderr_matrix,
