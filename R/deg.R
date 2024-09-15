@@ -486,9 +486,10 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   print ("\tdispersions updated")
   
   raw_coefficient_table = coefficient_table(model_tbl)
+
   #print (head(raw_coefficient_table))
   raw_coefficient_table %>% select(id, term, estimate) %>% print
-  
+
   extract_extra_model_stats = function(model, newdata){
     if (class(model)[1] == "speedglm") {
       extra_stats = tibble(RSS=model$RSS, df.residual=model$df, mean_expr=mean(predict(model, newdata=newdata)))
