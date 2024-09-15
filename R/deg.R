@@ -518,7 +518,8 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   }
   estimate_matrix = estimate_matrix %>% mutate(id = factor(id, levels=model_tbl$id))
   
-  print ("\tpivoting coefficient table")
+  print ("\tpivoting coefficient table:")
+  print (head(estimate_matrix))
   estimate_matrix = estimate_matrix %>% tidyr::pivot_wider(names_from=term, values_from=estimate, id_expand = TRUE, values_fill=0)
   
   gene_ids = estimate_matrix$id
@@ -532,6 +533,8 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
     stderr_matrix = stderr_matrix %>% mutate(term = factor(term, levels=unique(colData(cds)[,term_to_keep])))
   }
   stderr_matrix = stderr_matrix %>% mutate(id = factor(id, levels=model_tbl$id))
+  
+  print ("\tpivoting coefficient stderr table")
   stderr_matrix = stderr_matrix %>% tidyr::pivot_wider(names_from=term, values_from=std_err, id_expand = TRUE, values_fill=0)
   
   gene_ids = stderr_matrix$id
