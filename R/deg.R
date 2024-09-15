@@ -522,7 +522,7 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   #term_table = tibble(term=stringr::str_c(term_to_keep, term_to_keep_levels))
   term_table = tibble(term=term_to_keep_levels)
   
-  fail_coeff_rows = tidyr::crossing(coeff_table, term_table) %>% mutate(estimate = NA_real_)
+  fail_coeff_rows = tidyr::crossing(fail_gene_ids, term_table) %>% mutate(estimate = NA_real_)
   raw_coefficient_table = bind_rows(raw_coefficient_table, fail_coeff_rows)
   
   estimate_matrix = raw_coefficient_table %>% dplyr::select(id, term, estimate)
