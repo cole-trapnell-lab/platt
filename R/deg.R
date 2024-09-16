@@ -518,7 +518,7 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
     mutate(term = stringr::str_replace(term,"\\(\\)","Intercept"))
   
   fail_gene_ids = model_tbl %>% filter(status == "FAIL") %>% select(id)
-  term_to_keep_levels = unique(colData(cds)[,term_to_keep])
+  term_to_keep_levels = levels(colData(cds)[,term_to_keep])
   #term_table = tibble(term=stringr::str_c(term_to_keep, term_to_keep_levels))
   term_table = tibble(term=term_to_keep_levels)
   
@@ -631,6 +631,7 @@ compare_genes_within_state_graph = function(ccs,
   pb_cds = hooke:::pseudobulk_ccs_for_states(ccs, cell_agg_fun="sum")
   colData(pb_cds)$Size_Factor = colData(pb_cds)$num_cells_in_group
   
+  # Once we pseudobulks, we are going to overwrite the provided control ids with "Control"
   # pb_cds = hooke:::add_covariate(ccs, pb_cds, perturbation_col)
   colData(pb_cds)[["perturbation"]] = colData(pb_cds)[[perturbation_col]] 
   colData(pb_cds)[["perturbation"]] = ifelse(colData(pb_cds)$perturbation %in% control_ids, 
@@ -647,15 +648,25 @@ compare_genes_within_state_graph = function(ccs,
     state_graph = state_graph %>% filter(assembly_group == assembly_group)
   }
   
-  # ability to subset by perturbation 
+  # If the user provided a set of perturbations, subset the pseudobulk CDS to include just them and the controls
   if (!is.null(perturbations)) {
+    perturbations = setdiff(perturbations, control_ids)
     pb_cds = pb_cds[, colData(pb_cds)[[perturbation_col]] %in% c(control_ids, perturbations)]
-  } 
+    
+  } else{ #otherwise, grab the perturbation ids from the CDS and process them all
+    perturbations = unique(colData(pb_cds)[[perturbation_col]])
+    print (paste("pre-filter controls:", "Control"))
+    print (paste("pre-filter", perturbations))
+    perturbations = setdiff(perturbations, "Control")
+    print (paste("post-filter", perturbations))
+  }
   
   # subset to genes that are expressed over a certain min value
   expr_over_thresh = normalized_counts(pb_cds, "size_only", pseudocount = 0)
   genes_to_test = which(Matrix::rowSums(expr_over_thresh) >= min_samples_detected)
   pb_cds = pb_cds[genes_to_test,]
+  
+ 
   
   # # Collect background estimate 
   # pb_ambient = fit_models(pb_cds,
@@ -688,6 +699,7 @@ compare_genes_within_state_graph = function(ccs,
                                                 pb_cds = pb_cds, 
                                                 ccs = ccs,
                                                 control_ids = c("Control"),
+                                                perturbation_ids = perturbations,
                                                 ambient_estimate_matrix = ambient_coeffs$coefficients, 
                                                 ambient_stderr_matrix = ambient_coeffs$stdev.unscaled, 
                                                 cores = cores, 
@@ -718,10 +730,10 @@ compare_gene_expression_within_node <- function(cell_group,
                                                 ccs, 
                                                 pb_cds,
                                                 control_ids,
+                                                perturbation_ids,
                                                 ambient_estimate_matrix = NULL, 
                                                 ambient_stderr_matrix = NULL, 
                                                 nuisance_model_formula_str = "0",
-                                                perturbation_ids = NULL,
                                                 state_term ="cell_group",
                                                 log_fc_thresh=1,
                                                 abs_expr_thresh = 1e-10,
@@ -737,6 +749,10 @@ compare_gene_expression_within_node <- function(cell_group,
   # now fit models per cell group
   
   cg_pb_cds = pb_cds[, colData(pb_cds)[[state_term]] == cell_group]
+  
+  # Set the factor levels to include all provided controls and all provided 
+  # perturbation ids so we get coefficient entries for all of them, even if no cells are present in some groups
+  colData(cg_pb_cds)$perturbation = factor(colData(cg_pb_cds)$perturbation, levels=c(control_ids, perturbation_ids))
   
   #if (is.null(min_cells_per_pseudobulk)){
   perturb_sf_summary = colData(cg_pb_cds) %>% as.data.frame() %>%
@@ -800,6 +816,9 @@ compare_gene_expression_within_node <- function(cell_group,
   
   gene_blocks = split(row.names(cg_pb_cds), ceiling(seq_along(row.names(cg_pb_cds))/max_simultaneous_genes))
   #print (head(gene_blocks))
+  print ("levels for contrast:")
+  print(levels(colData(cg_pb_cds)$perturbation))
+  
   coeffs_for_blocks = lapply(gene_blocks, function(gb){
     gb = unlist(gb)
     #print (gb)
@@ -836,14 +855,6 @@ compare_gene_expression_within_node <- function(cell_group,
   
   # estimates_for_controls = Matrix::rowSums(pb_coeffs$coefficients[,control_ids, drop=F])
   # stderrs_for_controls = sqrt(Matrix::rowSums(pb_coeffs$stdev.unscaled[,control_ids, drop=F]^2))
-  
-  if (is.null(perturbation_ids)){
-    perturbation_ids = setdiff(colnames(pb_coeffs$coefficients), control_ids)
-  }else{
-    perturbation_ids = intersect(perturbation_ids, colnames(pb_coeffs$coefficients))
-  }
-  
-  print (perturbation_ids)
   
   #perturbation_ids = setdiff(colnames(estimate_matrix))
   cell_perturbations = tibble(term = unique(perturbation_ids))
@@ -1121,7 +1132,20 @@ contrast_helper = function(state_1,
     effect_est = effect_est - coefficient_mode
   }
   
-  shrunkren_res = ashr::ash(effect_est, se_est, method="fdr", mixcompdist=ash.mixcompdist, mode=0)
+  shrunkren_res = tryCatch({
+    ashr::ash(effect_est, se_est, method="fdr", mixcompdist=ash.mixcompdist, mode=0)
+  }, error = function(e) {
+    print(e)
+    res = list(
+      result = list(
+        PosteriorMean = rep(0, length(ids)),
+        PosteriorSD = rep(Inf, length(ids)),
+        lfsr = rep(1, length(ids))
+      )
+    )
+    return(res)
+  })
+    
   
   contrast_res = tibble(id = ids, #row.names(PEM),
                         raw_lfc = effect_est,
