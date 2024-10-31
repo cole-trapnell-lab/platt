@@ -14,11 +14,9 @@ get_perturbation_effects <- function(ccm, interval_col="timepoint", newdata = ti
   
   if (nrow(newdata) > 0){
     df = cross_join(df, newdata)
-  } else {
-    df = df
   }
   
-  df = cross_join(df, newdata) %>% 
+  df = df %>%
     group_split(row_number(), .keep = FALSE) %>%
     purrr::map_df(tidyr::nest) %>% 
     mutate(genotype_eff = purrr::map(.f = make_contrast,
