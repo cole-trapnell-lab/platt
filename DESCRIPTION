@@ -24,8 +24,8 @@ Depends:
     hooke
 Imports:
     ashr (>= 2.2-63),
-    speedglm (>= 0.3-2),
     splines
+Remotes: cole-trapnell-lab/speedglm
 Suggests: 
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
