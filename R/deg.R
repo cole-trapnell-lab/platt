@@ -650,8 +650,8 @@ compare_genes_within_state_graph = function(ccs,
   
   # If the user provided a set of perturbations, subset the pseudobulk CDS to include just them and the controls
   if (!is.null(perturbations)) {
-    perturbations = setdiff(perturbations, control_ids)
-    pb_cds = pb_cds[, colData(pb_cds)[[perturbation_col]] %in% c(control_ids, perturbations)]
+    perturbations = setdiff(perturbations, "Control")
+    pb_cds = pb_cds[, colData(pb_cds)[[perturbation_col]] %in% c("Control", perturbations)]
     
   } else{ #otherwise, grab the perturbation ids from the CDS and process them all
     perturbations = unique(colData(pb_cds)[[perturbation_col]])
@@ -749,6 +749,8 @@ compare_gene_expression_within_node <- function(cell_group,
   # now fit models per cell group
   
   cg_pb_cds = pb_cds[, colData(pb_cds)[[state_term]] == cell_group]
+  
+  assertthat::assert_that(is.na(cell_group) == FALSE)
   
   # Set the factor levels to include all provided controls and all provided 
   # perturbation ids so we get coefficient entries for all of them, even if no cells are present in some groups
