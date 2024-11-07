@@ -1,7 +1,7 @@
 #' @export
 get_time_window <- function(genotype, ccs, interval_col, perturbation_col = gene_target){
-  subset_ccs = ccs[,replace_na(colData(ccs)[[perturbation_col]] == genotype, F)]
-  colData(subset_ccs)$knockout = colData(subset_ccs)[[perturbation_col]] == genotype
+  subset_ccs = ccs[,replace_na(colData(ccs)[[perturbation_col]] %in% genotype, F)]
+  colData(subset_ccs)$knockout = colData(subset_ccs)[[perturbation_col]] %in% genotype
   knockout_time_start = min(colData(subset_ccs)[[interval_col]][colData(subset_ccs)$knockout])
   knockout_time_stop = max(colData(subset_ccs)[[interval_col]][colData(subset_ccs)$knockout])
   return(tibble(start_time=knockout_time_start, stop_time=knockout_time_stop))
@@ -43,8 +43,8 @@ fit_genotype_ccm = function(genotype,
                             perturbation_col = "gene_target",
                             batch_col = "expt", 
                             ctrl_ids = c("ctrl-uninj", "ctrl-inj", "ctrl-noto", "ctrl-mafba", "ctrl-hgfa", "ctrl-tbx16", "ctrl-met"),
-                            assembly_time_start=NULL,
-                            assembly_time_stop=NULL,
+                            contrast_time_start=NULL,
+                            contrast_time_stop=NULL,
                             num_time_breaks=NULL,
                             independent_spline_for_ko=TRUE,
                             edge_allowlist=NULL,
@@ -68,17 +68,19 @@ fit_genotype_ccm = function(genotype,
   subset_ccs = ccs[,replace_na(colData(ccs)[[perturbation_col]] == genotype, F)]
   # expts = unique(colData(subset_ccs)[[batch_col]])
   
-  if (is.null(assembly_time_start)){
+  if (is.null(contrast_time_start)){
     knockout_time_start = min(colData(subset_ccs)[[interval_col]])
   }else{
-    knockout_time_start = assembly_time_start
+    knockout_time_start = contrast_time_start
   }
   
-  if (is.null(assembly_time_stop)){
+  if (is.null(contrast_time_stop)){
     knockout_time_stop = max(colData(subset_ccs)[[interval_col]])
   }else{
-    knockout_time_stop = assembly_time_stop
+    knockout_time_stop = contrast_time_stop
   }
+  subset_ccs = subset_ccs[,replace_na(colData(subset_ccs)[[interval_col]] <= knockout_time_stop, F)]
+  subset_ccs = subset_ccs[,replace_na(colData(subset_ccs)[[interval_col]] >= knockout_time_start, F)]
   
   num_knockout_timepoints = length(unique(colData(subset_ccs)[[interval_col]]))
   
@@ -177,8 +179,8 @@ fit_genotype_ccm = function(genotype,
   genotype_ccm@info$ctrl_ids = ctrl_ids
   genotype_ccm@info$batch_col = batch_col
   genotype_ccm@info$interval_col = interval_col
-  genotype_ccm@info$assembly_time_start = assembly_time_start
-  genotype_ccm@info$assembly_time_stop = assembly_time_stop
+  genotype_ccm@info$contrast_time_start = contrast_time_start
+  genotype_ccm@info$contrast_time_stop = contrast_time_stop
   
   return(genotype_ccm)
 }
