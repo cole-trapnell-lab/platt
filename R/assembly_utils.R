@@ -125,8 +125,8 @@ fit_genotype_ccm = function(genotype,
       nuisance_model_formula_str = "~ 1"
   }
   
-  # make this any column 
-  if (length(unique(colData(subset_ccs)[[batch_col]])) > 1){
+  # make this any column
+  if (length(unique(colData(subset_ccs)[[batch_col]])) > 1) {
     # FIXME: This is identical code to what is immediately after the final construction of the model matrix, there may be value in writing a generic checker function
     # FIXME: This is also bespoke and may not be the best strategy to use in the general case.
     full_model_matrix = Matrix::sparse.model.matrix(
@@ -138,14 +138,16 @@ fit_genotype_ccm = function(genotype,
       )),
       data = colData(subset_ccs)
     )
-    if (Matrix::rankMatrix(full_model_matrix) < ncol(full_model_matrix)){
-      print(paste("Error: cannot correct for batches because the full model matrix is not full rank [model rank = ", Matrix::rankMatrix(full_model_matrix) , "ncol =", ncol(full_model_matrix),"]" ))
+    if (Matrix::rankMatrix(full_model_matrix) < ncol(full_model_matrix)) {
+      print(paste("Error: cannot correct for batches because the full model matrix is not full rank [model rank = ", Matrix::rankMatrix(full_model_matrix), "ncol =", ncol(full_model_matrix), "]"))
       print(colnames(full_model_matrix))
     } else {
       # main_model_formula_str = paste(main_model_formula_str, "+expt")
       nuisance_model_formula_str <- paste(nuisance_model_formula_str, "+", batch_col)
+      colData(subset_ccs)[[batch_col]] = as.factor(colData(subset_ccs)[[batch_col]])
     }
   }
+  colData(subset_ccs)[[perturbation_col]] = as.factor(colData(subset_ccs)[[perturbation_col]])
   
   main_model_formula_str_xxx = stringr::str_replace_all(main_model_formula_str, "~", "")
   nuisance_model_formula_str_xxx = stringr::str_replace_all(nuisance_model_formula_str, "~", "")
@@ -600,8 +602,9 @@ fit_wt_model = function(cds,
   
   # # make this any column 
   if (length(unique(colData(wt_ccs)[[batch_col]])) > 1){
-    #main_model_formula_str = paste(main_model_formula_str, "+expt")
+    # main_model_formula_str = paste(main_model_formula_str, "+expt")
     nuisance_model_formula_str = paste(nuisance_model_formula_str, "+", batch_col)
+    colData(wt_ccs)[[batch_col]] = as.factor(colData(wt_ccs)[[batch_col]])
   }
 
   if (is.null(main_model_formula_str)) {
