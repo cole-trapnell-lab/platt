@@ -41,7 +41,8 @@ new_cell_state_graph <- function(state_graph,
                                  edge_weights=NULL, 
                                  min_edge_size=0.1,
                                  max_edge_size=2, 
-                                 hide_unlinked_nodes = F) {
+                                 hide_unlinked_nodes = F, 
+                                 num_layers = 1) {
     assertthat::assert_that(is(state_graph, 'igraph'))
     assertthat::assert_that(is(ccs, 'cell_count_set'))
     
@@ -56,7 +57,8 @@ new_cell_state_graph <- function(state_graph,
                                   color_nodes_by = color_nodes_by, 
                                   label_nodes_by = label_nodes_by, 
                                   group_nodes_by = group_nodes_by, 
-                                  hide_unlinked_nodes = hide_unlinked_nodes)
+                                  hide_unlinked_nodes = hide_unlinked_nodes,
+                                  num_layers = num_layers)
     
     layout_info = layout_res$layout_info
     gvizl_coords = layout_info$gvizl_coords
@@ -102,7 +104,8 @@ get_graph_layout = function(ccs,
                             label_nodes_by= NULL,
                             group_nodes_by= NULL,
                             hide_unlinked_nodes = TRUE,
-                            arrow.gap=0.03) {
+                            arrow.gap=0.03,
+                            num_layers=1) {
   
   
   if (is(state_graph, "igraph")){
@@ -135,7 +138,7 @@ get_graph_layout = function(ccs,
   
   G = edges %>% distinct() %>% igraph::graph_from_data_frame(directed = T, vertices=node_metadata)
   
-  layout_info = layout_state_graph(G, node_metadata, edge_labels=NULL, weighted=FALSE)
+  layout_info = layout_state_graph(G, node_metadata, edge_labels=NULL, weighted=FALSE, num_layers=num_layers)
   
   gvizl_coords = layout_info$gvizl_coords
   bezier_df = layout_info$bezier_df
