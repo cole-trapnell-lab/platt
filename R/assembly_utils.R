@@ -125,7 +125,7 @@ fit_genotype_ccm = function(genotype,
       nuisance_model_formula_str = "~ 1"
   }
   
-  colData(subset_ccs)[[perturbation_col]] = as.factor(colData(subset_ccs)[[perturbation_col]])
+  colData(subset_ccs)$knockout = as.factor(colData(subset_ccs)$knockout)
   # make this any column
   if (length(unique(colData(subset_ccs)[[batch_col]])) > 1) {
     colData(subset_ccs)[[batch_col]] = as.factor(colData(subset_ccs)[[batch_col]])
