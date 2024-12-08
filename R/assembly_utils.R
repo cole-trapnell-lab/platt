@@ -209,11 +209,11 @@ fit_genotype_ccm = function(genotype,
 make_contrast = function(ccm, newdata = tibble()) {
   
   if (nrow(newdata) > 0 ){
-    newdata_wt = cross_join(tibble(knockout=FALSE), newdata)
-    newdata_mt = cross_join(tibble(knockout=TRUE), newdata)
+    newdata_wt = cross_join(tibble(knockout=as.factor(FALSE)), newdata)
+    newdata_mt = cross_join(tibble(knockout=as.factor(TRUE)), newdata)
   } else {
-    newdata_wt = tibble(knockout=FALSE) 
-    newdata_mt = tibble(knockout=TRUE) 
+    newdata_wt = tibble(knockout=as.factor(FALSE)) 
+    newdata_mt = tibble(knockout=as.factor(TRUE))
   }
   
   wt_cond = estimate_abundances(ccm, newdata = newdata_wt)
