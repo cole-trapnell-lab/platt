@@ -24,6 +24,7 @@ Depends:
     hooke
 Imports:
     ashr (>= 2.2-63),
+	speedglm,
     splines
 Remotes: cole-trapnell-lab/speedglm
 Suggests: 
