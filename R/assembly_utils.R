@@ -125,7 +125,6 @@ fit_genotype_ccm = function(genotype,
       nuisance_model_formula_str = "~ 1"
   }
   
-  colData(subset_ccs)$knockout = as.factor(colData(subset_ccs)$knockout)
   # make this any column
   if (length(unique(colData(subset_ccs)[[batch_col]])) > 1) {
     colData(subset_ccs)[[batch_col]] = as.factor(colData(subset_ccs)[[batch_col]])
@@ -209,11 +208,11 @@ fit_genotype_ccm = function(genotype,
 make_contrast = function(ccm, newdata = tibble()) {
   
   if (nrow(newdata) > 0 ){
-    newdata_wt = cross_join(tibble(knockout=as.factor(FALSE)), newdata)
-    newdata_mt = cross_join(tibble(knockout=as.factor(TRUE)), newdata)
+    newdata_wt = cross_join(tibble(knockout=FALSE), newdata)
+    newdata_mt = cross_join(tibble(knockout=TRUE), newdata)
   } else {
-    newdata_wt = tibble(knockout=as.factor(FALSE)) 
-    newdata_mt = tibble(knockout=as.factor(TRUE))
+    newdata_wt = tibble(knockout=FALSE) 
+    newdata_mt = tibble(knockout=TRUE)
   }
   
   wt_cond = estimate_abundances(ccm, newdata = newdata_wt)
