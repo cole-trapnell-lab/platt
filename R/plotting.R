@@ -1093,6 +1093,182 @@ collect_psg_node_metadata <- function(ccs,
   return(node_metadata)
 }
 
+connect_isolated_nodes <- function(G, node_metadata) {
+  # Ensure node_metadata has columns "id" and "group_nodes_by"
+  if (!all(c("id", "group_nodes_by") %in% colnames(node_metadata))) {
+    stop("node_metadata must have 'id' and 'group_nodes_by' columns.")
+  }
+  
+  # Create a mapping from node id to group
+  node_group_map <- node_metadata %>%
+    setNames(c("node", "group")) %>%
+    as.list()
+  
+  # Get the list of groups
+  groups <- unique(node_metadata$group_nodes_by)
+  
+  G_aug = G
+  
+  for (group in groups) {
+    # Extract nodes belonging to the current group
+    group_nodes <- node_metadata %>% filter(group_nodes_by == group) %>% pull(id)
+    
+    # Induce subgraph for the current group
+    G_sub <- igraph::induced.subgraph(G_aug, v = group_nodes)
+    
+    # Identify isolated nodes in the subgraph
+    isolated_nodes <- igraph::V(G_sub)[igraph::degree(G_sub) == 0]$name
+    
+    if (length(isolated_nodes) > 1) {
+      # Find connected components in the subgraph
+      components <- igraph::decompose.graph(G_sub)
+      
+      # Calculate the number of rows and columns for the grid
+      num_nodes <- length(isolated_nodes)
+      
+      # Determine the height of the grid based on the tallest connected component
+      max_component_size <- max(sapply(components, igraph::diameter))
+      if (max_component_size == 0)
+      {
+        num_rows = floor(sqrt(num_nodes))
+      }else{
+        num_rows <- ceiling(num_nodes / max_component_size)
+      }
+
+      num_cols <- max(1, num_nodes %/% num_rows)
+      
+      # Create a grid structure to connect isolated nodes
+      for (i in seq_len(num_nodes - 1)) {
+        row_i <- (i %/% num_cols) + 1
+        col_i <- (i %% num_cols) + 1
+        
+        row_j <- ((i + 1) %/% num_cols) + 1
+        col_j <- ((i + 1) %% num_cols) + 1
+        
+        if (row_i == row_j && col_j == col_i + 1) {
+          G_aug <- igraph::add_edges(G_aug, edges = c(isolated_nodes[i], isolated_nodes[i + 1]))
+        } else if (row_i == row_j + 1 && col_j == col_i) {
+          G_aug <- igraph::add_edges(G_aug, edges = c(isolated_nodes[i], isolated_nodes[i + 1]))
+        }
+      }
+    }
+  }
+  
+  return(G_aug)
+}
+
+assign_nodes_to_layers <- function(G, num_layers, node_metadata) {
+  # Ensure node_metadata has columns "id" and "group_nodes_by"
+  if (!all(c("id", "group_nodes_by") %in% colnames(node_metadata))) {
+    stop("node_metadata must have 'id' and 'group_nodes_by' columns.")
+  }
+  
+  # Create a mapping from node id to group
+  node_group_map <- setNames(node_metadata$group_nodes_by, node_metadata$id)
+  
+  # Get the list of groups
+  groups <- unique(node_metadata$group_nodes_by)
+  
+  # Create a list to hold nodes for each group
+  group_nodes <- vector("list", length(groups))
+  names(group_nodes) <- groups
+  
+  # Populate the group_nodes list with nodes from node_metadata
+  for (group in groups) {
+    group_nodes[[group]] <- node_metadata %>% filter(group_nodes_by == group) %>% pull(id)
+  }
+  
+  # Calculate the total number of nodes
+  total_nodes <- vcount(G)
+  
+  # Calculate the target number of nodes per layer
+  target_nodes_per_layer <- ceiling(total_nodes / num_layers)
+  
+  # Create a list to hold layers
+  layers <- vector("list", num_layers)
+  
+  current_layer <- 1
+  node_count_in_current_layer <- 0
+  
+  for (group in groups) {
+    group_node_ids <- unlist(group_nodes[[group]])
+    
+    # Check if adding this group would exceed the target number of nodes per layer
+    if (node_count_in_current_layer + length(group_node_ids) > target_nodes_per_layer && current_layer < num_layers) {
+      current_layer <- current_layer + 1
+      node_count_in_current_layer <- 0
+    }
+    
+    # Add the group to the current layer
+    layers[[current_layer]] <- c(layers[[current_layer]], group_node_ids)
+    node_count_in_current_layer <- node_count_in_current_layer + length(group_node_ids)
+  }
+  
+  return(layers)
+}
+
+# connect_hidden_nodes_for_layers <- function(G_with_hidden, layers){
+#   connected_G_with_hidden = G_with_hidden
+#   num_layers = length(layers)
+#   # Add connections between tail nodes of one layer and head nodes of the next layer
+#   for (i in seq_len(num_layers - 1)) {
+#     current_layer_subgraph = igraph::induced.subgraph(graph=connected_G_with_hidden,vids=layers[[i]])
+#     current_layer_tail_nodes = igraph::V(current_layer_subgraph)[igraph::degree(current_layer_subgraph, mode = "out") == 0]
+#     next_layer_subgraph = igraph::induced.subgraph(graph=connected_G_with_hidden,vids=layers[[i]])
+#     next_layer_head_nodes = igraph::V(next_layer_subgraph)[igraph::degree(next_layer_subgraph, mode = "in") == 0]
+#     
+#     for (tail_n in current_layer_tail_nodes) {
+#       for (head_n in next_layer_head_nodes) {
+#         connected_G_with_hidden <- add_edges(G_with_hidden, edges = c(tail_n, head_n))
+#       }
+#     }
+#   }
+#   return(connected_G_with_hidden)
+# }
+
+connect_hidden_nodes_for_layers <- function(G_with_hidden, layers) {
+  connected_G_with_hidden <- G_with_hidden
+  num_layers <- length(layers)
+  
+  # Add connections between tail nodes of one layer and head nodes of the next layer
+  for (i in seq_len(num_layers - 1)) {
+    #current_layer_subgraph <- igraph::induced.subgraph(graph = connected_G_with_hidden, vids = layers[[i]])
+    current_layer_subgraph = igraph::make_ego_graph(connected_G_with_hidden, order=1, nodes = layers[[i]], mode="out") # get current layer plus its hidden tail nodes
+    current_layer_subgraph = do.call(igraph::union, current_layer_subgraph)
+    current_layer_tail_nodes <- igraph::V(current_layer_subgraph)[igraph::degree(current_layer_subgraph, mode = "out") == 0]$name
+    current_layer_tail_nodes = current_layer_tail_nodes[grepl("^tail_", current_layer_tail_nodes)] #select only the hidden tail nodes
+    
+    #next_layer_subgraph <- igraph::induced.subgraph(graph = connected_G_with_hidden, vids = layers[[i + 1]])
+    next_layer_subgraph = igraph::make_ego_graph(connected_G_with_hidden, order=1, nodes = layers[[i+1]], mode="in") # get current layer plus its hidden tail nodes
+    next_layer_subgraph = do.call(igraph::union, next_layer_subgraph)
+    next_layer_head_nodes <- igraph::V(next_layer_subgraph)[igraph::degree(next_layer_subgraph, mode = "in") == 0]$name 
+    next_layer_head_nodes = next_layer_head_nodes[grepl("^head_", next_layer_head_nodes)] #select only the hidden head nodes
+    
+    # Convert vertex sequences to numeric IDs
+    #current_layer_tail_ids <- as.numeric(current_layer_tail_nodes)
+    #next_layer_head_ids <- as.numeric(next_layer_head_nodes)
+    
+    num_heads <- length(next_layer_head_nodes)
+    
+    for (j in seq_along(current_layer_tail_nodes)) {
+      tail_n <- current_layer_tail_nodes[j]
+      
+      # Determine the indices of head nodes to connect
+      start_idx <- ((j - 1) %% num_heads) + 1
+      end_idx <- min(start_idx + 5, num_heads)
+      
+      selected_heads <- next_layer_head_nodes[start_idx:end_idx]
+      
+      for (head_n in selected_heads) {
+        connected_G_with_hidden <- add_edges(connected_G_with_hidden, edges = c(tail_n, head_n))
+      }
+    }
+  }
+  
+  return(connected_G_with_hidden)
+}
+
+
 layout_state_graph <- function(G, node_metadata, edge_labels = NULL, num_layers = 1, weighted = FALSE) {
   
   make_subgraphs_for_groups <- function(subgraph_ids, G_nel){
@@ -1110,28 +1286,34 @@ layout_state_graph <- function(G, node_metadata, edge_labels = NULL, num_layers 
   # Check if the graph is weighted
   # weighted <- "weight" %in% edge_attr_names(G)
   
+  G_orig = G
+  
+  G = connect_isolated_nodes(G, node_metadata)
+  
   # Detect all connected components in the graph
   components <- decompose(G)
   num_components <- length(components)
   
-  # Calculate the number of components per layer
-  components_per_layer <- ceiling(num_components / num_layers)
+  # # Calculate the number of components per layer
+  # components_per_layer <- ceiling(num_components / num_layers)
+  # 
+  # # Create a list to hold components for each layer
+  # layers <- vector("list", num_layers)
+  # current_layer <- 1
+  # node_count <- 0
+  # 
+  # for (i in seq_len(num_components)) {
+  #   comp <- components[[i]]
+  #   node_count <- node_count + vcount(comp)
+  #   
+  #   if (node_count > components_per_layer * current_layer && current_layer < num_layers) {
+  #     current_layer <- current_layer + 1
+  #   }
+  #   
+  #   layers[[current_layer]] <- c(layers[[current_layer]], i)
+  # }
   
-  # Create a list to hold components for each layer
-  layers <- vector("list", num_layers)
-  current_layer <- 1
-  node_count <- 0
-  
-  for (i in seq_len(num_components)) {
-    comp <- components[[i]]
-    node_count <- node_count + vcount(comp)
-    
-    if (node_count > components_per_layer * current_layer && current_layer < num_layers) {
-      current_layer <- current_layer + 1
-    }
-    
-    layers[[current_layer]] <- c(layers[[current_layer]], i)
-  }
+  layers = assign_nodes_to_layers(G, num_layers, node_metadata)
   
   # Add hidden head and tail nodes for each component
   G_with_hidden <- G
@@ -1172,17 +1354,7 @@ layout_state_graph <- function(G, node_metadata, edge_labels = NULL, num_layers 
     }
   }
   
-  # Add connections between tail nodes of one layer and head nodes of the next layer
-  for (i in seq_len(num_layers - 1)) {
-    current_layer_tail_nodes <- tail_nodes[layers[[i]]]
-    next_layer_head_nodes <- head_nodes[layers[[i + 1]]]
-    
-    for (tail in current_layer_tail_nodes) {
-      for (head in next_layer_head_nodes) {
-        G_with_hidden <- add_edges(G_with_hidden, edges = c(tail, head))
-      }
-    }
-  }
+  G_with_hidden = connect_hidden_nodes_for_layers(G_with_hidden, layers)
   
   # Convert the graph with hidden nodes to graphNEL
   if (weighted) {
@@ -1248,9 +1420,14 @@ layout_state_graph <- function(G, node_metadata, edge_labels = NULL, num_layers 
   # Remove hidden nodes and edges from gvizl_coords, bezier_df, and label_df
   hidden_nodes <- c(head_nodes, tail_nodes)
   gvizl_coords_clean <- gvizl_coords[!rownames(gvizl_coords) %in% hidden_nodes, ]
-  # Filter edge data frames to remove edges involving hidden nodes
+  # Filter edge data frames to remove edges involving hidden nodes and edges
+  G_orig_edgelist = igraph::get.edgelist(G_orig)
+  colnames(G_orig_edgelist) = c("from", "to")
+  G_orig_edgelist = G_orig_edgelist %>% as_tibble()
+  
   bezier_df_clean = bezier_df %>% 
     filter(from %in% hidden_nodes == FALSE & to %in% hidden_nodes == FALSE)
+  bezier_df_clean = bezier_df_clean %>% inner_join(G_orig_edgelist, by=c("from"="from", "to"="to"))
   
   print (head(bezier_df_clean))
   if (!is.null(label_df)) {
