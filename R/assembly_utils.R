@@ -102,13 +102,13 @@ fit_genotype_ccm = function(genotype,
     time_breakpoints = seq(knockout_time_start, knockout_time_stop, length.out=num_time_breaks)
     time_breakpoints = time_breakpoints[2:(length(time_breakpoints) - 1)] #exclude the first and last entry as these will become boundary knots
     
-    time_term = paste("~ splines::ns(",interval_col,", knots=", paste("c(",paste(time_breakpoints, collapse=","), ")", sep=""), ")")
+    time_term = paste("~ ns(",interval_col,", knots=", paste("c(",paste(time_breakpoints, collapse=","), ")", sep=""), ")")
     
     # If there are only two timepoints for a knockout, we can't have interaction terms between
     # the time spline and the knockout indicator variable. The model won't be
     # full rank
     if (independent_spline_for_ko & num_knockout_timepoints >= 3){
-      knockout_terms = paste("~ splines::ns(",interval_col,", knots=", paste("c(",paste(time_breakpoints, collapse=","), ")", sep=""), "):knockout + knockout")
+      knockout_terms = paste("~ ns(",interval_col,", knots=", paste("c(",paste(time_breakpoints, collapse=","), ")", sep=""), "):knockout + knockout")
     }else{
       knockout_terms = "~ knockout"
     }
