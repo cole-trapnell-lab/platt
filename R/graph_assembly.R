@@ -1000,7 +1000,7 @@ build_timeseries_transition_graph <- function(ccm,
     as.data.frame() %>%
     tibble::rownames_to_column() %>%
     tidyr::pivot_longer(!matches("rowname")) %>%
-    rename(sample=rowname, cell_group=name, num_cells=value)
+    dplyr::rename(sample=rowname, cell_group=name, num_cells=value)
 
   paths_for_relevant_edges = paths_for_relevant_edges %>%
     filter(!is.na(path))
