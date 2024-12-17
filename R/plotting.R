@@ -557,6 +557,22 @@ calc_sig_ind <- function(p_value, html = TRUE) {
 
 }
 
+#' @noRd
+calc_sig_rank <- function(p_value) {
+  #p_value <- suppressWarnings(
+  #  num_extract(p_value, as_char = FALSE)
+  #)
+    dplyr::case_when(
+      p_value <= 0 ~ 2,
+      p_value <= 0.001 ~ 2,
+      p_value <= 0.01 ~ 1,
+      p_value <= 0.05 ~ 1,
+      p_value <= 0.1 ~ 0.5,
+      p_value <= 1 ~ 0.5,
+      TRUE ~ 1
+    )
+}
+
 #' Plot the expression of a single gene on the state transition graph
 #' @export
 plot_state_graph_abundance_changes <- function(ccs,
