@@ -406,6 +406,8 @@ compare_genes_over_graph <- function(ccs,
   }
   cell_states = tibble(cell_state = states_to_assess)
   
+  browser()
+  debugonce(compare_genes_in_cell_state)
   cell_states = cell_states %>%
     dplyr::mutate(gene_classes = purrr::map(.f = purrr::possibly(
       compare_genes_in_cell_state, NA_real_), 
@@ -518,12 +520,14 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
     mutate(term = stringr::str_replace(term,"\\(\\)","Intercept"))
   
   fail_gene_ids = model_tbl %>% filter(status == "FAIL") %>% select(id)
-  term_to_keep_levels = levels(colData(cds)[,term_to_keep])
+  term_to_keep_levels = levels(as.factor(colData(cds)[,term_to_keep]))
   #term_table = tibble(term=stringr::str_c(term_to_keep, term_to_keep_levels))
   term_table = tibble(term=term_to_keep_levels)
   
   fail_coeff_rows = tidyr::crossing(fail_gene_ids, term_table) %>% mutate(estimate = NA_real_)
-  raw_coefficient_table = bind_rows(raw_coefficient_table, fail_coeff_rows)
+  raw_coefficient_table = raw_coefficient_table %>%
+    mutate(estimate = if_else(id %in% fail_gene_ids$id, NA_real_, estimate))
+  # raw_coefficient_table = bind_rows(raw_coefficient_table, fail_coeff_rows)
   
   estimate_matrix = raw_coefficient_table %>% dplyr::select(id, term, estimate)
   if (term_to_keep != "(Intercept)"){
@@ -532,7 +536,7 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   estimate_matrix = estimate_matrix %>% mutate(id = factor(id, levels=model_tbl$id))
   
   print ("\tpivoting coefficient table:")
-  print (head(estimate_matrix))
+  print(head(estimate_matrix))
   estimate_matrix = estimate_matrix %>% tidyr::pivot_wider(names_from=term, values_from=estimate, id_expand = TRUE, values_fill=0)
   
   gene_ids = estimate_matrix$id
@@ -1323,6 +1327,7 @@ compare_genes_in_cell_state <- function(cell_state,
 
     }
     
+    # FIXME -- this needs to go into the above else block, but then genes_to_test needs to be defined some other way bc cell_state_genes is also not defined
     sibling_genes = siblings_to_ambient %>% filter(siblings_raw_lfc > abs_expr_thresh) %>% pull(id)
     genes_to_test = intersect(cell_state_genes, sibling_genes)
     
