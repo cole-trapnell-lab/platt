@@ -407,6 +407,7 @@ compare_genes_over_graph <- function(ccs,
   cell_states = tibble(cell_state = states_to_assess)
   
   browser()
+  # I made some adjustments to this to deal with the case where there is no ambient expression, but now the join seems to be failing and there is no shrunken LFC values in the result
   debugonce(compare_genes_in_cell_state)
   cell_states = cell_states %>%
     dplyr::mutate(gene_classes = purrr::map(.f = purrr::possibly(
@@ -423,8 +424,10 @@ compare_genes_over_graph <- function(ccs,
       sig_thresh=sig_thresh,
       cores=cores))
   
-  
-  cell_states = cell_states %>%
+  browser()
+  # This is failing
+  debugonce(score_genes_for_expression_pattern)
+  test = cell_states %>%
     filter(is.na(gene_classes) == FALSE) %>%
     dplyr::mutate(gene_class_scores = purrr::map2(.f = purrr::possibly(
       score_genes_for_expression_pattern, NA_real_),
@@ -1212,6 +1215,7 @@ compare_genes_in_cell_state <- function(cell_state,
     expr_df$expr_self = pnorm(estimate_matrix[,cell_state] - log(abs_expr_thresh), 
                               sd = stderr_matrix[,cell_state], lower.tail=FALSE)
     expr_df$expr_self = p.adjust(expr_df$expr_self, method="BH") < sig_thresh
+    genes_to_test = expr_df$gene_id
   } else {
     cell_state_to_ambient = contrast_helper(cell_state, "Intercept", 
                                             PEM = estimate_matrix, 
@@ -1262,10 +1266,10 @@ compare_genes_in_cell_state <- function(cell_state,
       expr_df = left_join(expr_df, parents_to_ambient, by = c("gene_id" = "id"))
       expr_df$expressed_in_parents = p.adjust(expr_df$parents_raw_p_value, method="BH") < sig_thresh & 
                                      expr_df$parents_raw_lfc > log_fc_thresh
-    }
     
-    parent_genes = parents_to_ambient %>% filter(parents_raw_lfc > abs_expr_thresh) %>% pull(id)
-    genes_to_test = intersect(cell_state_genes, parent_genes)
+      parent_genes = parents_to_ambient %>% filter(parents_raw_lfc > abs_expr_thresh) %>% pull(id)
+      genes_to_test = intersect(cell_state_genes, parent_genes)
+    }
     
     cell_state_to_parents = contrast_helper(cell_state, parents, 
                                             PEM = estimate_matrix[genes_to_test,], 
@@ -1325,11 +1329,9 @@ compare_genes_in_cell_state <- function(cell_state,
       expr_df$expressed_in_siblings = p.adjust(expr_df$siblings_raw_p_value, method="BH") < sig_thresh & 
                                       expr_df$siblings_raw_lfc > log_fc_thresh
 
+      sibling_genes = siblings_to_ambient %>% filter(siblings_raw_lfc > abs_expr_thresh) %>% pull(id)
+      genes_to_test = intersect(cell_state_genes, sibling_genes)
     }
-    
-    # FIXME -- this needs to go into the above else block, but then genes_to_test needs to be defined some other way bc cell_state_genes is also not defined
-    sibling_genes = siblings_to_ambient %>% filter(siblings_raw_lfc > abs_expr_thresh) %>% pull(id)
-    genes_to_test = intersect(cell_state_genes, sibling_genes)
     
     # cell_state_to_siblings = contrast_helper(cell_state, siblings, 
     #                                          PEM = estimate_matrix[genes_to_test,], 
@@ -1420,10 +1422,10 @@ compare_genes_in_cell_state <- function(cell_state,
       expr_df = left_join(expr_df, children_to_ambient, by = c("gene_id" = "id"))
       expr_df$expressed_in_children = p.adjust(expr_df$children_raw_p_value, method="BH") < sig_thresh & 
                                       expr_df$children_raw_lfc > log_fc_thresh
-     }
     
-    children_genes = children_to_ambient %>% filter(children_raw_lfc > abs_expr_thresh) %>% pull(id)
-    genes_to_test = intersect(cell_state_genes, children_genes)
+      children_genes = children_to_ambient %>% filter(children_raw_lfc > abs_expr_thresh) %>% pull(id)
+      genes_to_test = intersect(cell_state_genes, children_genes)
+     }
     
     # cell_state_to_children = contrast_helper(cell_state, children, 
     #                                          PEM = estimate_matrix[genes_to_test,], 
