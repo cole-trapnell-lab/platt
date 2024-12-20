@@ -25,6 +25,7 @@ Depends:
 Imports:
     ashr (>= 2.2-63),
     dplyr,
+    magrittr,
     speedglm,
     splines
 Remotes: cole-trapnell-lab/speedglm
