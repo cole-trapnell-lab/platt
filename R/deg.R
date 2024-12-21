@@ -183,21 +183,6 @@ score_genes_for_expression_pattern <- function(cell_state, gene_patterns, state_
   return(gene_patterns_and_scores)
 }
 
-
-#' @noRDS
-compare_genes_within_cell_state <- function(cell_state, state_graph){
-  
-  
-  estimates_for_parents = Matrix::rowSums(pb_coeffs$coefficients[,control_ids, drop=F])
-  stderrs_for_parents = sqrt(Matrix::rowSums(pb_coeffs$stdev.unscaled[,control_ids, drop=F]^2))
-  
-  
-}
-
-
-
-
-
 #' helper function 
 #' @param ccs
 #' @param cell_states
