@@ -427,7 +427,7 @@ compare_genes_over_graph <- function(ccs,
   browser()
   # This is failing
   debugonce(score_genes_for_expression_pattern)
-  test = cell_states %>%
+  cell_states = cell_states %>%
     filter(is.na(gene_classes) == FALSE) %>%
     dplyr::mutate(gene_class_scores = purrr::map2(.f = purrr::possibly(
       score_genes_for_expression_pattern, NA_real_),
