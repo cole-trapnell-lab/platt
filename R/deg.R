@@ -140,7 +140,7 @@ score_genes_for_expression_pattern <- function(cell_state, gene_patterns, state_
     sibling_cols = c()
   }
   
-  data_mat = gene_patterns %>% tidyr::unnest(data) %>% column_to_rownames("gene_id") 
+  data_mat = gene_patterns %>% tidyr::unnest(data) %>% tibble::column_to_rownames("gene_id") 
   data_mat = data_mat %>% select(all_of(c("cell_state_shrunken_lfc", parent_cols, child_cols, sibling_cols))) %>% as.matrix()
   
   self_estimates = data_mat[gene_patterns$gene_id, "cell_state_shrunken_lfc", drop=FALSE] %>% as.matrix()
@@ -406,9 +406,9 @@ compare_genes_over_graph <- function(ccs,
   }
   cell_states = tibble(cell_state = states_to_assess)
   
-  browser()
+  #browser()
   # I made some adjustments to this to deal with the case where there is no ambient expression, but now the join seems to be failing and there is no shrunken LFC values in the result
-  debugonce(compare_genes_in_cell_state)
+  #debugonce(compare_genes_in_cell_state)
   cell_states = cell_states %>%
     dplyr::mutate(gene_classes = purrr::map(.f = purrr::possibly(
       compare_genes_in_cell_state, NA_real_), 
@@ -424,13 +424,13 @@ compare_genes_over_graph <- function(ccs,
       sig_thresh=sig_thresh,
       cores=cores))
   
-  browser()
+  #browser()
   # This is failing
-  debugonce(score_genes_for_expression_pattern)
+  #debugonce(score_genes_for_expression_pattern)
   test = cell_states %>%
     filter(is.na(gene_classes) == FALSE) %>%
-    dplyr::mutate(gene_class_scores = purrr::map2(.f = purrr::possibly(
-      score_genes_for_expression_pattern, NA_real_),
+    dplyr::mutate(gene_class_scores = purrr::map2(.f = 
+      score_genes_for_expression_pattern,
       .x = cell_state,
       .y = gene_classes,
       state_graph,
@@ -1377,20 +1377,20 @@ compare_genes_in_cell_state <- function(cell_state,
     row.names(lower_than_siblings_mat) = genes_to_test
     
     expr_df$higher_than_siblings = left_join(expr_df, 
-                        data.frame("higher_than_siblings" = Matrix::rowSums(higher_than_siblings_mat) > 0) %>% rownames_to_column("gene_id"), by="gene_id") %>% 
+                        data.frame("higher_than_siblings" = Matrix::rowSums(higher_than_siblings_mat) > 0) %>% tibble::rownames_to_column("gene_id"), by="gene_id") %>% 
                         pull(higher_than_siblings.y)
     expr_df$lower_than_siblings = left_join(expr_df, 
-                        data.frame("lower_than_siblings" = Matrix::rowSums(lower_than_siblings_mat) > 0) %>% rownames_to_column("gene_id"), by="gene_id") %>% 
+                        data.frame("lower_than_siblings" = Matrix::rowSums(lower_than_siblings_mat) > 0) %>% tibble::rownames_to_column("gene_id"), by="gene_id") %>% 
                         pull(lower_than_siblings.y)
     
     
     # change this to pairwise 
     expr_df$higher_than_all_siblings = left_join(expr_df, 
-                         data.frame("higher_than_all_siblings" = Matrix::rowSums(higher_than_siblings_mat) == ncol(higher_than_siblings_mat)) %>% rownames_to_column("gene_id"), by="gene_id") %>% 
+                         data.frame("higher_than_all_siblings" = Matrix::rowSums(higher_than_siblings_mat) == ncol(higher_than_siblings_mat)) %>% tibble::rownames_to_column("gene_id"), by="gene_id") %>% 
                          pull(higher_than_all_siblings.y)
     
     expr_df$lower_than_all_siblings = left_join(expr_df, 
-                         data.frame("lower_than_all_siblings" = Matrix::rowSums(lower_than_siblings_mat) == ncol(lower_than_siblings_mat)) %>% rownames_to_column("gene_id"), by="gene_id") %>% 
+                         data.frame("lower_than_all_siblings" = Matrix::rowSums(lower_than_siblings_mat) == ncol(lower_than_siblings_mat)) %>% tibble::rownames_to_column("gene_id"), by="gene_id") %>% 
                          pull(lower_than_all_siblings.y)
     
     
@@ -1470,20 +1470,20 @@ compare_genes_in_cell_state <- function(cell_state,
     row.names(lower_than_children_mat) = genes_to_test
     
     expr_df$higher_than_children = left_join(expr_df, 
-                        data.frame("higher_than_children" = Matrix::rowSums(higher_than_children_mat) > 0) %>% rownames_to_column("gene_id"), by="gene_id") %>% 
+                        data.frame("higher_than_children" = Matrix::rowSums(higher_than_children_mat) > 0) %>% tibble::rownames_to_column("gene_id"), by="gene_id") %>% 
                         pull(higher_than_children.y)
     expr_df$lower_than_children = left_join(expr_df, 
-                        data.frame("lower_than_children" = Matrix::rowSums(lower_than_children_mat) > 0) %>% rownames_to_column("gene_id"), by="gene_id") %>% 
+                        data.frame("lower_than_children" = Matrix::rowSums(lower_than_children_mat) > 0) %>% tibble::rownames_to_column("gene_id"), by="gene_id") %>% 
                         pull(lower_than_children.y)
     
     
     expr_df$higher_than_all_children = left_join(expr_df, 
-                        data.frame("higher_than_all_children" = Matrix::rowSums(higher_than_children_mat) == ncol(higher_than_children_mat)) %>% rownames_to_column("gene_id"), 
+                        data.frame("higher_than_all_children" = Matrix::rowSums(higher_than_children_mat) == ncol(higher_than_children_mat)) %>% tibble::rownames_to_column("gene_id"), 
                         by="gene_id") %>% 
                         pull(higher_than_all_children.y)
     
     expr_df$lower_than_all_children = left_join(expr_df, 
-                        data.frame("lower_than_all_children" = Matrix::rowSums(lower_than_children_mat) == ncol(lower_than_children_mat)) %>% rownames_to_column("gene_id"), 
+                        data.frame("lower_than_all_children" = Matrix::rowSums(lower_than_children_mat) == ncol(lower_than_children_mat)) %>% tibble::rownames_to_column("gene_id"), 
                         by="gene_id") %>% 
                         pull(lower_than_all_children.y)
     
