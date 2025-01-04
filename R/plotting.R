@@ -1223,25 +1223,6 @@ assign_nodes_to_layers <- function(G, num_layers, node_metadata) {
   return(layers)
 }
 
-# connect_hidden_nodes_for_layers <- function(G_with_hidden, layers){
-#   connected_G_with_hidden = G_with_hidden
-#   num_layers = length(layers)
-#   # Add connections between tail nodes of one layer and head nodes of the next layer
-#   for (i in seq_len(num_layers - 1)) {
-#     current_layer_subgraph = igraph::induced.subgraph(graph=connected_G_with_hidden,vids=layers[[i]])
-#     current_layer_tail_nodes = igraph::V(current_layer_subgraph)[igraph::degree(current_layer_subgraph, mode = "out") == 0]
-#     next_layer_subgraph = igraph::induced.subgraph(graph=connected_G_with_hidden,vids=layers[[i]])
-#     next_layer_head_nodes = igraph::V(next_layer_subgraph)[igraph::degree(next_layer_subgraph, mode = "in") == 0]
-#     
-#     for (tail_n in current_layer_tail_nodes) {
-#       for (head_n in next_layer_head_nodes) {
-#         connected_G_with_hidden <- add_edges(G_with_hidden, edges = c(tail_n, head_n))
-#       }
-#     }
-#   }
-#   return(connected_G_with_hidden)
-# }
-
 connect_hidden_nodes_for_layers <- function(G_with_hidden, layers) {
   connected_G_with_hidden <- G_with_hidden
   num_layers <- length(layers)
@@ -1285,94 +1266,106 @@ connect_hidden_nodes_for_layers <- function(G_with_hidden, layers) {
 }
 
 
+#' Layout State Graph
+#'
+#' This function layouts a directed graph with optional node metadata and edge labels.
+#' It ensures the graph is directed, connects isolated nodes, assigns nodes to layers,
+#' and adds hidden head and tail nodes to each component. The function then performs
+#' layout using Rgraphviz and extracts Bezier curve control points for edges.
+#'
+#' @param G An igraph object representing the directed graph.
+#' @param node_metadata A data frame containing node metadata. Must include columns 'group_nodes_by' and 'id'.
+#' @param edge_labels A named vector of edge labels (optional).
+#' @param num_layers An integer specifying the number of layers for node assignment (default is 1).
+#' @param weighted A logical value indicating whether the graph is weighted (default is FALSE).
+#'
+#' @return A list containing:
+#' \item{gvizl_coords}{A matrix of layout coordinates for the nodes.}
+#' \item{bezier_df}{A data frame of Bezier curve control points for edges.}
+#' \item{label_df}{A data frame of edge labels (if provided).}
+#' \item{grouping_df}{A data frame of node groupings based on metadata.}
+#' \item{hidden_gvizl_coords}{A matrix of layout coordinates for hidden nodes.}
+#' \item{hidden_bezier_df}{A data frame of Bezier curve control points for edges involving hidden nodes.}
+#' \item{hidden_label_df}{A data frame of edge labels for edges involving hidden nodes (if provided).}
+#'
+#' @import igraph
+#' @import dplyr
+#' @import tidyr
+#' @import purrr
+#' @import Rgraphviz
+#' @importFrom graph subGraph graphAM
+#' @importFrom stringr str_split_fixed
+#' @importFrom tibble tibble
+#' @importFrom stats setNames
+#' @importFrom utils head
+#'
+#' @examples
+#' # Example usage:
+#' G <- igraph::make_ring(10, directed = TRUE)
+#' node_metadata <- data.frame(id = 1:10, group_nodes_by = rep(1:2, each = 5))
+#' result <- layout_state_graph(G, node_metadata)
+#' 
+#' @export
 layout_state_graph <- function(G, node_metadata, edge_labels = NULL, num_layers = 1, weighted = FALSE) {
   
   make_subgraphs_for_groups <- function(subgraph_ids, G_nel){
     sg_nodes = subgraph_ids %>% pull(id) %>% as.character %>% unique()
     sg = list(graph=graph::subGraph(snodes=sg_nodes, graph=G_nel), cluster=TRUE)
-    #sg = graph::subGraph(snodes=sg_nodes, graph=G_nel)
     return (sg)
   }
   
-  # Check if the graph is directed
   if (!is_directed(G)) {
     stop("The graph must be directed.")
   }
   
-  # Check if the graph is weighted
-  # weighted <- "weight" %in% edge_attr_names(G)
-  
   G_orig = G
-  
   G = connect_isolated_nodes(G, node_metadata)
-  
-  # Detect all connected components in the graph
   components <- decompose(G)
   num_components <- length(components)
-  
-  # # Calculate the number of components per layer
-  # components_per_layer <- ceiling(num_components / num_layers)
-  # 
-  # # Create a list to hold components for each layer
-  # layers <- vector("list", num_layers)
-  # current_layer <- 1
-  # node_count <- 0
-  # 
-  # for (i in seq_len(num_components)) {
-  #   comp <- components[[i]]
-  #   node_count <- node_count + vcount(comp)
-  #   
-  #   if (node_count > components_per_layer * current_layer && current_layer < num_layers) {
-  #     current_layer <- current_layer + 1
-  #   }
-  #   
-  #   layers[[current_layer]] <- c(layers[[current_layer]], i)
-  # }
-  
   layers = assign_nodes_to_layers(G, num_layers, node_metadata)
   
-  # Add hidden head and tail nodes for each component
   G_with_hidden <- G
-  
   head_nodes <- paste0("head_", seq_len(num_components))
   tail_nodes <- paste0("tail_", seq_len(num_components))
-  
+
+  hidden_nodes_tibble <- tibble(node_id = character(), component = integer(), group = character())
+
   for (i in seq_len(num_components)) {
     comp <- components[[i]]
-    
-    # Find root nodes (nodes with no incoming edges)
     root_nodes <- V(comp)[igraph::degree(comp, mode = "in") == 0]$name
     if (length(root_nodes) == 0) {
-      root_nodes <- V(comp)[1]$name  # If no root nodes, choose the first node as a fallback
+      root_nodes <- V(comp)[1]$name
     }
-    
-    # Find leaf nodes (nodes with no outgoing edges)
     leaf_nodes <- V(comp)[igraph::degree(comp, mode = "out") == 0]$name
     if (length(leaf_nodes) == 0) {
-      leaf_nodes <- V(comp)[1]$name  # If no leaf nodes, choose the first node as a fallback
+      leaf_nodes <- V(comp)[1]$name
     }
-    
-    # Add head and tail nodes
+
     G_v_names = igraph::V(G_with_hidden)$name
     G_with_hidden <- add_vertices(G_with_hidden, 2)
-    #print (c(G_v_names, head_nodes[i], tail_nodes[i]))
     igraph::V(G_with_hidden)$name <- c(G_v_names, head_nodes[i], tail_nodes[i])
-    
-    # Connect head node to root nodes
+
     for (root in root_nodes) {
-      #print (root)
       G_with_hidden <- add_edges(G_with_hidden, edges = c(head_nodes[i], as.character(root)))
     }
-    
-    # Connect leaf nodes to tail node
     for (leaf in leaf_nodes) {
       G_with_hidden <- add_edges(G_with_hidden, edges = c(as.character(leaf), tail_nodes[i]))
     }
+
+    # Determine the group for the hidden nodes
+    root_groups <- node_metadata %>% filter(id %in% root_nodes) %>% pull(group_nodes_by)
+    leaf_groups <- node_metadata %>% filter(id %in% leaf_nodes) %>% pull(group_nodes_by)
+    
+    head_group <- names(sort(table(root_groups), decreasing = TRUE))[1]
+    tail_group <- names(sort(table(leaf_groups), decreasing = TRUE))[1]
+    
+    hidden_nodes_tibble <- hidden_nodes_tibble %>%
+      add_row(node_id = head_nodes[i], component = i, group = head_group) %>%
+      add_row(node_id = tail_nodes[i], component = i, group = tail_group)
   }
   
   G_with_hidden = connect_hidden_nodes_for_layers(G_with_hidden, layers)
   
-  # Convert the graph with hidden nodes to graphNEL
   if (weighted) {
     G_with_hidden_nel <- graph::graphAM(asMatrix = as_adjacency_matrix(G_with_hidden, sparse = FALSE, attr = "weight"), edgemode = "directed") %>% as("graphNEL")
   } else {
@@ -1392,38 +1385,23 @@ layout_state_graph <- function(G, node_metadata, edge_labels = NULL, num_layers 
     subgraphs = subgraph_df$subgraph
     names(subgraphs) = subgraph_df$group_nodes_by
   }
-  #print (subgraphs)
   
-  # Perform the layout using Rgraphviz
   gvizl <- Rgraphviz::layoutGraph(G_with_hidden_nel, layoutType="dot", subGList=subgraphs, recipEdges="distinct")
-  #print (str(gvizl))
-  # Extract node coordinates
   gvizl_coords <- cbind(gvizl@renderInfo@nodes$nodeX, gvizl@renderInfo@nodes$nodeY)
-  #print (gvizl_coords)
-  #rownames(gvizl_coords) <- names(V(G_with_hidden_nel))
   
-    beziers = lapply(gvizl@renderInfo@edges$splines, function(bc) {
-      bc_segments = lapply(bc, Rgraphviz::bezierPoints)
-      bezier_cp_df = do.call(rbind, bc_segments) %>% as.data.frame
-      colnames(bezier_cp_df) = c("x", "y")
-      #bezier_cp_df$point = "control"
-      #bezier_cp_df$point[1] = "end"
-      #bezier_cp_df$point[nrow(bezier_cp_df)] = "end"
-      bezier_cp_df
-      #control_point_coords = lapply(bc, function(cp) Rgraphviz::getPoints)
-      #control_point_coords = rbind(control_point_coords)
-    })
-    bezier_df = do.call(rbind, beziers)
-    bezier_df$edge_name = stringr::str_split_fixed(row.names(bezier_df), "\\.", 2)[,1]
-    bezier_df$from = stringr::str_split_fixed(bezier_df$edge_name, "~", 2)[,1]
-    bezier_df$to = stringr::str_split_fixed(bezier_df$edge_name, "~", 2)[,2]
-    #bezier_df = bezier_df %>% mutate(x = ggnetwork:::scale_safely(x),
-    #                                 y = ggnetwork:::scale_safely(y))
-
-    bezier_df = left_join(bezier_df, tibble(edge_name=names(gvizl@renderInfo@edges$direction), edge_direction=gvizl@renderInfo@edges$direction))
-    bezier_df = bezier_df %>% dplyr::distinct()
-
-  # Extract edge labels
+  beziers = lapply(gvizl@renderInfo@edges$splines, function(bc) {
+    bc_segments = lapply(bc, Rgraphviz::bezierPoints)
+    bezier_cp_df = do.call(rbind, bc_segments) %>% as.data.frame
+    colnames(bezier_cp_df) = c("x", "y")
+    bezier_cp_df
+  })
+  bezier_df = do.call(rbind, beziers)
+  bezier_df$edge_name = stringr::str_split_fixed(row.names(bezier_df), "\\.", 2)[,1]
+  bezier_df$from = stringr::str_split_fixed(bezier_df$edge_name, "~", 2)[,1]
+  bezier_df$to = stringr::str_split_fixed(bezier_df$edge_name, "~", 2)[,2]
+  bezier_df = left_join(bezier_df, tibble(edge_name=names(gvizl@renderInfo@edges$direction), edge_direction=gvizl@renderInfo@edges$direction))
+  bezier_df = bezier_df %>% dplyr::distinct()
+  
   if (!is.null(edge_labels)) {
     label_df <- data.frame(
       edge_id = gsub("\\.", "~", names(gvizl@renderInfo@edges$splines)),
@@ -1433,10 +1411,17 @@ layout_state_graph <- function(G, node_metadata, edge_labels = NULL, num_layers 
     label_df <- NULL
   }
   
-  # Remove hidden nodes and edges from gvizl_coords, bezier_df, and label_df
   hidden_nodes <- c(head_nodes, tail_nodes)
   gvizl_coords_clean <- gvizl_coords[!rownames(gvizl_coords) %in% hidden_nodes, ]
-  # Filter edge data frames to remove edges involving hidden nodes and edges
+  gvizl_coords_hidden <- gvizl_coords[rownames(gvizl_coords) %in% hidden_nodes, ]
+  
+  hidden_gvizl_coords_tibble <- tibble(
+    x = gvizl_coords_hidden[, 1],
+    y = gvizl_coords_hidden[, 2],
+    name = rownames(gvizl_coords_hidden)
+  )
+  hidden_gvizl_coords_tibble = hidden_gvizl_coords_tibble %>% left_join(hidden_nodes_tibble, by=c("name"="node_id"))
+
   G_orig_edgelist = igraph::get.edgelist(G_orig)
   colnames(G_orig_edgelist) = c("from", "to")
   G_orig_edgelist = G_orig_edgelist %>% as_tibble()
@@ -1445,20 +1430,32 @@ layout_state_graph <- function(G, node_metadata, edge_labels = NULL, num_layers 
     filter(from %in% hidden_nodes == FALSE & to %in% hidden_nodes == FALSE)
   bezier_df_clean = bezier_df_clean %>% inner_join(G_orig_edgelist, by=c("from"="from", "to"="to"))
   
-  print (head(bezier_df_clean))
+  bezier_df_hidden = bezier_df %>% 
+    filter(from %in% hidden_nodes | to %in% hidden_nodes)
+  
   if (!is.null(label_df)) {
     label_df_clean <- label_df %>%
       filter(edge_id %in% bezier_df_clean$edge_id)
+    label_df_hidden <- label_df %>%
+      filter(edge_id %in% bezier_df_hidden$edge_id)
   } else {
     label_df_clean <- NULL
+    label_df_hidden <- NULL
   }
   
   grouping_df = node_metadata %>%
     select(group_nodes_by, id)
   
-  return(list(gvizl_coords = gvizl_coords_clean, bezier_df = bezier_df_clean, label_df = label_df_clean, grouping_df=grouping_df))
+  return(list(
+    gvizl_coords = gvizl_coords_clean, 
+    bezier_df = bezier_df_clean, 
+    label_df = label_df_clean, 
+    grouping_df = grouping_df,
+    hidden_gvizl_coords = hidden_gvizl_coords_tibble,
+    hidden_bezier_df = bezier_df_hidden,
+    hidden_label_df = label_df_hidden
+  ))
 }
-
 
 plot_state_graph_annotations_wrapper = function(ccm, state_graph, edge_weights="support") {
   plot_state_graph_annotations(ccm,

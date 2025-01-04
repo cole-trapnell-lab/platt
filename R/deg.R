@@ -140,7 +140,7 @@ score_genes_for_expression_pattern <- function(cell_state, gene_patterns, state_
     sibling_cols = c()
   }
   
-  data_mat = gene_patterns %>% tidyr::unnest(data) %>% column_to_rownames("gene_id") 
+  data_mat = gene_patterns %>% tidyr::unnest(data) %>% tibble::column_to_rownames("gene_id") 
   data_mat = data_mat %>% select(all_of(c("cell_state_shrunken_lfc", parent_cols, child_cols, sibling_cols))) %>% as.matrix()
   
   self_estimates = data_mat[gene_patterns$gene_id, "cell_state_shrunken_lfc", drop=FALSE] %>% as.matrix()
@@ -391,6 +391,9 @@ compare_genes_over_graph <- function(ccs,
   }
   cell_states = tibble(cell_state = states_to_assess)
   
+  #browser()
+  # I made some adjustments to this to deal with the case where there is no ambient expression, but now the join seems to be failing and there is no shrunken LFC values in the result
+  #debugonce(compare_genes_in_cell_state)
   cell_states = cell_states %>%
     dplyr::mutate(gene_classes = purrr::map(.f = purrr::possibly(
       compare_genes_in_cell_state, NA_real_), 
@@ -406,21 +409,32 @@ compare_genes_over_graph <- function(ccs,
       sig_thresh=sig_thresh,
       cores=cores))
   
-  
-  cell_states = cell_states %>%
+  #browser()
+  # This is failing
+  #debugonce(score_genes_for_expression_pattern)
+  test = cell_states %>%
     filter(is.na(gene_classes) == FALSE) %>%
-    dplyr::mutate(gene_class_scores = purrr::map2(.f = purrr::possibly(
-      score_genes_for_expression_pattern, NA_real_),
+    dplyr::mutate(gene_class_scores = purrr::map2(.f = 
+      score_genes_for_expression_pattern,
       .x = cell_state,
       .y = gene_classes,
       state_graph,
       pb_coeffs$coefficients)) %>% 
     dplyr::select(-gene_classes) # otherwise it is duplicated 
   
-  cell_states = cell_states %>% tidyr::unnest(gene_class_scores) %>% 
-    left_join(rowData(pb_cds) %>% as.data.frame %>% dplyr::select(id, gene_short_name), by = c("gene_id" = "id")) %>% 
-    group_by(cell_state) %>% tidyr::nest() %>% dplyr::rename(gene_class_scores = data)
+  # cell_states = cell_states %>% tidyr::unnest(gene_class_scores) %>% 
+  #   left_join(rowData(pb_cds) %>% as.data.frame %>% dplyr::select(id, gene_short_name), by = c("gene_id" = "id")) %>% 
+  #   group_by(cell_state) %>% tidyr::nest() %>% dplyr::rename(gene_class_scores = data)
   
+  cell_states <- cell_states %>%
+    tidyr::unnest(gene_classes) %>%
+    left_join(
+      rowData(pb_cds) %>% as.data.frame() %>% dplyr::select(id, gene_short_name),
+      by = c("gene_id" = "id")
+    ) %>%
+    group_by(cell_state) %>%
+    tidyr::nest() %>%
+    dplyr::rename(gene_class_scores = data)
   
   return(cell_states)
   
@@ -503,12 +517,14 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
     mutate(term = stringr::str_replace(term,"\\(\\)","Intercept"))
   
   fail_gene_ids = model_tbl %>% filter(status == "FAIL") %>% select(id)
-  term_to_keep_levels = levels(colData(cds)[,term_to_keep])
+  term_to_keep_levels = levels(as.factor(colData(cds)[,term_to_keep]))
   #term_table = tibble(term=stringr::str_c(term_to_keep, term_to_keep_levels))
   term_table = tibble(term=term_to_keep_levels)
   
   fail_coeff_rows = tidyr::crossing(fail_gene_ids, term_table) %>% mutate(estimate = NA_real_)
-  raw_coefficient_table = bind_rows(raw_coefficient_table, fail_coeff_rows)
+  raw_coefficient_table = raw_coefficient_table %>%
+    mutate(estimate = if_else(id %in% fail_gene_ids$id, NA_real_, estimate))
+  # raw_coefficient_table = bind_rows(raw_coefficient_table, fail_coeff_rows)
   
   estimate_matrix = raw_coefficient_table %>% dplyr::select(id, term, estimate)
   if (term_to_keep != "(Intercept)"){
@@ -517,7 +533,7 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   estimate_matrix = estimate_matrix %>% mutate(id = factor(id, levels=model_tbl$id))
   
   print ("\tpivoting coefficient table:")
-  print (head(estimate_matrix))
+  print(head(estimate_matrix))
   estimate_matrix = estimate_matrix %>% tidyr::pivot_wider(names_from=term, values_from=estimate, id_expand = TRUE, values_fill=0)
   
   gene_ids = estimate_matrix$id
@@ -1193,6 +1209,7 @@ compare_genes_in_cell_state <- function(cell_state,
     expr_df$expr_self = pnorm(estimate_matrix[,cell_state] - log(abs_expr_thresh), 
                               sd = stderr_matrix[,cell_state], lower.tail=FALSE)
     expr_df$expr_self = p.adjust(expr_df$expr_self, method="BH") < sig_thresh
+    genes_to_test = expr_df$gene_id
   } else {
     cell_state_to_ambient = contrast_helper(cell_state, "Intercept", 
                                             PEM = estimate_matrix, 
@@ -1243,10 +1260,10 @@ compare_genes_in_cell_state <- function(cell_state,
       expr_df = left_join(expr_df, parents_to_ambient, by = c("gene_id" = "id"))
       expr_df$expressed_in_parents = p.adjust(expr_df$parents_raw_p_value, method="BH") < sig_thresh & 
                                      expr_df$parents_raw_lfc > log_fc_thresh
-    }
     
-    parent_genes = parents_to_ambient %>% filter(parents_raw_lfc > abs_expr_thresh) %>% pull(id)
-    genes_to_test = intersect(cell_state_genes, parent_genes)
+      parent_genes = parents_to_ambient %>% filter(parents_raw_lfc > abs_expr_thresh) %>% pull(id)
+      genes_to_test = intersect(cell_state_genes, parent_genes)
+    }
     
     cell_state_to_parents = contrast_helper(cell_state, parents, 
                                             PEM = estimate_matrix[genes_to_test,], 
@@ -1260,7 +1277,12 @@ compare_genes_in_cell_state <- function(cell_state,
                                             prefix = "parents_to_cell_state")
       
     expr_df = left_join(expr_df, cell_state_to_parents, by = c("gene_id" = "id"))
-    expr_df = left_join(expr_df, parents_to_cell_state, by = c("gene_id" = "id"))
+    expr_df = left_join(
+      expr_df,
+      # FIXME this is to deal with the case where there is no ambient expression provided, columns are duplicated
+      parents_to_cell_state %>% select(-c(effect_skew, log_mean_expression, coefficient_mode)),
+      by = c("gene_id" = "id")
+    )
     
     expr_df$higher_than_parents = p.adjust(expr_df$cell_state_to_parents_p_value, method="BH") < sig_thresh & 
       expr_df$cell_state_to_parents_shrunken_lfc > log_fc_thresh
@@ -1306,10 +1328,9 @@ compare_genes_in_cell_state <- function(cell_state,
       expr_df$expressed_in_siblings = p.adjust(expr_df$siblings_raw_p_value, method="BH") < sig_thresh & 
                                       expr_df$siblings_raw_lfc > log_fc_thresh
 
+      sibling_genes = siblings_to_ambient %>% filter(siblings_raw_lfc > abs_expr_thresh) %>% pull(id)
+      genes_to_test = intersect(cell_state_genes, sibling_genes)
     }
-    
-    sibling_genes = siblings_to_ambient %>% filter(siblings_raw_lfc > abs_expr_thresh) %>% pull(id)
-    genes_to_test = intersect(cell_state_genes, sibling_genes)
     
     # cell_state_to_siblings = contrast_helper(cell_state, siblings, 
     #                                          PEM = estimate_matrix[genes_to_test,], 
@@ -1355,20 +1376,20 @@ compare_genes_in_cell_state <- function(cell_state,
     row.names(lower_than_siblings_mat) = genes_to_test
     
     expr_df$higher_than_siblings = left_join(expr_df, 
-                        data.frame("higher_than_siblings" = Matrix::rowSums(higher_than_siblings_mat) > 0) %>% rownames_to_column("gene_id"), by="gene_id") %>% 
+                        data.frame("higher_than_siblings" = Matrix::rowSums(higher_than_siblings_mat) > 0) %>% tibble::rownames_to_column("gene_id"), by="gene_id") %>% 
                         pull(higher_than_siblings.y)
     expr_df$lower_than_siblings = left_join(expr_df, 
-                        data.frame("lower_than_siblings" = Matrix::rowSums(lower_than_siblings_mat) > 0) %>% rownames_to_column("gene_id"), by="gene_id") %>% 
+                        data.frame("lower_than_siblings" = Matrix::rowSums(lower_than_siblings_mat) > 0) %>% tibble::rownames_to_column("gene_id"), by="gene_id") %>% 
                         pull(lower_than_siblings.y)
     
     
     # change this to pairwise 
     expr_df$higher_than_all_siblings = left_join(expr_df, 
-                         data.frame("higher_than_all_siblings" = Matrix::rowSums(higher_than_siblings_mat) == ncol(higher_than_siblings_mat)) %>% rownames_to_column("gene_id"), by="gene_id") %>% 
+                         data.frame("higher_than_all_siblings" = Matrix::rowSums(higher_than_siblings_mat) == ncol(higher_than_siblings_mat)) %>% tibble::rownames_to_column("gene_id"), by="gene_id") %>% 
                          pull(higher_than_all_siblings.y)
     
     expr_df$lower_than_all_siblings = left_join(expr_df, 
-                         data.frame("lower_than_all_siblings" = Matrix::rowSums(lower_than_siblings_mat) == ncol(lower_than_siblings_mat)) %>% rownames_to_column("gene_id"), by="gene_id") %>% 
+                         data.frame("lower_than_all_siblings" = Matrix::rowSums(lower_than_siblings_mat) == ncol(lower_than_siblings_mat)) %>% tibble::rownames_to_column("gene_id"), by="gene_id") %>% 
                          pull(lower_than_all_siblings.y)
     
     
@@ -1400,10 +1421,10 @@ compare_genes_in_cell_state <- function(cell_state,
       expr_df = left_join(expr_df, children_to_ambient, by = c("gene_id" = "id"))
       expr_df$expressed_in_children = p.adjust(expr_df$children_raw_p_value, method="BH") < sig_thresh & 
                                       expr_df$children_raw_lfc > log_fc_thresh
-     }
     
-    children_genes = children_to_ambient %>% filter(children_raw_lfc > abs_expr_thresh) %>% pull(id)
-    genes_to_test = intersect(cell_state_genes, children_genes)
+      children_genes = children_to_ambient %>% filter(children_raw_lfc > abs_expr_thresh) %>% pull(id)
+      genes_to_test = intersect(cell_state_genes, children_genes)
+     }
     
     # cell_state_to_children = contrast_helper(cell_state, children, 
     #                                          PEM = estimate_matrix[genes_to_test,], 
@@ -1448,20 +1469,20 @@ compare_genes_in_cell_state <- function(cell_state,
     row.names(lower_than_children_mat) = genes_to_test
     
     expr_df$higher_than_children = left_join(expr_df, 
-                        data.frame("higher_than_children" = Matrix::rowSums(higher_than_children_mat) > 0) %>% rownames_to_column("gene_id"), by="gene_id") %>% 
+                        data.frame("higher_than_children" = Matrix::rowSums(higher_than_children_mat) > 0) %>% tibble::rownames_to_column("gene_id"), by="gene_id") %>% 
                         pull(higher_than_children.y)
     expr_df$lower_than_children = left_join(expr_df, 
-                        data.frame("lower_than_children" = Matrix::rowSums(lower_than_children_mat) > 0) %>% rownames_to_column("gene_id"), by="gene_id") %>% 
+                        data.frame("lower_than_children" = Matrix::rowSums(lower_than_children_mat) > 0) %>% tibble::rownames_to_column("gene_id"), by="gene_id") %>% 
                         pull(lower_than_children.y)
     
     
     expr_df$higher_than_all_children = left_join(expr_df, 
-                        data.frame("higher_than_all_children" = Matrix::rowSums(higher_than_children_mat) == ncol(higher_than_children_mat)) %>% rownames_to_column("gene_id"), 
+                        data.frame("higher_than_all_children" = Matrix::rowSums(higher_than_children_mat) == ncol(higher_than_children_mat)) %>% tibble::rownames_to_column("gene_id"), 
                         by="gene_id") %>% 
                         pull(higher_than_all_children.y)
     
     expr_df$lower_than_all_children = left_join(expr_df, 
-                        data.frame("lower_than_all_children" = Matrix::rowSums(lower_than_children_mat) == ncol(lower_than_children_mat)) %>% rownames_to_column("gene_id"), 
+                        data.frame("lower_than_all_children" = Matrix::rowSums(lower_than_children_mat) == ncol(lower_than_children_mat)) %>% tibble::rownames_to_column("gene_id"), 
                         by="gene_id") %>% 
                         pull(lower_than_all_children.y)
     
