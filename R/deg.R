@@ -437,10 +437,19 @@ compare_genes_over_graph <- function(ccs,
       pb_coeffs$coefficients)) %>% 
     dplyr::select(-gene_classes) # otherwise it is duplicated 
   
-  cell_states = cell_states %>% tidyr::unnest(gene_class_scores) %>% 
-    left_join(rowData(pb_cds) %>% as.data.frame %>% dplyr::select(id, gene_short_name), by = c("gene_id" = "id")) %>% 
-    group_by(cell_state) %>% tidyr::nest() %>% dplyr::rename(gene_class_scores = data)
+  # cell_states = cell_states %>% tidyr::unnest(gene_class_scores) %>% 
+  #   left_join(rowData(pb_cds) %>% as.data.frame %>% dplyr::select(id, gene_short_name), by = c("gene_id" = "id")) %>% 
+  #   group_by(cell_state) %>% tidyr::nest() %>% dplyr::rename(gene_class_scores = data)
   
+  cell_states <- cell_states %>%
+    tidyr::unnest(gene_classes) %>%
+    left_join(
+      rowData(pb_cds) %>% as.data.frame() %>% dplyr::select(id, gene_short_name),
+      by = c("gene_id" = "id")
+    ) %>%
+    group_by(cell_state) %>%
+    tidyr::nest() %>%
+    dplyr::rename(gene_class_scores = data)
   
   return(cell_states)
   
@@ -1283,7 +1292,12 @@ compare_genes_in_cell_state <- function(cell_state,
                                             prefix = "parents_to_cell_state")
       
     expr_df = left_join(expr_df, cell_state_to_parents, by = c("gene_id" = "id"))
-    expr_df = left_join(expr_df, parents_to_cell_state, by = c("gene_id" = "id"))
+    expr_df = left_join(
+      expr_df,
+      # FIXME this is to deal with the case where there is no ambient expression provided, columns are duplicated
+      parents_to_cell_state %>% select(-c(effect_skew, log_mean_expression, coefficient_mode)),
+      by = c("gene_id" = "id")
+    )
     
     expr_df$higher_than_parents = p.adjust(expr_df$cell_state_to_parents_p_value, method="BH") < sig_thresh & 
       expr_df$cell_state_to_parents_shrunken_lfc > log_fc_thresh
