@@ -139,8 +139,8 @@ plot_abundance_changes = function(cell_state_graph,
     
     p = p + ggnewscale::new_scale_color() +
       ggnetwork::geom_nodes(data = g,
-                            aes(x, y) ,
-                            size = -log10(delta_q_value)*1.2 * node_scale,
+                            aes(x, y, 
+                                size = -log10(delta_q_value)*1.2 * node_scale), 
                             color=I("black")) +
       ggnetwork::geom_nodes(data = g,
                             aes(x, y,
