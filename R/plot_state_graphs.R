@@ -170,9 +170,6 @@ plot_abundance_changes = function(cell_state_graph,
       ggnetwork::geom_nodetext(data = g,
                                aes(x, y,
                                    label = q_value_sig_code),
-                               color=I("black")) +  
-      ggrepel::geom_text_repel(data= g %>% select(x, y, name) %>% distinct(), 
-                               aes(x, y, label=name),
                                color=I("black")) +
       scale_color_gradient2(low = "royalblue3", mid = "white", high="orangered3") + 
       # scale_size(range=c(2, 6)) +
