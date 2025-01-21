@@ -216,7 +216,8 @@ plot_gene_expr = function(cell_state_graph,
                           con_colour = "darkgrey",
                           fract_expr = 0.0,
                           mean_expr = 0.0,
-                          legend_position = "none") {
+                          legend_position = "none", 
+                          plot_labels = F) {
   
   g = cell_state_graph@g
   ccs = cell_state_graph@ccs
@@ -280,6 +281,12 @@ plot_gene_expr = function(cell_state_graph,
     scale_size_identity() +
     scale_size(range=c(1, 5)) + 
     hooke_theme_opts() + theme(legend.position = "none") 
+  
+  if (plot_labels) {
+    p = p + ggrepel::geom_text_repel(data= g %>% select(x, y, name) %>% distinct(), 
+                                     aes(x, y, label=name),
+                                     color=I("black")) 
+  }
   
   x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
   y_range = range(g$y) + c(-node_size*1.2, node_size*1.2)
