@@ -319,7 +319,7 @@ compare_genes_over_graph <- function(ccs,
                                     label_nodes_by="cell_state", 
                                     states_to_assess = list(), 
                                     nuisance_model_formula_str = "0",
-                                    ambient_coeffs = NULL, 
+                                    # ambient_coeffs = NULL, 
                                     log_fc_thresh=1,
                                     abs_expr_thresh = 1e-10,
                                     sig_thresh=0.05,
@@ -399,8 +399,8 @@ compare_genes_over_graph <- function(ccs,
       compare_genes_in_cell_state, NA_real_), 
       .x = cell_state,
       state_graph = state_graph, 
-      ambient_estimate_matrix = ambient_coeffs$coefficients, 
-      ambient_stderr_matrix = ambient_coeffs$stdev.unscaled, 
+      # ambient_estimate_matrix = ambient_coeffs$coefficients, 
+      # ambient_stderr_matrix = ambient_coeffs$stdev.unscaled, 
       estimate_matrix = pb_coeffs$coefficients, 
       stderr_matrix = pb_coeffs$stdev.unscaled,
       state_term = state_term,
@@ -600,7 +600,7 @@ compare_genes_within_state_graph = function(ccs,
                                             perturbation_col = "perturbation", 
                                             control_ids = c("Control"), 
                                             nuisance_model_formula_str = "0", 
-                                            ambient_coeffs = NULL, 
+                                            ambient_coeffs = NULL,
                                             cell_groups = NULL, 
                                             assembly_group = NULL, 
                                             state_graph = NULL,
@@ -677,13 +677,13 @@ compare_genes_within_state_graph = function(ccs,
     cell_groups = rownames(counts(ccs))
   }
   
-  if (is.null(ambient_coeffs)){
-    ambient_estimate_matrix = NULL
-    ambient_stderr_matrix =  NULL
-  } else {
-    ambient_estimate_matrix = ambient_coeffs$coefficients 
-    ambient_stderr_matrix = ambient_coeffs$stdev.unscaled
-  }
+  # if (is.null(ambient_coeffs)){
+  #   ambient_estimate_matrix = NULL
+  #   ambient_stderr_matrix =  NULL
+  # } else {
+  #   ambient_estimate_matrix = ambient_coeffs$coefficients 
+  #   ambient_stderr_matrix = ambient_coeffs$stdev.unscaled
+  # }
   
   if (is.null(write_dir) == FALSE) {
     if (!file.exists(write_dir)){
@@ -698,8 +698,8 @@ compare_genes_within_state_graph = function(ccs,
                                                 ccs = ccs,
                                                 control_ids = c("Control"),
                                                 perturbation_ids = perturbations,
-                                                ambient_estimate_matrix = ambient_coeffs$coefficients, 
-                                                ambient_stderr_matrix = ambient_coeffs$stdev.unscaled, 
+                                                ambient_estimate_matrix = ambient_coeffs$coefficients,
+                                                ambient_stderr_matrix = ambient_coeffs$stdev.unscaled,
                                                 cores = cores, 
                                                 max_simultaneous_genes=max_simultaneous_genes,
                                                 nuisance_model_formula_str = nuisance_model_formula_str,
@@ -1179,8 +1179,8 @@ compare_genes_in_cell_state <- function(cell_state,
                                         state_graph, 
                                         estimate_matrix, 
                                         stderr_matrix,
-                                        ambient_estimate_matrix = NULL, 
-                                        ambient_stderr_matrix = NULL, 
+                                        # ambient_estimate_matrix = NULL, 
+                                        # ambient_stderr_matrix = NULL, 
                                         state_term="cell_group", 
                                         log_fc_thresh=1, 
                                         abs_expr_thresh = 1e-3, 
@@ -1202,26 +1202,28 @@ compare_genes_in_cell_state <- function(cell_state,
   
   expr_df = tibble(gene_id=row.names(estimate_matrix))
   
-  if (is.null(ambient_estimate_matrix)) {
-    expr_df$expr_self = pnorm(estimate_matrix[,cell_state] - log(abs_expr_thresh), 
-                              sd = stderr_matrix[,cell_state], lower.tail=FALSE)
-    expr_df$expr_self = p.adjust(expr_df$expr_self, method="BH") < sig_thresh
-    genes_to_test = expr_df$gene_id
-  } else {
-    cell_state_to_ambient = contrast_helper(cell_state, "Intercept", 
-                                            PEM = estimate_matrix, 
-                                            PSEM = stderr_matrix, 
-                                            PEM_2 = ambient_estimate_matrix, 
-                                            PSEM_2 = ambient_stderr_matrix, 
-                                            prefix = "cell_state")
-    
-    expr_df = left_join(expr_df, cell_state_to_ambient, by = c("gene_id" = "id"))
-    expr_df$expr_self = p.adjust(expr_df$cell_state_raw_p_value) < sig_thresh & 
-                        expr_df$cell_state_raw_lfc > log_fc_thresh
-    cell_state_genes = cell_state_to_ambient %>% filter(cell_state_raw_lfc > abs_expr_thresh) %>% pull(id)
-    
-  }
+  # if (is.null(ambient_estimate_matrix)) {
+  expr_df$expr_self = pnorm(estimate_matrix[,cell_state] - log(abs_expr_thresh), 
+                            sd = stderr_matrix[,cell_state], lower.tail=FALSE)
+  expr_df$expr_self = p.adjust(expr_df$expr_self, method="BH") < sig_thresh
+  genes_to_test = expr_df$gene_id
+  # } 
   
+  # else {
+  #   cell_state_to_ambient = contrast_helper(cell_state, "Intercept", 
+  #                                           PEM = estimate_matrix, 
+  #                                           PSEM = stderr_matrix, 
+  #                                           PEM_2 = ambient_estimate_matrix, 
+  #                                           PSEM_2 = ambient_stderr_matrix, 
+  #                                           prefix = "cell_state")
+  #   
+  #   expr_df = left_join(expr_df, cell_state_to_ambient, by = c("gene_id" = "id"))
+  #   expr_df$expr_self = p.adjust(expr_df$cell_state_raw_p_value) < sig_thresh & 
+  #                       expr_df$cell_state_raw_lfc > log_fc_thresh
+  #   cell_state_genes = cell_state_to_ambient %>% filter(cell_state_raw_lfc > abs_expr_thresh) %>% pull(id)
+  #   
+  # }
+  # 
   expr_df$expressed_in_parents = NA
   expr_df$expressed_in_siblings = NA
   expr_df$higher_than_parents = NA
@@ -1239,28 +1241,31 @@ compare_genes_in_cell_state <- function(cell_state,
   
   if (length(parents) > 0){
     
-    if (is.null(ambient_estimate_matrix)) {
-      expressed_in_parents_mat = pnorm(estimate_matrix[,parents, drop=F] - log(abs_expr_thresh), 
-                                       sd = stderr_matrix[,parents, drop=F], lower.tail=FALSE)
-      expressed_in_parents_mat = apply(expressed_in_parents_mat, 2, p.adjust, method="BH")
-      expressed_in_parents_mat = expressed_in_parents_mat < sig_thresh
-      expr_df$expressed_in_parents = Matrix::rowSums(expressed_in_parents_mat) > 0
+    # if (is.null(ambient_estimate_matrix)) {
+    expressed_in_parents_mat = pnorm(estimate_matrix[,parents, drop=F] - log(abs_expr_thresh), 
+                                     sd = stderr_matrix[,parents, drop=F], lower.tail=FALSE)
+    expressed_in_parents_mat = apply(expressed_in_parents_mat, 2, p.adjust, method="BH")
+    expressed_in_parents_mat = expressed_in_parents_mat < sig_thresh
+    expr_df$expressed_in_parents = Matrix::rowSums(expressed_in_parents_mat) > 0
       
-    } else {
-      parents_to_ambient = contrast_helper(parents, "Intercept", 
-                                           PEM = estimate_matrix, 
-                                           PSEM = stderr_matrix, 
-                                           PEM_2 = ambient_estimate_matrix, 
-                                           PSEM_2 = ambient_stderr_matrix, 
-                                           prefix = "parents")
-      
-      expr_df = left_join(expr_df, parents_to_ambient, by = c("gene_id" = "id"))
-      expr_df$expressed_in_parents = p.adjust(expr_df$parents_raw_p_value, method="BH") < sig_thresh & 
-                                     expr_df$parents_raw_lfc > log_fc_thresh
+    # }
     
-      parent_genes = parents_to_ambient %>% filter(parents_raw_lfc > abs_expr_thresh) %>% pull(id)
-      genes_to_test = intersect(cell_state_genes, parent_genes)
-    }
+    # else {
+    #   parents_to_ambient = contrast_helper(parents, "Intercept", 
+    #                                        PEM = estimate_matrix, 
+    #                                        PSEM = stderr_matrix, 
+    #                                        PEM_2 = ambient_estimate_matrix, 
+    #                                        PSEM_2 = ambient_stderr_matrix, 
+    #                                        prefix = "parents")
+    #   
+    #   expr_df = left_join(expr_df, parents_to_ambient, by = c("gene_id" = "id"))
+    #   expr_df$expressed_in_parents = p.adjust(expr_df$parents_raw_p_value, method="BH") < sig_thresh & 
+    #                                  expr_df$parents_raw_lfc > log_fc_thresh
+    # 
+    #   parent_genes = parents_to_ambient %>% filter(parents_raw_lfc > abs_expr_thresh) %>% pull(id)
+    #   genes_to_test = intersect(cell_state_genes, parent_genes)
+    # }
+    # 
     
     cell_state_to_parents = contrast_helper(cell_state, parents, 
                                             PEM = estimate_matrix[genes_to_test,], 
@@ -1306,28 +1311,28 @@ compare_genes_in_cell_state <- function(cell_state,
   
   if (length(siblings) > 0){
     
-    if (is.null(ambient_estimate_matrix)) {
-      expressed_in_siblings_mat = pnorm(estimate_matrix[,siblings, drop=F] - log(abs_expr_thresh), 
-                                        sd = stderr_matrix[,siblings, drop=F], lower.tail=FALSE)
-      expressed_in_siblings_mat = apply(expressed_in_siblings_mat, 2, p.adjust, method="BH")
-      expressed_in_siblings_mat = expressed_in_siblings_mat < sig_thresh
-      expr_df$expressed_in_siblings = Matrix::rowSums(expressed_in_siblings_mat) > 0
+    # if (is.null(ambient_estimate_matrix)) {
+    expressed_in_siblings_mat = pnorm(estimate_matrix[,siblings, drop=F] - log(abs_expr_thresh), 
+                                      sd = stderr_matrix[,siblings, drop=F], lower.tail=FALSE)
+    expressed_in_siblings_mat = apply(expressed_in_siblings_mat, 2, p.adjust, method="BH")
+    expressed_in_siblings_mat = expressed_in_siblings_mat < sig_thresh
+    expr_df$expressed_in_siblings = Matrix::rowSums(expressed_in_siblings_mat) > 0
       
-    } else {
-      siblings_to_ambient = contrast_helper(siblings, "Intercept", 
-                                            PEM = estimate_matrix, 
-                                            PSEM = stderr_matrix, 
-                                            PEM_2 = ambient_estimate_matrix,
-                                            PSEM_2 = ambient_stderr_matrix, 
-                                            prefix = "siblings")
-
-      expr_df = left_join(expr_df, siblings_to_ambient, by = c("gene_id" = "id"))
-      expr_df$expressed_in_siblings = p.adjust(expr_df$siblings_raw_p_value, method="BH") < sig_thresh & 
-                                      expr_df$siblings_raw_lfc > log_fc_thresh
-
-      sibling_genes = siblings_to_ambient %>% filter(siblings_raw_lfc > abs_expr_thresh) %>% pull(id)
-      genes_to_test = intersect(cell_state_genes, sibling_genes)
-    }
+    # } else {
+    #   siblings_to_ambient = contrast_helper(siblings, "Intercept", 
+    #                                         PEM = estimate_matrix, 
+    #                                         PSEM = stderr_matrix, 
+    #                                         PEM_2 = ambient_estimate_matrix,
+    #                                         PSEM_2 = ambient_stderr_matrix, 
+    #                                         prefix = "siblings")
+    # 
+    #   expr_df = left_join(expr_df, siblings_to_ambient, by = c("gene_id" = "id"))
+    #   expr_df$expressed_in_siblings = p.adjust(expr_df$siblings_raw_p_value, method="BH") < sig_thresh & 
+    #                                   expr_df$siblings_raw_lfc > log_fc_thresh
+    # 
+    #   sibling_genes = siblings_to_ambient %>% filter(siblings_raw_lfc > abs_expr_thresh) %>% pull(id)
+    #   genes_to_test = intersect(cell_state_genes, sibling_genes)
+    # }
     
     # cell_state_to_siblings = contrast_helper(cell_state, siblings, 
     #                                          PEM = estimate_matrix[genes_to_test,], 
@@ -1401,28 +1406,28 @@ compare_genes_in_cell_state <- function(cell_state,
   if (length(children) > 0){
     
     
-    if (is.null(ambient_estimate_matrix)) {
-      expressed_in_children_mat = pnorm(estimate_matrix[,children, drop=F] - log(abs_expr_thresh), 
-                                        sd = stderr_matrix[,children, drop=F], lower.tail=FALSE)
-      expressed_in_children_mat = apply(expressed_in_children_mat, 2, p.adjust, method="BH")
-      expressed_in_children_mat = expressed_in_children_mat < sig_thresh
-      expr_df$expressed_in_children = Matrix::rowSums(expressed_in_children_mat) > 0
+    # if (is.null(ambient_estimate_matrix)) {
+    expressed_in_children_mat = pnorm(estimate_matrix[,children, drop=F] - log(abs_expr_thresh), 
+                                      sd = stderr_matrix[,children, drop=F], lower.tail=FALSE)
+    expressed_in_children_mat = apply(expressed_in_children_mat, 2, p.adjust, method="BH")
+    expressed_in_children_mat = expressed_in_children_mat < sig_thresh
+    expr_df$expressed_in_children = Matrix::rowSums(expressed_in_children_mat) > 0
       
-     } else {
-      children_to_ambient = contrast_helper(children, "Intercept", 
-                                            PEM = estimate_matrix, 
-                                            PSEM = stderr_matrix, 
-                                            PEM_2 = ambient_estimate_matrix, 
-                                            PSEM_2 = ambient_stderr_matrix, 
-                                            prefix = "children")
-      expr_df = left_join(expr_df, children_to_ambient, by = c("gene_id" = "id"))
-      expr_df$expressed_in_children = p.adjust(expr_df$children_raw_p_value, method="BH") < sig_thresh & 
-                                      expr_df$children_raw_lfc > log_fc_thresh
-    
-      children_genes = children_to_ambient %>% filter(children_raw_lfc > abs_expr_thresh) %>% pull(id)
-      genes_to_test = intersect(cell_state_genes, children_genes)
-     }
-    
+     # } else {
+     #  children_to_ambient = contrast_helper(children, "Intercept", 
+     #                                        PEM = estimate_matrix, 
+     #                                        PSEM = stderr_matrix, 
+     #                                        PEM_2 = ambient_estimate_matrix, 
+     #                                        PSEM_2 = ambient_stderr_matrix, 
+     #                                        prefix = "children")
+     #  expr_df = left_join(expr_df, children_to_ambient, by = c("gene_id" = "id"))
+     #  expr_df$expressed_in_children = p.adjust(expr_df$children_raw_p_value, method="BH") < sig_thresh & 
+     #                                  expr_df$children_raw_lfc > log_fc_thresh
+     # 
+     #  children_genes = children_to_ambient %>% filter(children_raw_lfc > abs_expr_thresh) %>% pull(id)
+     #  genes_to_test = intersect(cell_state_genes, children_genes)
+     # }
+     # 
     # cell_state_to_children = contrast_helper(cell_state, children, 
     #                                          PEM = estimate_matrix[genes_to_test,], 
     #                                          PSEM = stderr_matrix[genes_to_test,], 
