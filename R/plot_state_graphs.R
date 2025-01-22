@@ -191,6 +191,7 @@ plot_abundance_changes = function(cell_state_graph,
     p = p + facet_wrap(~contrast)
   }
   
+  p = p + guides(color=guide_colourbar(title="log(\u0394 Abundance)"))
   
   x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
   y_range = range(g$y) + c(-node_size*1.2, node_size*1.2)
@@ -217,7 +218,8 @@ plot_gene_expr = function(cell_state_graph,
                           fract_expr = 0.0,
                           mean_expr = 0.0,
                           legend_position = "none", 
-                          plot_labels = F) {
+                          plot_labels = F, 
+                          expr_limits = NULL) {
   
   g = cell_state_graph@g
   ccs = cell_state_graph@ccs
@@ -253,7 +255,17 @@ plot_gene_expr = function(cell_state_graph,
                fraction_max = sum(fraction_max),
                gene_expr = (min(gene_expr) == 1))
   
+  if (is.null(expr_limits) == FALSE){
+    min = expr_limits[1]
+    max = expr_limits[2]
+    gene_expr_summary = gene_expr_summary %>%
+      mutate(sum_expr = ifelse(sum_expr > max, max, sum_expr)) %>%
+      mutate(sum_expr = ifelse(sum_expr < min, min, sum_expr))
+  }
+  
   g = left_join(g, gene_expr_summary, by = c("name" = "cell_group"), relationship = "many-to-many")
+  
+  
   
   p <- ggplot(aes(x,y), data=g) + 
     ggplot2::geom_path(aes(x, y, group = edge_name), 
@@ -276,7 +288,7 @@ plot_gene_expr = function(cell_state_graph,
                               size = fraction_max * node_size,
                               color = sum_expr)) +
     labs(color = color_nodes_by) +
-    viridis::scale_color_viridis(option = "viridis") + 
+    scale_color_viridis_c(limits = expr_limits) +
     ggnetwork::theme_blank() +
     scale_size_identity() +
     scale_size(range=c(1, 5)) + 
