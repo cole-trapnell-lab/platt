@@ -150,7 +150,7 @@ plot_abundance_changes = function(cell_state_graph,
                                aes(x, y,
                                    label = q_value_sig_code),
                                color=I("black")) +  
-      scale_color_gradient2(low = "royalblue3", mid = "white", high="orangered3") + 
+      scale_color_gradient2(low = "royalblue3", mid = "white", high="orangered3", limits = fc_limits) + 
       scale_size_identity() +
       ggnetwork::theme_blank() +
       hooke_theme_opts() +
@@ -171,7 +171,7 @@ plot_abundance_changes = function(cell_state_graph,
                                aes(x, y,
                                    label = q_value_sig_code),
                                color=I("black")) +
-      scale_color_gradient2(low = "royalblue3", mid = "white", high="orangered3") + 
+      scale_color_gradient2(low = "royalblue3", mid = "white", high="orangered3", limits = fc_limits) +  
       # scale_size(range=c(2, 6)) +
       scale_size_identity() +
       ggnetwork::theme_blank() +
@@ -444,6 +444,19 @@ plot_degs = function(cell_state_graph,
   
   # g = left_join(g, deg_table, by = c("name"="cell_group", "term"), relationship = "many-to-many") 
   
+  if (is.null(fc_limits)==FALSE) {
+    min = fc_limits[1]
+    max = fc_limits[2]
+    deg_table = deg_table %>%
+      mutate(perturb_to_ctrl_raw_lfc = ifelse(perturb_to_ctrl_raw_lfc > max, max, perturb_to_ctrl_raw_lfc)) %>%
+      mutate(perturb_to_ctrl_raw_lfc = ifelse(perturb_to_ctrl_raw_lfc < min, min, perturb_to_ctrl_raw_lfc))
+  }
+  
+  
+  deg_table = deg_table %>% mutate(
+    delta_q_value = pmax(0.0001, perturb_to_ctrl_p_value),
+    q_value_sig_code = platt:::calc_sig_ind(perturb_to_ctrl_p_value, html=FALSE))
+  
   g = left_join(g, deg_table, by = c("name"="cell_group"), relationship = "many-to-many") 
   
   # myPalette <- colorRampPalette(rev(RColorBrewer::brewer.pal(11, "Spectral")))
@@ -460,12 +473,18 @@ plot_degs = function(cell_state_graph,
                           aes(x, y) ,
                           color=I("black"), size=node_size*1.2) +
     ggnetwork::geom_nodes(data = g ,
-                          mapping = aes(x, y, color = n),
+                          mapping = aes(x, y, color = perturb_to_ctrl_raw_lfc),
                           size = node_size) + 
     ggnetwork::theme_blank() + 
-    # sc + 
-    scale_color_viridis_c(option="B")+
+    scale_color_gradient2(low = "#006600",  mid = "white", high = "#800080", limits = fc_limits) + 
+    # scale_color_gradient2(low = "royalblue3", mid = "white", high="orangered3", limits = fc_limits) + 
+    # scale_color_viridis_c(option="B", limits = fc_limits)+
+    ggnetwork::geom_nodetext(data = g,
+                             aes(x, y,
+                                 label = q_value_sig_code),
+                             color=I("black")) + 
     hooke_theme_opts() +
+    scale_size_identity() +
     theme(legend.position='none')
   
   x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
