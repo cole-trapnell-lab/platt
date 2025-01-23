@@ -122,37 +122,48 @@ score_genes_for_expression_pattern <- function(cell_state, gene_patterns, state_
   
   expr_df = tibble(gene_id=row.names(estimate_matrix))
   
-  if (length(parents) > 0 ){
-    parent_cols = c("parents_shrunken_lfc")
-  } else {
-    parent_cols = parents
-  } 
+  # if (length(parents) > 0 ){
+  #   parent_cols = c("parents_shrunken_lfc")
+  # } else {
+  #   parent_cols = c()
+  # } 
+  # 
+  # if (length(children) > 0 ) {
+  #   child_cols = c("children_shrunken_lfc")
+  # } else {
+  #   child_cols = c()
+  # }
+  # 
+  # if (length(siblings) > 0 ) {
+  #   sibling_cols = c("siblings_shrunken_lfc")
+  # } else {
+  #   sibling_cols = c()
+  # }
   
-  if (length(children) > 0 ) {
-    child_cols = c("children_shrunken_lfc")
-  } else {
-    child_cols = c()
-  }
+  # data_mat = gene_patterns %>% tidyr::unnest(data) %>% tibble::column_to_rownames("gene_id")
+  # data_mat = data_mat %>% select(all_of(c("cell_state_shrunken_lfc", parent_cols, child_cols, sibling_cols))) %>% as.matrix()
   
-  if (length(siblings) > 0 ) {
-    sibling_cols = c("siblings_shrunken_lfc")
-  } else {
-    sibling_cols = c()
-  }
+  self_estimates = estimate_matrix[gene_patterns$gene_id, cell_state, drop=FALSE]
+  parents_estimates = estimate_matrix[gene_patterns$gene_id, c(parents), drop=FALSE]
+  parents_and_sib_estimates = estimate_matrix[gene_patterns$gene_id, c(parents, siblings), drop=FALSE]
   
-  data_mat = gene_patterns %>% tidyr::unnest(data) %>% tibble::column_to_rownames("gene_id") 
-  data_mat = data_mat %>% select(all_of(c("cell_state_shrunken_lfc", parent_cols, child_cols, sibling_cols))) %>% as.matrix()
-  
-  self_estimates = data_mat[gene_patterns$gene_id, "cell_state_shrunken_lfc", drop=FALSE] %>% as.matrix()
-  parents_estimates = data_mat[gene_patterns$gene_id, parent_cols, drop=FALSE] #%>% as.matrix()
-  
-  parents_and_sib_estimates = data_mat[gene_patterns$gene_id, c(parent_cols, sibling_cols), drop=FALSE] %>% as.matrix()
-  
-  self_and_parent = exp(data_mat[gene_patterns$gene_id, c("cell_state_shrunken_lfc", parent_cols), drop=FALSE]) %>% as.matrix()
+  self_and_parent = exp(estimate_matrix[gene_patterns$gene_id, c(cell_state, parents), drop=FALSE])
   self_and_parent = self_and_parent / Matrix::rowSums(self_and_parent) #normalize so that rows sum to 1
-
-  self_parent_sibs = exp(data_mat[gene_patterns$gene_id, c("cell_state_shrunken_lfc", parent_cols, sibling_cols), drop=FALSE]) %>% as.matrix()
+  
+  self_parent_sibs = exp(estimate_matrix[gene_patterns$gene_id, c(cell_state, parents, siblings), drop=FALSE])
   self_parent_sibs = self_parent_sibs / Matrix::rowSums(self_parent_sibs) #normalize so that rows sum to 1
+  
+  
+  # self_estimates = data_mat[gene_patterns$gene_id, "cell_state_shrunken_lfc", drop=FALSE] %>% as.matrix()
+  # parents_estimates = data_mat[gene_patterns$gene_id, parent_cols, drop=FALSE] #%>% as.matrix()
+  # 
+  # parents_and_sib_estimates = data_mat[gene_patterns$gene_id, c(parent_cols, sibling_cols), drop=FALSE] %>% as.matrix()
+  # 
+  # self_and_parent = exp(data_mat[gene_patterns$gene_id, c("cell_state_shrunken_lfc", parent_cols), drop=FALSE]) %>% as.matrix()
+  # self_and_parent = self_and_parent / Matrix::rowSums(self_and_parent) #normalize so that rows sum to 1
+  # 
+  # self_parent_sibs = exp(data_mat[gene_patterns$gene_id, c("cell_state_shrunken_lfc", parent_cols, sibling_cols), drop=FALSE]) %>% as.matrix()
+  # self_parent_sibs = self_parent_sibs / Matrix::rowSums(self_parent_sibs) #normalize so that rows sum to 1
   
   num_parents = length(parents)
   num_siblings = length(siblings)
@@ -1205,17 +1216,28 @@ compare_genes_in_cell_state <- function(cell_state,
   # if (is.null(ambient_estimate_matrix)) {
   expr_df$expr_self = pnorm(estimate_matrix[,cell_state] - log(abs_expr_thresh), 
                             sd = stderr_matrix[,cell_state], lower.tail=FALSE)
+  
   expr_df$expr_self = p.adjust(expr_df$expr_self, method="BH") < sig_thresh
   genes_to_test = expr_df$gene_id
+  
+  
+  cell_state_to_ambient = contrast_helper(cell_state, "Intercept",
+                                          PEM = estimate_matrix,
+                                          PSEM = stderr_matrix,
+                                          prefix = "cell_state")
+  
+  
+  expr_df = left_join(expr_df, cell_state_to_ambient, by = c("gene_id" = "id"))
+  
   # } 
   
   # else {
-  #   cell_state_to_ambient = contrast_helper(cell_state, "Intercept", 
-  #                                           PEM = estimate_matrix, 
-  #                                           PSEM = stderr_matrix, 
-  #                                           PEM_2 = ambient_estimate_matrix, 
-  #                                           PSEM_2 = ambient_stderr_matrix, 
-  #                                           prefix = "cell_state")
+    # cell_state_to_ambient = contrast_helper(cell_state, "Intercept",
+    #                                         PEM = estimate_matrix,
+    #                                         PSEM = stderr_matrix,
+    #                                         PEM_2 = ambient_estimate_matrix,
+    #                                         PSEM_2 = ambient_stderr_matrix,
+    #                                         prefix = "cell_state")
   #   
   #   expr_df = left_join(expr_df, cell_state_to_ambient, by = c("gene_id" = "id"))
   #   expr_df$expr_self = p.adjust(expr_df$cell_state_raw_p_value) < sig_thresh & 
