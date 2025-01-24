@@ -1396,7 +1396,9 @@ layout_state_graph <- function(G, node_metadata, edge_labels = NULL, num_layers 
     bezier_cp_df
   })
   bezier_df = do.call(rbind, beziers)
-  bezier_df$edge_name = stringr::str_split_fixed(row.names(bezier_df), "\\.", 2)[,1]
+  # bezier_df$edge_name = stringr::str_split_fixed(names(gvizl@renderInfo@edges$splines), "\\.", 2)[,1]
+  bezier_df$edge_name = str_split(row.names(bezier_df), "\\.[0-9]+$", simplify = TRUE)[,1]
+  # bezier_df$edge_name = stringr::str_split_fixed(row.names(bezier_df), "\\.", 2)[,1]
   bezier_df$from = stringr::str_split_fixed(bezier_df$edge_name, "~", 2)[,1]
   bezier_df$to = stringr::str_split_fixed(bezier_df$edge_name, "~", 2)[,2]
   bezier_df = left_join(bezier_df, tibble(edge_name=names(gvizl@renderInfo@edges$direction), edge_direction=gvizl@renderInfo@edges$direction))
@@ -1868,7 +1870,7 @@ plot_state_graph_marker_genes <- function(ccs,
     edge_labels=NULL
   }
 
-  layout_info = hooke:::layout_state_graph(G, node_metadata, edge_labels, weighted=FALSE)
+  layout_info = layout_state_graph(G, node_metadata, edge_labels, weighted=FALSE)
   gvizl_coords = layout_info$gvizl_coords
   bezier_df = layout_info$bezier_df
   if (is.null(edge_weights) == FALSE){
@@ -2113,7 +2115,7 @@ plot_state_graph_key_genes <- function(ccs,
     edge_labels=NULL
   }
 
-  layout_info = hooke:::layout_state_graph(G, node_metadata, edge_labels, weighted=FALSE)
+  layout_info = layout_state_graph(G, node_metadata, edge_labels, weighted=FALSE)
   gvizl_coords = layout_info$gvizl_coords
   bezier_df = layout_info$bezier_df
   if (is.null(edge_weights) == FALSE){
