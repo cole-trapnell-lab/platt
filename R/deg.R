@@ -435,7 +435,7 @@ compare_genes_over_graph <- function(ccs,
   #   group_by(cell_state) %>% tidyr::nest() %>% dplyr::rename(gene_class_scores = data)
   
   cell_states <- cell_states %>%
-    tidyr::unnest(gene_classes) %>%
+    tidyr::unnest(gene_class_scores) %>%
     left_join(
       rowData(pb_cds) %>% as.data.frame() %>% dplyr::select(id, gene_short_name),
       by = c("gene_id" = "id")
