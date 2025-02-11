@@ -2,7 +2,11 @@ site_name: Platt
 site_author: Maddy Duran
 site_url: https://cole-trapnell-lab.github.io/platt
 nav:
-  - Overview: index.md
+  - Overview: background.md
+  - Kinetics: kinetics.md
+  - GraphConstruction: graphs.md
+  - DEGs: deg.md
+  - Plotting: plotting.md
 
 theme:
   palette:
