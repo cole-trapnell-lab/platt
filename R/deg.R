@@ -933,7 +933,7 @@ compare_gene_expression_within_node <- function(cell_group,
   
   message(paste("\tcomputing contrasts for", unique(perturbation_ids)))
   cell_perturbations = cell_perturbations %>% 
-    mutate(perturb_effects = purrr:::map(.f = contrast_helper, 
+    mutate(perturb_effects = purrr:::map(.f = purrr::possibly(contrast_helper, NA_character_), 
                                          .x = term,
                                          state_2 = control_ids, 
                                          PEM = pb_coeffs$coefficients, 
