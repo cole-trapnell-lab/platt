@@ -541,7 +541,7 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   estimate_matrix = estimate_matrix %>% mutate(id = factor(id, levels=model_tbl$id))
   
   print ("\tpivoting coefficient table:")
-  print(head(estimate_matrix))
+  # print(head(estimate_matrix))
   estimate_matrix = estimate_matrix %>% tidyr::pivot_wider(names_from=term, values_from=estimate, id_expand = TRUE, values_fill=0)
   
   gene_ids = estimate_matrix$id
@@ -663,7 +663,7 @@ compare_genes_within_state_graph = function(ccs,
     pb_cds = pb_cds[, colData(pb_cds)[[perturbation_col]] %in% c("Control", perturbations)]
     
   } else{ #otherwise, grab the perturbation ids from the CDS and process them all
-    perturbations = unique(colData(pb_cds)[[perturbation_col]])
+    perturbations = unique(colData(pb_cds)[["perturbation"]])
     print (paste("pre-filter controls:", "Control"))
     print (paste("pre-filter", perturbations))
     perturbations = setdiff(perturbations, "Control")
