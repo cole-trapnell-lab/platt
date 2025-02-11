@@ -1221,13 +1221,13 @@ compare_genes_in_cell_state <- function(cell_state,
   genes_to_test = expr_df$gene_id
   
   
-  cell_state_to_ambient = contrast_helper(cell_state, "Intercept",
-                                          PEM = estimate_matrix,
-                                          PSEM = stderr_matrix,
-                                          prefix = "cell_state")
+  # cell_state_to_ambient = contrast_helper(cell_state, "Intercept",
+  #                                         PEM = estimate_matrix,
+  #                                         PSEM = stderr_matrix,
+  #                                         prefix = "cell_state")
   
   
-  expr_df = left_join(expr_df, cell_state_to_ambient, by = c("gene_id" = "id"))
+  # expr_df = left_join(expr_df, cell_state_to_ambient, by = c("gene_id" = "id"))
   
   # } 
   
