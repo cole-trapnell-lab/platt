@@ -1,5 +1,7 @@
 
 
+![](assets/how_to_assemble_a_graph.png)
+
 Before we build our own graphs, let's use a basic graph example 
 
 ```
