@@ -332,11 +332,12 @@ compare_genes_over_graph <- function(ccs,
                                     nuisance_model_formula_str = "0",
                                     # ambient_coeffs = NULL, 
                                     log_fc_thresh=1,
-                                    abs_expr_thresh = 1e-10,
+                                    abs_expr_thresh = 1e-3,
                                     sig_thresh=0.05,
                                     min_samples_detected = 2,
                                     min_cells_per_pseudobulk = 3,
                                     cores=1,
+                                    cv_threshold = 50,
                                     ...){
   if (is.null(group_nodes_by)){
     pb_cds = hooke:::pseudobulk_ccs_for_states(ccs, cell_agg_fun="sum")
@@ -374,6 +375,11 @@ compare_genes_over_graph <- function(ccs,
   
   pseudobulks_to_test = which(colData(pb_cds)$num_cells_in_group >= min_cells_per_pseudobulk)
   
+  
+  # num_cell_types = colData(pb_cds) %>% as.data.frame %>% group_by(cell_group) %>% summarise(n = sum(num_cells_in_group))
+  # num_cells = colData(pb_cds) %>% as.data.frame %>%  group_by(cell_group) %>% summarise(n = sum(num_cells_in_group)) %>% pull(n)
+  # names(num_cells) =  colData(pb_cds) %>% as.data.frame %>%  group_by(cell_group) %>% pull(cell_group)
+  
   message("fitting regression models")
   pb_cds = pb_cds[,pseudobulks_to_test]
   
@@ -409,7 +415,7 @@ compare_genes_over_graph <- function(ccs,
     dplyr::mutate(gene_classes = purrr::map(.f = purrr::possibly(
       compare_genes_in_cell_state, NA_real_), 
       .x = cell_state,
-      state_graph = state_graph, 
+      state_graph = state_graph,
       # ambient_estimate_matrix = ambient_coeffs$coefficients, 
       # ambient_stderr_matrix = ambient_coeffs$stdev.unscaled, 
       estimate_matrix = pb_coeffs$coefficients, 
@@ -417,6 +423,7 @@ compare_genes_over_graph <- function(ccs,
       state_term = state_term,
       log_fc_thresh=log_fc_thresh,
       abs_expr_thresh = abs_expr_thresh,
+      cv_threshold = cv_threshold,
       sig_thresh=sig_thresh,
       cores=cores))
   
@@ -1095,7 +1102,8 @@ contrast_helper = function(state_1,
                            PEM_2 = PEM,
                            PSEM_2 = PSEM, 
                            prefix = NULL,
-                           ash.control=NULL){
+                           ash.control=NULL, 
+                           cv_threshold = 50){
   
   ash.mixcompdist = "uniform"
   coefficient_mode = 0
@@ -1118,7 +1126,19 @@ contrast_helper = function(state_1,
   log_mean_expression = log(exp(state_1_effects[ids]) + exp(state_2_effects[ids]))
   
   effect_est = state_1_effects[ids] - state_2_effects[ids]
-  se_est = sqrt(state_1_effects_se[ids]^2 + state_2_effects_se[ids]^2)
+  
+  cv_state_1 = state_1_effects_se[ids]  / state_1_effects[ids]  
+  cv_state_2 = state_2_effects_se[ids] / state_2_effects[ids] 
+  
+  # get the max of each id
+  cv_max = pmax(abs(cv_state_1), abs(cv_state_2))
+  
+  # if the CV is big, take the smaller standard error 
+  se_est = ifelse(cv_max > cv_threshold, 
+                  min( state_1_effects_se[ids], state_2_effects_se[ids]),
+                  sqrt(state_1_effects_se[ids]^2 + state_2_effects_se[ids]^2))
+
+  
   
   up_down_large_effect_skew = NA
   effect_skewness_classic = NA
@@ -1196,7 +1216,9 @@ compare_genes_in_cell_state <- function(cell_state,
                                         log_fc_thresh=1, 
                                         abs_expr_thresh = 1e-3, 
                                         sig_thresh=0.05, 
-                                        cores=1) {
+                                        cores=1, 
+                                        expected_effect_mode_interval = c(-10,10), 
+                                        cv_threshold = 50) {
   
   parents = get_parents(state_graph, cell_state) #igraph::neighbors(state_graph, cell_state, mode="in")
   parents = intersect(parents, colnames(estimate_matrix))
@@ -1292,13 +1314,17 @@ compare_genes_in_cell_state <- function(cell_state,
     cell_state_to_parents = contrast_helper(cell_state, parents, 
                                             PEM = estimate_matrix[genes_to_test,], 
                                             PSEM = stderr_matrix[genes_to_test,], 
-                                            prefix = "cell_state_to_parents")
+                                            prefix = "cell_state_to_parents", 
+                                            ash.control=list(mode=expected_effect_mode_interval),
+                                            cv_threshold = cv_threshold)
     
     
     parents_to_cell_state = contrast_helper(parents, cell_state, 
                                             PEM = estimate_matrix[genes_to_test,], 
                                             PSEM = stderr_matrix[genes_to_test,], 
-                                            prefix = "parents_to_cell_state")
+                                            prefix = "parents_to_cell_state", 
+                                            ash.control=list(mode=expected_effect_mode_interval),
+                                            cv_threshold = cv_threshold)
       
     expr_df = left_join(expr_df, cell_state_to_parents, by = c("gene_id" = "id"))
     expr_df = left_join(
@@ -1375,7 +1401,9 @@ compare_genes_in_cell_state <- function(cell_state,
       cell_state_to_sibling = contrast_helper(cell_state, sibling, 
                                             PEM = estimate_matrix[genes_to_test,], 
                                             PSEM = stderr_matrix[genes_to_test,], 
-                                            prefix = "cell_state_to_sibling")
+                                            prefix = "cell_state_to_sibling", 
+                                            ash.control=list(mode=expected_effect_mode_interval),
+                                            cv_threshold = cv_threshold)
       
       p.adjust(cell_state_to_sibling$cell_state_to_sibling_p_value) < sig_thresh & 
         cell_state_to_sibling$cell_state_to_sibling_shrunken_lfc > log_fc_thresh
@@ -1389,7 +1417,9 @@ compare_genes_in_cell_state <- function(cell_state,
       sibling_to_cell_state = contrast_helper(sibling, cell_state, 
                                             PEM = estimate_matrix[genes_to_test,], 
                                             PSEM = stderr_matrix[genes_to_test,], 
-                                            prefix = "sibling_to_cell_state")
+                                            prefix = "sibling_to_cell_state", 
+                                            ash.control=list(mode=expected_effect_mode_interval),
+                                            cv_threshold = cv_threshold)
       
       p.adjust(sibling_to_cell_state$sibling_to_cell_state_p_value) < sig_thresh & 
         sibling_to_cell_state$sibling_to_cell_state_shrunken_lfc > log_fc_thresh
@@ -1468,7 +1498,9 @@ compare_genes_in_cell_state <- function(cell_state,
       cell_state_to_child = contrast_helper(cell_state, child, 
                                                PEM = estimate_matrix[genes_to_test,], 
                                                PSEM = stderr_matrix[genes_to_test,], 
-                                               prefix = "cell_state_to_child")
+                                               prefix = "cell_state_to_child", 
+                                            ash.control=list(mode=expected_effect_mode_interval),
+                                            cv_threshold = cv_threshold)
       
       p.adjust(cell_state_to_child$cell_state_to_child_p_value) < sig_thresh & 
         cell_state_to_child$cell_state_to_child_shrunken_lfc > log_fc_thresh
@@ -1482,7 +1514,9 @@ compare_genes_in_cell_state <- function(cell_state,
       child_to_cell_state = contrast_helper(child, cell_state, 
                                             PEM = estimate_matrix[genes_to_test,], 
                                             PSEM = stderr_matrix[genes_to_test,], 
-                                            prefix = "child_to_cell_state")
+                                            prefix = "child_to_cell_state", 
+                                            ash.control=list(mode=expected_effect_mode_interval),
+                                            cv_threshold = cv_threshold)
       
       p.adjust(child_to_cell_state$child_to_cell_state_p_value) < sig_thresh & 
         child_to_cell_state$child_to_cell_state_shrunken_lfc > log_fc_thresh
