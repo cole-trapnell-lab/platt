@@ -147,6 +147,8 @@ score_genes_for_expression_pattern <- function(cell_state, gene_patterns, state_
   parents_estimates = estimate_matrix[gene_patterns$gene_id, c(parents), drop=FALSE]
   parents_and_sib_estimates = estimate_matrix[gene_patterns$gene_id, c(parents, siblings), drop=FALSE]
   
+  children_estimates = estimate_matrix[gene_patterns$gene_id, c(children), drop=FALSE]
+  
   self_and_parent = exp(estimate_matrix[gene_patterns$gene_id, c(cell_state, parents), drop=FALSE])
   self_and_parent = self_and_parent / Matrix::rowSums(self_and_parent) #normalize so that rows sum to 1
   
@@ -186,8 +188,10 @@ score_genes_for_expression_pattern <- function(cell_state, gene_patterns, state_
                        interpretation %in% c("Maintained") ~ measure_maintenance_effect(self_estimates, parents_estimates),
                        interpretation %in% c("Selectively maintained", "Specifically maintained") ~ measure_maintenance_effect(self_estimates, parents_and_sib_estimates),
                        interpretation %in% c("Upregulated", "Activated") ~ measure_upregulation_effect(self_estimates, parents_estimates),
+                       interpretation %in% c("Precursor-specific") ~ measure_upregulation_effect(self_estimates, children_estimates),
+                       interpretation %in% c("Precursor-depleted") ~ measure_downregulation_effect(self_estimates, children_estimates),
                        interpretation %in% c("Selectively upregulated", "Specifically upregulated", "Selectively activated", "Specifically activated") ~ measure_upregulation_effect(self_estimates, parents_and_sib_estimates),
-                       interpretation %in% c("Downregulated", "Dectivated") ~ measure_downregulation_effect(self_estimates, parents_estimates),
+                       interpretation %in% c("Downregulated", "Deactivated") ~ measure_downregulation_effect(self_estimates, parents_estimates),
                        interpretation %in% c("Selectively downregulated", "Specifically downregulated", "Selectively deactivated", "Specifically deactivated") ~ measure_downregulation_effect(self_estimates, parents_and_sib_estimates),
                        TRUE ~ 0)
     )
@@ -337,7 +341,7 @@ compare_genes_over_graph <- function(ccs,
                                     min_samples_detected = 2,
                                     min_cells_per_pseudobulk = 3,
                                     cores=1,
-                                    cv_threshold = 50,
+                                    cv_threshold = 10,
                                     ...){
   if (is.null(group_nodes_by)){
     pb_cds = hooke:::pseudobulk_ccs_for_states(ccs, cell_agg_fun="sum")
@@ -1103,7 +1107,7 @@ contrast_helper = function(state_1,
                            PSEM_2 = PSEM, 
                            prefix = NULL,
                            ash.control=NULL, 
-                           cv_threshold = 50){
+                           cv_threshold = 10){
   
   ash.mixcompdist = "uniform"
   coefficient_mode = 0
@@ -1218,7 +1222,7 @@ compare_genes_in_cell_state <- function(cell_state,
                                         sig_thresh=0.05, 
                                         cores=1, 
                                         expected_effect_mode_interval = c(-10,10), 
-                                        cv_threshold = 50) {
+                                        cv_threshold = 10) {
   
   parents = get_parents(state_graph, cell_state) #igraph::neighbors(state_graph, cell_state, mode="in")
   parents = intersect(parents, colnames(estimate_matrix))
@@ -1236,6 +1240,11 @@ compare_genes_in_cell_state <- function(cell_state,
   expr_df = tibble(gene_id=row.names(estimate_matrix))
   
   # if (is.null(ambient_estimate_matrix)) {
+  
+  # save the expr value
+  expr_df$expr_self_est = estimate_matrix[,cell_state]
+  expr_df$expr_self_sd = stderr_matrix[,cell_state]
+  
   expr_df$expr_self = pnorm(estimate_matrix[,cell_state] - log(abs_expr_thresh), 
                             sd = stderr_matrix[,cell_state], lower.tail=FALSE)
   
