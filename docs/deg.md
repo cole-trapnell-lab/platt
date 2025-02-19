@@ -5,6 +5,7 @@ The function `compare_gene_expression_within_node`
 * `ccs`
 * `pb_cds`
 * `control_ids`
+
 ```
 compare_gene_expression_within_node(cell_group, 
                                     ccs,
@@ -31,14 +32,13 @@ compare_genes_in_cell_state(cell_state,
 
 The function `compare_genes_within_state_graph()`
 * `ccs`- a Hooke `cell_count_set` object
-* `pf_graph`
-* `ambient_coeffs`
+* `graph`
 * `gene_ids`
 * `cores`
+
 ```
 pf_graph_degs = compare_genes_over_graph(pf_ccs,
-                                         pf_graph, 
-                                         ambient_coeffs = ref_ambient_coeffs)
+                                         pf_graph)
 ```
 
 
@@ -52,25 +52,18 @@ chem10_ccs = new_cell_count_set(chem10_cds,
                          cell_group = "cell_type")
 ```
 
-
-* `ccs`- a Hooke `cell_count_set` object
-```
-chem10_ambient_coeffs = estimate_ambient_rna(chem10_ccs, cores = 4)
-```
-
 The function `compare_genes_within_state_graph()`
 * `ccs`- a Hooke `cell_count_set` object
-* `perturbation_col`
-* `control_ids`
-* `cell_groups`
+* `perturbation_col` - column name of the perturbations
+* `control_ids` - list of control ids 
+* `cell_groups` - subset of cell groups to run DEGs on 
 * `perturbations` - defaults to perturbation
-* `ambient_coeffs`
 * `cores`
+
 ```
 genes_within_cell_state = compare_genes_within_state_graph(chem10_ccs, 
                                                            perturbation_col = "drug_target", 
                                                            control_ids = c("Control"), 
-                                                           # cell_groups = c("MHB, progenitor"), 
                                                            perturbations = c("TGFB", "Shh", "BMP", "Notch", "FGF", "Wnt", "RA"), 
                                                            ambient_coeffs = chem10_ambient_coeffs,
                                                            cores = 1)

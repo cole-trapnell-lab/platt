@@ -1,36 +1,19 @@
 
+Platt's graph algorithm: 
 
 ![](assets/how_to_assemble_a_graph.png)
 
 Before we build our own graphs, let's use a basic graph example 
 
 ```
-my_graph = data.frame(from = c(), to = c()) %>% igraph::graph_from_data_frame() 
+state_graph = data.frame(from = c("early notochord progenitor", "early notochord", "early vacuolated notochord",  "early notochord", "early notochord sheath"), 
+                      to = c("early notochord", "early vacuolated notochord", "late vacuolated notochord", "early notochord sheath", "late notochord sheath")) %>% 
+                      igraph::graph_from_data_frame() 
+                      
+plot(my_graph)
 ```
 
-### Manipulating graphs
-
-Get the parents
-* `state_graph`
-* `cell_state`
-```
-get_parents(state_graph, cell_state)
-```
-
-Get the children
-* `state_graph`
-* `cell_state` 
-```
-get_children(state_graph, cell_state)
-```
-
-Get the siblings
-* `state_graph`
-* `cell_state`
-```
-get_siblings(state_graph, cell_state)
-```
-
+![](assets/notochord_igraph_plot.png)
 
 ### Making a cell_state_graph object
 
@@ -38,7 +21,64 @@ get_siblings(state_graph, cell_state)
 * `ccs` - a Hooke `cell_count_set` object
 
 ```
-state_graph = new_cell_state_graph(state_graph, ccs)
+notochord_state_graph = new_cell_state_graph(state_graph, ccs)
+```
+
+### Manipulating graphs
+
+Get the parents:
+* `state_graph`
+* `cell_state`
+
+```
+get_parents(notochord_state_graph, cell_state)
+```
+
+```
+get_parents(notochord_state_graph, "early vacuolated notochord")
+```
+
+returns
+
+```
+"early notochord"
+```
+
+Get the children:
+* `state_graph`
+* `cell_state` 
+
+```
+get_children(notochord_state_graph, cell_state)
+```
+
+```
+get_children(notochord_state_graph, "early vacuolated notochord")
+```
+
+returns
+
+```
+"late vacuolated notochord"
+```
+
+Get the siblings:
+* `state_graph`
+* `cell_state`
+
+```
+get_siblings(notochord_state_graph, cell_state)
+```
+
+
+```
+get_siblings(notochord_state_graph, "early vacuolated notochord")
+```
+
+returns
+
+```
+"early notochord sheath"
 ```
 
 ### Plotting a cell_state_graph
@@ -47,9 +87,11 @@ The function `plot_annotations()`
 * `cell_state_graph`
 * `color_nodes_by`
 * `label_nodes_by`
+
 ```
-plot_annotations(noto_state_graph, node_size = 4.5)
+plot_annotations(notochord_state_graph, node_size = 4.5)
 ```
+
 ![](assets/noto_graph.png)
 
 The function `plot_abundance_changes()`
@@ -57,8 +99,9 @@ The function `plot_abundance_changes()`
 * `comp_abund_table`
 
 ```
-plot_abundance_changes(noto_state_graph, lmx_fc %>% filter(timepoint_x==60),  node_size = 4.5)
+plot_abundance_changes(notochord_state_graph, lmx_fc %>% filter(timepoint_x==60),  node_size = 4.5)
 ```
+
 ![](assets/notochord_abundance_lmx1bb.png)
 
 The function `plot_gene_expr`
@@ -66,8 +109,9 @@ The function `plot_gene_expr`
 * `genes`
 
 ```
-plot_gene_expr(noto_state_graph, genes=c("lmx1bb"))
+plot_gene_expr(notochord_state_graph, genes=c("lmx1bb"))
 ```
+
 ![](assets/noto_expr_lmx1bb.png)
 
 
@@ -76,6 +120,7 @@ The function `plot_degs`
 * `deg_table`
 
 ```
-plot_degs(noto_state_graph, num_degs, node_size = 4.5)
+plot_degs(notochord_state_graph, num_degs, node_size = 4.5)
 ```
+
 ![](assets/notochord_degs_lmx1bb.png)
