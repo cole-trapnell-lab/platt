@@ -32,11 +32,11 @@ Get the parents:
 * `cell_state`
 
 ```
-get_parents(cell_state_graph, cell_state)
+get_parents(cell_state_graph@graph, cell_state)
 ```
 For example:
 ```
-> get_parents(notochord_state_graph, "early vacuolated notochord")
+> get_parents(notochord_state_graph@graph, "early vacuolated notochord")
 ```
 returns
 ```
@@ -48,11 +48,11 @@ Get the children:
 * `cell_state` 
 
 ```
-get_children(cell_state_graph, cell_state)
+get_children(cell_state_graph@graph, cell_state)
 ```
 For example:
 ```
-> get_children(notochord_state_graph, "early vacuolated notochord")
+> get_children(notochord_state_graph@graph, "early vacuolated notochord")
 ```
 returns: 
 ```
@@ -64,11 +64,11 @@ Get the siblings:
 * `cell_state`
 
 ```
-get_siblings(cell_state_graph, cell_state)
+get_siblings(cell_state_graph@graph, cell_state)
 ```
 For example: 
 ```
-> get_siblings(notochord_state_graph, "early vacuolated notochord")
+> get_siblings(notochord_state_graph@graph, "early vacuolated notochord")
 ```
 returns
 ```
@@ -86,9 +86,10 @@ The function `plot_annotations()`:
 plot_annotations(notochord_state_graph, node_size = 4.5)
 ```
 
-![](assets/noto_graph.png){width=75%}
+![](assets/notochord_graph.png){width=75%}
 
 The function `plot_abundance_changes()`:
+
 * `cell_state_graph`
 * `comp_abund_table`
 
@@ -96,7 +97,7 @@ The function `plot_abundance_changes()`:
 plot_abundance_changes(notochord_state_graph, lmx_fc %>% filter(timepoint_x==60),  node_size = 4.5)
 ```
 
-![](assets/notochord_abundance_lmx1bb.png){width=75%}
+![](assets/notochord_abundance_lmx1bb.png){width=50%}
 
 The function `plot_gene_expr`: 
 
@@ -107,7 +108,7 @@ The function `plot_gene_expr`:
 plot_gene_expr(notochord_state_graph, genes=c("lmx1bb"))
 ```
 
-![](assets/noto_expr_lmx1bb.png){width=75%}
+![](assets/noto_expr_lmx1bb.png){width=50%}
 
 
 The function `plot_degs`: 
@@ -119,4 +120,6 @@ The function `plot_degs`:
 plot_degs(notochord_state_graph, num_degs, node_size = 4.5)
 ```
 
-![](assets/notochord_degs_lmx1bb.png){width=75%}
+![](assets/notochord_degs_lmx1bb.png){width=50%}
+
+
