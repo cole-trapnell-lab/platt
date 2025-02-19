@@ -17,7 +17,7 @@ plot(my_graph)
 
 ### Making a cell_state_graph object
 
-* `state_graph` - an igraph object
+* `cell_state_graph` - an igraph object
 * `ccs` - a Hooke `cell_count_set` object
 
 ```
@@ -27,58 +27,52 @@ notochord_state_graph = new_cell_state_graph(state_graph, ccs)
 ### Manipulating graphs
 
 Get the parents:
-* `state_graph`
+
+* `cell_state_graph`
 * `cell_state`
 
 ```
-get_parents(notochord_state_graph, cell_state)
+get_parents(cell_state_graph, cell_state)
 ```
-
+For example:
 ```
-get_parents(notochord_state_graph, "early vacuolated notochord")
+> get_parents(notochord_state_graph, "early vacuolated notochord")
 ```
-
 returns
-
 ```
-"early notochord"
+> "early notochord"
 ```
 
 Get the children:
-* `state_graph`
+* `cell_state_graph`
 * `cell_state` 
 
 ```
-get_children(notochord_state_graph, cell_state)
+get_children(cell_state_graph, cell_state)
 ```
-
+For example:
 ```
-get_children(notochord_state_graph, "early vacuolated notochord")
+> get_children(notochord_state_graph, "early vacuolated notochord")
 ```
-
-returns
-
+returns: 
 ```
-"late vacuolated notochord"
+> "late vacuolated notochord"
 ```
 
 Get the siblings:
-* `state_graph`
+* `cell_state_graph`
 * `cell_state`
 
 ```
-get_siblings(notochord_state_graph, cell_state)
+get_siblings(cell_state_graph, cell_state)
 ```
-
-
+For example: 
 ```
-get_siblings(notochord_state_graph, "early vacuolated notochord")
+> get_siblings(notochord_state_graph, "early vacuolated notochord")
 ```
-
 returns
-
 ```
-"early notochord sheath"
+> "early notochord sheath"
 ```
 
 ### Plotting a cell_state_graph
