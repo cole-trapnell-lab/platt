@@ -51,7 +51,7 @@ tbx16_msgn1_ccm = fit_mt_models(skeletal_muscle_comb_cds,
                                 sample_group = "embryo", 
                                 cell_group = "cell_type", 
                                 perturbation_col = "perturbation", 
-                                ctrl_ids = c(control_ids), 
+                                ctrl_ids = c("ctrl-inj"), 
                                 mt_ids = c("tbx16-msgn1"))
 
 
