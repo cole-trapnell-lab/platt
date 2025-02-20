@@ -9,9 +9,7 @@ Platt is implemented using the PLNmodels package. PLN models are a multivariate 
 
 This is inline math: \( E = mc^2 \).
 
-$$
-E = mc^2
-$$
+Test: $$ E = mc^2 $$
 
 
 
