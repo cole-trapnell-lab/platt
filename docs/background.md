@@ -22,14 +22,6 @@
 
 Platt is implemented using the PLNmodels package. PLN models are a multivariate mixed generalized linear model with a Poisson distribution, allowing them to overcome the computational challenges posed by count data. They provide a convenient framework to perform multivariate statistical regression to describe how environmental effects or perturbations alter the relative abundances of each species.
 
-This is inline math: \( E = mc^2 \).
-
-Test: $$ E = mc^2 $$
-Test: $ E = mc^2 $
-
-
-
-
 Correlations between pairs of species is captured by the variance matrix $\Sigma$. 
 whereas partial correlations are encoded by its inverse: the precision matrix $\Omega$. 
 
