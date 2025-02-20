@@ -10,8 +10,6 @@ _For more information about this dataset, see the [ZSCAPE website](https://cole-
 # Analysis of skeletal muscle with Platt
 
 This vignette focuses on the skeletal muscle subset. Platt wraps some base Hooke functions to more easily fit kinetic models.  
-
-
 _You can see our Hooke kinetics tutorial [here.](https://cole-trapnell-lab.github.io/hooke/advanced/)_
 
 The function `fit_wt_model` fits a Hooke model over time. It requires the following inputs: 

@@ -1,5 +1,10 @@
 # Running DEGs over a graph
 
+Finding regulatory genes with fate-restricted patterns may help identify new genetic requirements of cell types.  
+For example, “terminal selector” and “multilineage priming (MLP)” genes might activate specific fates, genes expressed in progenitors only might be required for maintaining the progenitor states, and genes excluded from certain fates might repress that fate [1-4].
+We can systematically identify these patterns by computing differential expression across our graphs
+And then classify these patterns based on a set of defined rules.  
+
 ![](assets/degs_over_graph.png)
 
 _See an explanation of gene patterns [here](https://cole-trapnell-lab.github.io/platt/patterns/):_
@@ -64,14 +69,6 @@ plot_gene_expr(pf_cell_state_graph, genes = c())
 _For more information about plotting on a Platt graph, see our [plotting page](https://cole-trapnell-lab.github.io/platt/plotting)._
 
 # Running DEGs within each perturbation
-
-```
-chem10_cds = load_monocle_objects("/net/trapnell/vol1/home/elizab9/projects/projects/CHEMFISH/manuscript/data/chem10_projected_comb_cds_v2.0.2_remove_outliers")
-
-chem10_ccs = new_cell_count_set(chem10_cds,
-                         sample_group = "embryo",
-                         cell_group = "cell_type")
-```
 
 The function `compare_genes_within_state_graph()`: 
 
@@ -139,3 +136,13 @@ plot_degs(muscle_state_graph, tbx16_degs %>% left_join(gene_df, by = "id") %>%
 ![](assets/muscle_pax3a_deg.png){width=75%}
 
 _For more information about plotting on a Platt graph, see our [plotting page](https://cole-trapnell-lab.github.io/platt/plotting)._
+
+
+
+
+#### References
+1.	Hobert, O. Terminal selectors of neuronal identity. Curr. Top. Dev. Biol. 116, 455–475 (2016).
+2.	Laslo, P. et al. Multilineage transcriptional priming and determination of alternate hematopoietic cell fates. Cell 126, 755–766 (2006).
+3.	Qiu, C. et al. Systematic reconstruction of cellular trajectories across mouse embryogenesis. Nat. Genet. 54, 328–341 (2022).
+4.	Packer, J. S. et al. A lineage-resolved molecular atlas of C. elegans embryogenesis at single-cell resolution. Science 365, (2019).
+
