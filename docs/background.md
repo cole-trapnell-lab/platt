@@ -2,6 +2,21 @@
   src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.0/es5/tex-mml-chtml.js">
 </script>
 
+<script type="text/javascript">
+  window.MathJax = {
+    tex: {
+      inlineMath: [['\\(', '\\)'], ['$', '$']],  // Explicit inline math delimiters
+    },
+    startup: {
+      ready: function() {
+        MathJax.startup.defaultReady();
+        MathJax.typeset();  // Ensures it processes the content after loading
+      }
+    }
+  };
+</script>
+
+
 
 ![](assets/platt_overview.png)
 
@@ -10,6 +25,7 @@ Platt is implemented using the PLNmodels package. PLN models are a multivariate 
 This is inline math: \( E = mc^2 \).
 
 Test: $$ E = mc^2 $$
+Test: $ E = mc^2 $
 
 
 
