@@ -91,7 +91,7 @@ plot_annotations(pf_state_graph, node_size = 4.5)
 
 ![](assets/pec_fin_graph.png){width=75%}
 
-For more information about plotting on a Platt graph, see our [Plotting page](https://cole-trapnell-lab.github.io/platt/plotting/)
+_For more information about plotting on a Platt graph, see our [Plotting page](https://cole-trapnell-lab.github.io/platt/plotting/)_
 
 
 

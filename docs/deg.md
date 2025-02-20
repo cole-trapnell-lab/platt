@@ -2,8 +2,7 @@
 
 ![](assets/degs_over_graph.png)
 
-
-See explanation of gene patterns [here](https://cole-trapnell-lab.github.io/platt/patterns/): 
+_See an explanation of gene patterns [here](https://cole-trapnell-lab.github.io/platt/patterns/):_
 
 The function `compare_genes_within_state_graph()`:
 
@@ -90,3 +89,37 @@ genes_within_cell_state = compare_genes_within_state_graph(chem10_ccs,
                                                            perturbations = c("TGFB", "Shh", "BMP", "Notch", "FGF", "Wnt", "RA"),
                                                            cores = 6)
 ```
+
+
+```
+
+genes_within_cell_state %>% tidyr::unnest
+
+
+```
+
+We can plot the fold change on the platt graph: 
+
+
+```
+platt:::plot_annotations(muscle_state_graph, plot_labels = T, node_size = 4)
+
+```
+![](assets/muscle_anno.png){width=75%}
+
+
+```
+plot_gene_expr(muscle_state_graph, genes = c("pax3a"), node_size = 4, plot_labels = F) + 
+  theme(legend.position = "right")
+```
+![](assets/muscle_pax3a.png){width=75%}
+
+
+```
+plot_degs(muscle_state_graph, tbx16_degs %>% left_join(gene_df, by = "id") %>% 
+            filter(term == "tbx16,msgn1", gene_short_name == "pax3a"), node_size = 4.5)
+```
+
+![](assets/muscle_pax3a_deg.png){width=75%}
+
+_For more information about plotting on a Platt graph, see our [plotting page](https://cole-trapnell-lab.github.io/platt/plotting)._

@@ -67,7 +67,7 @@ The function `plot_degs`:
 * `deg_table`
 
 ```
-plot_degs(notochord_state_graph, num_degs, node_size = 4.5)
+plot_degs(notochord_state_graph, lmx1b_degs %>% filter(gene_short_name == "col2a1a"), node_size = 4.5)
 ```
 
 ![](assets/notochord_degs_lmx1bb.png){width=75%}

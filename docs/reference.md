@@ -11,6 +11,12 @@ All functions
 # Kinetic functions
 
 
+# Helper functions
+
+[`fit_genotype_ccm`](fit_genotype_ccm)
+[`fit_wt_model`]()
+[`fit_mt_model`]()
+
 # Plotting functions
 
 [`plot_annotations()`](plot_annotations)
