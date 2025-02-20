@@ -1,33 +1,3 @@
-# Running a single DEG comparison 
-
-The function `compare_gene_expression_within_node`:
-
-* `cell_group`
-* `ccs`
-* `pb_cds`
-* `control_ids`
-
-```
-compare_gene_expression_within_node(cell_group, 
-                                    ccs,
-                                    pb_cds, 
-                                    control_ids)
-```
-
-The function `compare_genes_in_cell_state()`:
-
-* `cell_state`
-* `state_graph`
-* `estimate_matrix`
-* `stderr_matrix`
-
-```
-compare_genes_in_cell_state(cell_state, 
-                            state_graph,
-                            estimate_matrix, 
-                            stderr_matrix)
-```
-
 # Running DEGs over a graph
 
 ![](assets/degs_over_graph.png)
@@ -36,6 +6,7 @@ compare_genes_in_cell_state(cell_state,
 See explanation of gene patterns [here](https://cole-trapnell-lab.github.io/platt/patterns/): 
 
 The function `compare_genes_within_state_graph()`:
+
 * `ccs`- a Hooke `cell_count_set` object
 * `graph`
 * `gene_ids`
@@ -70,7 +41,6 @@ The function `compare_genes_within_state_graph()`:
 genes_within_cell_state = compare_genes_within_state_graph(chem10_ccs, 
                                                            perturbation_col = "drug_target", 
                                                            control_ids = c("Control"), 
-                                                           perturbations = c("TGFB", "Shh", "BMP", "Notch", "FGF", "Wnt", "RA"), 
-                                                           ambient_coeffs = chem10_ambient_coeffs,
-                                                           cores = 1)
+                                                           perturbations = c("TGFB", "Shh", "BMP", "Notch", "FGF", "Wnt", "RA"),
+                                                           cores = 6)
 ```
