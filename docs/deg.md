@@ -1,9 +1,6 @@
 # Running DEGs over a graph
 
-Finding regulatory genes with fate-restricted patterns may help identify new genetic requirements of cell types.  
-For example, “terminal selector” and “multilineage priming (MLP)” genes might activate specific fates, genes expressed in progenitors only might be required for maintaining the progenitor states, and genes excluded from certain fates might repress that fate [1-4].
-We can systematically identify these patterns by computing differential expression across our graphs
-And then classify these patterns based on a set of defined rules.  
+Finding regulatory genes with fate-restricted patterns may help identify new genetic requirements of cell types. For example, “terminal selector” and “multilineage priming (MLP)” genes might activate specific fates, genes expressed in progenitors only might be required for maintaining the progenitor states, and genes excluded from certain fates might repress that fate [1-4](https://cole-trapnell-lab.github.io/platt/deg/#references). We can systematically identify these patterns by computing differential expression across our graphs and then classify these patterns based on a set of defined rules.  
 
 ![](assets/degs_over_graph.png)
 
@@ -140,7 +137,7 @@ _For more information about plotting on a Platt graph, see our [plotting page](h
 
 
 
-#### References
+# Reference
 1.	Hobert, O. Terminal selectors of neuronal identity. Curr. Top. Dev. Biol. 116, 455–475 (2016).
 2.	Laslo, P. et al. Multilineage transcriptional priming and determination of alternate hematopoietic cell fates. Cell 126, 755–766 (2006).
 3.	Qiu, C. et al. Systematic reconstruction of cellular trajectories across mouse embryogenesis. Nat. Genet. 54, 328–341 (2022).
