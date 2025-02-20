@@ -1,6 +1,7 @@
 # Running a single DEG comparison 
 
-The function `compare_gene_expression_within_node`
+The function `compare_gene_expression_within_node`:
+
 * `cell_group`
 * `ccs`
 * `pb_cds`
@@ -13,7 +14,8 @@ compare_gene_expression_within_node(cell_group,
                                     control_ids)
 ```
 
-The function `compare_genes_in_cell_state()`
+The function `compare_genes_in_cell_state()`:
+
 * `cell_state`
 * `state_graph`
 * `estimate_matrix`
@@ -30,7 +32,10 @@ compare_genes_in_cell_state(cell_state,
 
 ![](assets/degs_over_graph.png)
 
-The function `compare_genes_within_state_graph()`
+
+See explanation of gene patterns [here](patterns): 
+
+The function `compare_genes_within_state_graph()`:
 * `ccs`- a Hooke `cell_count_set` object
 * `graph`
 * `gene_ids`
@@ -52,7 +57,8 @@ chem10_ccs = new_cell_count_set(chem10_cds,
                          cell_group = "cell_type")
 ```
 
-The function `compare_genes_within_state_graph()`
+The function `compare_genes_within_state_graph()`: 
+
 * `ccs`- a Hooke `cell_count_set` object
 * `perturbation_col` - column name of the perturbations
 * `control_ids` - list of control ids 
