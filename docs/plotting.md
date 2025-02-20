@@ -25,39 +25,53 @@ ref_state_graph = new_cell_state_graph(combined_state_graph,
 ```
 
 
-# Plot by annotations
+### Plotting a cell_state_graph
+
+The function `plot_annotations()`: 
+* `cell_state_graph`
+* `color_nodes_by`
+* `label_nodes_by`
 
 ```
-plot_by_annotations(pf_state_graph, plot_labels = T, node_size=4) + theme(legend.position = "none")
+plot_annotations(notochord_state_graph, node_size = 4.5)
 ```
 
-```
-plot_by_annotations(ref_state_graph) + theme(legend.position = "none")
-```
-![](assets/full_graph_by_tissue.png)
+![](assets/notochord_graph.png){width=75%}
 
-# Plot by gene expression 
+The function `plot_abundance_changes()`:
 
-```
-plot_by_gene_expr(pf_state_graph, genes= c("runx3"))
-```
-
-# Plot by abundance changes
+* `cell_state_graph`
+* `comp_abund_table`
 
 ```
-plot_abundance_changes(pf_state_graph, 
-                       perturb_table_at_peak_times, 
-                       plot_labels = T, node_size = 4) 
-
+plot_abundance_changes(notochord_state_graph, lmx_fc %>% filter(timepoint_x==60),  node_size = 4.5)
 ```
 
-# Plot by DEG change
+![](assets/notochord_abundance_lmx1bb.png){width=75%}
+
+The function `plot_gene_expr`: 
+
+* `cell_state_graph`
+* `genes`
 
 ```
-plot_degs(pf_state_graph, 
-          tbx16_degs %>% left_join(gene_df, by = "id") %>% filter(term == "tbx16,msgn1", gene_short_name == "pax3a"), 
-          fc_limits = c(-1.5, 1.5),  
-          node_size = 4
+plot_gene_expr(notochord_state_graph, genes=c("lmx1bb"))
+```
+
+![](assets/noto_expr_lmx1bb.png){width=75%}
+
+
+The function `plot_degs`: 
+
+* `cell_state_graph`
+* `deg_table`
 
 ```
+plot_degs(notochord_state_graph, num_degs, node_size = 4.5)
+```
+
+![](assets/notochord_degs_lmx1bb.png){width=75%}
+
+
+
 

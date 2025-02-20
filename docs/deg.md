@@ -14,9 +14,55 @@ The function `compare_genes_within_state_graph()`:
 
 ```
 pf_graph_degs = compare_genes_over_graph(pf_ccs,
-                                         pf_graph)
+                                         pf_cell_state_graph)
 ```
 
+The output of this table will look like this: 
+
+| cell_state                     | gene_class_scores        |
+|--------------------------------|-------------------------|
+| pectoral fin condensate        | <tibble [14,899 × 5]>   |
+| pectoral fin distal mesenchyme | <tibble [14,899 × 5]>   |
+| pectoral fin central cells     | <tibble [14,899 × 5]>   |
+| pectoral fin bud mesoderm      | <tibble [14,899 × 5]>   |
+| pectoral fin cleithrum         | <tibble [14,899 × 5]>   |
+| pectoral fin bud progenitor    | <tibble [14,899 × 5]>   |
+
+To unnest the dataframe: 
+
+```
+pf_graph_degs %>% 
+  tidyr::unnest(gene_class_scores) %>% 
+  filter(pattern_activity_score > 1) %>%
+  filter(interpretation == "Selectively activated")
+  
+```
+
+| cell_state              | gene_id             | data    | interpretation       | pattern_activity_score | gene_short_name |
+|-------------------------|---------------------|---------|----------------------|------------------------|-----------------|
+| pectoral fin condensate | ENSDARG000000062…  | <tibble> | Selectively activated      | 1.02                   | ell2            |
+| pectoral fin condensate | ENSDARG000000099…  | <tibble> | Selectively activated      | 2.16                   | slc38a5a        |
+| pectoral fin condensate | ENSDARG000000106…  | <tibble> | Selectively activated      | 1.86                   | clic2           |
+| pectoral fin condensate | ENSDARG000000116…  | <tibble> | Selectively activated      | 1.19                   | slc26a2         |
+| pectoral fin condensate | ENSDARG000000124…  | <tibble> | Selectively activated      | 3.77                   | col11a2         |
+| pectoral fin condensate | ENSDARG000000309…  | <tibble> | Selectively activated      | 2.00                   | mybl1           |
+
+We can check some of these markers by plotting them either in the UMAP space or on our platt graph:
+
+
+```
+plot_cells(pf_ccs@cds, genes = c())
+```
+
+![](assets/degs_over_graph.png)
+
+```
+plot_gene_expr(pf_cell_state_graph, genes = c())
+```
+
+![](assets/degs_over_graph.png)
+
+For more information about plotting on a Platt graph, see our [Plotting page](https://cole-trapnell-lab.github.io/platt/plotting)
 
 # Running DEGs within each perturbation
 

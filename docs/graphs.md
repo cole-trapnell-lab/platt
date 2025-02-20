@@ -75,51 +75,26 @@ returns
 > "early notochord sheath"
 ```
 
-### Plotting a cell_state_graph
 
-The function `plot_annotations()`: 
-* `cell_state_graph`
-* `color_nodes_by`
-* `label_nodes_by`
+# Constructing a graph
+
 
 ```
-plot_annotations(notochord_state_graph, node_size = 4.5)
-```
-
-![](assets/notochord_graph.png){width=75%}
-
-The function `plot_abundance_changes()`:
-
-* `cell_state_graph`
-* `comp_abund_table`
+make_platt_graph()
 
 ```
-plot_abundance_changes(notochord_state_graph, lmx_fc %>% filter(timepoint_x==60),  node_size = 4.5)
-```
 
-![](assets/notochord_abundance_lmx1bb.png){width=75%}
-
-The function `plot_gene_expr`: 
-
-* `cell_state_graph`
-* `genes`
 
 ```
-plot_gene_expr(notochord_state_graph, genes=c("lmx1bb"))
+plot_annotations(pf_state_graph, node_size = 4.5)
 ```
 
-![](assets/noto_expr_lmx1bb.png){width=75%}
+![](assets/pec_fin_graph.png){width=75%}
+
+For more information about plotting on a Platt graph, see our [Plotting page](https://cole-trapnell-lab.github.io/platt/plotting/)
 
 
-The function `plot_degs`: 
 
-* `cell_state_graph`
-* `deg_table`
 
-```
-plot_degs(notochord_state_graph, num_degs, node_size = 4.5)
-```
-
-![](assets/notochord_degs_lmx1bb.png){width=75%}
 
 
