@@ -1,15 +1,20 @@
+<script type="text/javascript" async
+  src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.0/es5/tex-mml-chtml.js">
+</script>
+
+
 ![](assets/platt_overview.png)
 
 Platt is implemented using the PLNmodels package. PLN models are a multivariate mixed generalized linear model with a Poisson distribution, allowing them to overcome the computational challenges posed by count data. They provide a convenient framework to perform multivariate statistical regression to describe how environmental effects or perturbations alter the relative abundances of each species.
 
 
-Correlations between pairs of species is captured by the variance matrix $\Sigma$. 
-whereas partial correlations are encoded by its inverse: the precision matrix $\Omega$. 
+Correlations between pairs of species is captured by the variance matrix  \ \Sigma \. 
+whereas partial correlations are encoded by its inverse: the precision matrix \ \Omega \. 
 
-The PLN network model for multivariate count data can be viewed as a PLN model with a constraint on the coefficients of $\Omega$. ​
+The PLN network model for multivariate count data can be viewed as a PLN model with a constraint on the coefficients of \ \Omega \. ​
 
 
-Where in this setting, cell types $j$ and $k$ are associated as soon as $\Sigma_k \neq 0$ but are in direct interaction if and only if $\Omega_{jk} \neq 0$​
+Where in this setting, cell types \ j \ and \ k \ are associated as soon as \ \Sigma_k \neq 0 \ but are in direct interaction if and only if \ \Omega_{jk} \neq 0 \​
 
 
 
