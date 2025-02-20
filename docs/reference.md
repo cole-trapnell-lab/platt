@@ -4,14 +4,21 @@ Reference
 All functions
 -------------------------------
 
-[`new_cell_state_graph()`]()
+# Constructors 
 
-[`plot_annotations()`]
+[`new_cell_state_graph()`](new_cell_state_graph)
 
-[`plot_gene_expr()`]
+# Kinetic functions
 
-[`plot_abundance_changes()`]
 
-[`plot_degs()`]
+# Plotting functions
+
+[`plot_annotations()`](plot_annotations)
+
+[`plot_gene_expr()`](plot_gene_expr)
+
+[`plot_abundance_changes()`](plot_abundance_changes)
+
+[`plot_degs()`](plot_degs)
 
 

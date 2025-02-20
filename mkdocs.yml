@@ -3,13 +3,13 @@ site_author: Maddy Duran
 site_url: https://cole-trapnell-lab.github.io/platt
 nav:
   - Overview: background.md
-  - Installation: install.md
-  - Kinetics: kinetics.md
-  - Graphs: graphs.md
-  - DEGs: deg.md
-  - DvEGs: dveg.md
-  - Plotting: plotting.md
-  - Reference: reference.md
+  # - Installation: install.md
+  # - Kinetics: kinetics.md
+  # - Graphs: graphs.md
+  # - DEGs: deg.md
+  # - DvEGs: dveg.md
+  # - Plotting: plotting.md
+  # - Reference: reference.md
 
 theme:
   palette:

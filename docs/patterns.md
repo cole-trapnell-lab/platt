@@ -1,4 +1,6 @@
 
+![](assets/gene_patterns)
+
 
 Patterns: 
 
@@ -10,5 +12,5 @@ Patterns:
 
 Prefixes: 
 
-* specifically: pattern is present in only one of the daughter cell types
+* Specifically: pattern is present in only one of the daughter cell types
 * Selectively: pattern is present in two or more of the daughter cell types but not all

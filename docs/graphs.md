@@ -97,7 +97,7 @@ The function `plot_abundance_changes()`:
 plot_abundance_changes(notochord_state_graph, lmx_fc %>% filter(timepoint_x==60),  node_size = 4.5)
 ```
 
-![](assets/notochord_abundance_lmx1bb.png){width=50%}
+![](assets/notochord_abundance_lmx1bb.png){width=75%}
 
 The function `plot_gene_expr`: 
 
@@ -108,7 +108,7 @@ The function `plot_gene_expr`:
 plot_gene_expr(notochord_state_graph, genes=c("lmx1bb"))
 ```
 
-![](assets/noto_expr_lmx1bb.png){width=50%}
+![](assets/noto_expr_lmx1bb.png){width=75%}
 
 
 The function `plot_degs`: 
@@ -120,6 +120,6 @@ The function `plot_degs`:
 plot_degs(notochord_state_graph, num_degs, node_size = 4.5)
 ```
 
-![](assets/notochord_degs_lmx1bb.png){width=50%}
+![](assets/notochord_degs_lmx1bb.png){width=75%}
 
 

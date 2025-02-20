@@ -33,7 +33,7 @@ compare_genes_in_cell_state(cell_state,
 ![](assets/degs_over_graph.png)
 
 
-See explanation of gene patterns [here](patterns): 
+See explanation of gene patterns [here](https://cole-trapnell-lab.github.io/platt/patterns/): 
 
 The function `compare_genes_within_state_graph()`:
 * `ccs`- a Hooke `cell_count_set` object
