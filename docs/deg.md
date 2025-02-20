@@ -9,19 +9,20 @@ _See an explanation of gene patterns [here](https://cole-trapnell-lab.github.io/
 The function `compare_genes_within_state_graph()`:
 
 * `ccs`- a Hooke `cell_count_set` object
-* `graph`
-* `gene_ids`
-* `cores`
+* `graph` - a Platt `cell_state_graph` object
+* `gene_ids` - a list of genes to subset the analysis to 
+* `cores` - number of cores 
 
 ```
 pf_graph_degs = compare_genes_over_graph(pf_ccs,
-                                         pf_cell_state_graph)
+                                         pf_cell_state_graph, 
+                                         cores = 4)
 ```
 
 The output of this table will look like this: 
 
-| cell_state                     | gene_class_scores        |
-|--------------------------------|-------------------------|
+| cell_state                     | gene_class_scores         |
+|--------------------------------|---------------------------|
 | pectoral fin condensate        | `<tibble [14,899 × 5]>`   |
 | pectoral fin distal mesenchyme | `<tibble [14,899 × 5]>`   |
 | pectoral fin central cells     | `<tibble [14,899 × 5]>`   |
@@ -76,6 +77,15 @@ The function `compare_genes_within_state_graph()`:
 * `perturbations` - defaults to perturbation
 * `cores`
 
+For this example we will be using a subset of the skeletal muscle: 
+
+```
+platt:::plot_annotations(muscle_state_graph, plot_labels = T, node_size = 4)
+
+```
+![](assets/muscle_anno.png){width=75%}
+
+
 ```
 genes_within_cell_state = compare_genes_within_state_graph(ccs, 
                                                            perturbation_col = "gene_target", 
@@ -108,22 +118,15 @@ genes_within_cell_state %>% filter(term == "tbx16,msgn1")
 | tbx16,msgn1 | 3.955547   | 2.302981    | 6042.273       | 2235.279             | ENSDARG00000000086   | -0.04488597             | 0.1612511                  | 0.39036776                 | -0.014688242                | 0.09378365                    | 0.7574802               | -2.799458    | -1.528009           | -0.02203216     | paraxial mesoderm (pax2a+)     |
 
 
-We can plot the fold change on the platt graph: 
-
-
-```
-platt:::plot_annotations(muscle_state_graph, plot_labels = T, node_size = 4)
-
-```
-![](assets/muscle_anno.png){width=75%}
-
-
+In addition to plotting the WT expression of _pax3a_...
 ```
 plot_gene_expr(muscle_state_graph, genes = c("pax3a"), node_size = 4, plot_labels = F) + 
   theme(legend.position = "right")
 ```
 ![](assets/muscle_pax3a.png){width=75%}
 
+
+... we can plot the DEG fold change of _pax3a_ in the tbx16-msgn1 mutant on the platt graph: 
 
 ```
 plot_degs(muscle_state_graph, tbx16_degs %>% left_join(gene_df, by = "id") %>% 
@@ -133,8 +136,6 @@ plot_degs(muscle_state_graph, tbx16_degs %>% left_join(gene_df, by = "id") %>%
 ![](assets/muscle_pax3a_deg.png){width=75%}
 
 _For more information about plotting on a Platt graph, see our [plotting page](https://cole-trapnell-lab.github.io/platt/plotting)._
-
-
 
 
 ## References
