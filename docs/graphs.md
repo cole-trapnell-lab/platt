@@ -1,14 +1,22 @@
 
-Platt's graph algorithm: 
+### Platt's graph algorithm: 
 
 ![](assets/how_to_assemble_a_graph.png)
 
 Before we build our own graphs, let's use a basic graph example 
 
 ```
-state_graph = data.frame(from = c("early notochord progenitor", "early notochord", "early vacuolated notochord",  "early notochord", "early notochord sheath"), 
-                      to = c("early notochord", "early vacuolated notochord", "late vacuolated notochord", "early notochord sheath", "late notochord sheath")) %>% 
-                      igraph::graph_from_data_frame() 
+state_graph = data.frame(from = c("early notochord progenitor", 
+                                  "early notochord", 
+                                  "early vacuolated notochord",
+                                  "early notochord", 
+                                  "early notochord sheath"), 
+                         to = c("early notochord", 
+                                "early vacuolated notochord", 
+                                "late vacuolated notochord", 
+                                "early notochord sheath", 
+                                "late notochord sheath")) %>% 
+                         igraph::graph_from_data_frame() 
                       
 plot(my_graph)
 ```
@@ -16,6 +24,8 @@ plot(my_graph)
 ![](assets/notochord_igraph_plot.png){width=75%}
 
 ### Making a cell_state_graph object
+
+The `new_cell_state_graph` function takes the following as input:
 
 * `cell_state_graph` - an igraph object
 * `ccs` - a Hooke `cell_count_set` object
@@ -44,6 +54,7 @@ returns
 ```
 
 Get the children:
+
 * `cell_state_graph`
 * `cell_state` 
 
@@ -60,6 +71,7 @@ returns:
 ```
 
 Get the siblings:
+
 * `cell_state_graph`
 * `cell_state`
 
@@ -76,8 +88,11 @@ returns
 ```
 
 
-# Constructing a graph
+### Constructing a graph
 
+To construct a platt graph: 
+
+_To review these functions, see our [kinetics page](https://cole-trapnell-lab.github.io/platt/kinetics/)._
 
 ```
 make_platt_graph()
