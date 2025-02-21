@@ -1,5 +1,7 @@
-# to do : add edge stuff and node labels
-
+#' plots a cell state graph
+#' @param cell_state_graph
+#' @param color_cells_by
+#' @export
 plot_annotations = function(cell_state_graph, 
                             color_nodes_by = NULL, 
                             label_nodes_by = NULL, 
@@ -92,11 +94,11 @@ plot_annotations = function(cell_state_graph,
   return(p)
 }
 
-#' 
+#' plots the cell abundance changes over a platt graph
 #' @param cell_state_graph
 #' @param comp_abund_table
 #' @param facet_group
-
+#' @export
 plot_abundance_changes = function(cell_state_graph, 
                                   comp_abund_table,
                                   facet_group = NULL,
@@ -208,7 +210,7 @@ plot_abundance_changes = function(cell_state_graph,
 #' @param cell_state_graph
 #' @param genes
 #' @param color_nodes_by
-#' 
+#' @export
 plot_gene_expr = function(cell_state_graph, 
                           genes, 
                           color_nodes_by = c("sum_expr", "mean_expr", "min_expr", "max_expr"),
@@ -217,8 +219,8 @@ plot_gene_expr = function(cell_state_graph,
                           con_colour = "darkgrey",
                           fract_expr = 0.0,
                           mean_expr = 0.0,
-                          legend_position = "none", 
-                          plot_labels = F, 
+                          legend_position = "right", 
+                          plot_labels = T, 
                           expr_limits = NULL) {
   
   g = cell_state_graph@g
@@ -300,6 +302,9 @@ plot_gene_expr = function(cell_state_graph,
                                      color=I("black")) 
   }
   
+  p = p + guides(color=guide_colourbar(title="Gene Expr.")) + 
+    labs(size = "% Cells")
+  
   x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
   y_range = range(g$y) + c(-node_size*1.2, node_size*1.2)
   point_df = expand.grid("x" = x_range, "y" = y_range)
@@ -350,7 +355,7 @@ plot_deviation_plot = function(cell_state_graph,
                           aes(x, y,
                               size = node_size), color="white") +
     labs(color = "number degs") + 
-    scale_color_viridis_c() + 
+    scale_color_viridis_c(option="plasma") + 
     scale_size_identity() +
     ggnetwork::theme_blank() +
     hooke_theme_opts() +
@@ -430,8 +435,9 @@ plot_deg_change = function(cell_state_graph,
     
 }
 
-#' this plotting function 
-#' 
+#' this plotting function plots the fold change of a given gene in a deg table
+#' over the platt graph
+#' @export
 plot_degs = function(cell_state_graph, 
                      deg_table, 
                      facet_group = "term", 
@@ -441,7 +447,8 @@ plot_degs = function(cell_state_graph,
                      fract_expr = 0.0,
                      mean_expr = 0.0,
                      legend_position = "none", 
-                     fc_limits = c(-3,3)){ 
+                     fc_limits = c(-3,3), 
+                     plot_labels=T){ 
   
   # deg_table = deg_table %>%
   #   mutate(
@@ -471,8 +478,6 @@ plot_degs = function(cell_state_graph,
   
   g = left_join(g, deg_table, by = c("name"="cell_group"), relationship = "many-to-many") 
   
-  # myPalette <- colorRampPalette(rev(RColorBrewer::brewer.pal(11, "Spectral")))
-  # sc <- scale_colour_gradientn(colours = myPalette(100), limits=fc_limits)
   
   p <- ggplot(aes(x,y), data = g) + 
     ggplot2::geom_path(aes(x, y, group = edge_name), 
@@ -484,9 +489,12 @@ plot_degs = function(cell_state_graph,
     ggnetwork::geom_nodes(data = g,
                           aes(x, y) ,
                           color=I("black"), size=node_size*1.2) +
-    ggnetwork::geom_nodes(data = g ,
+    ggnetwork::geom_nodes(data = g %>% filter(!is.na(perturb_to_ctrl_raw_lfc)),
                           mapping = aes(x, y, color = perturb_to_ctrl_raw_lfc),
                           size = node_size) + 
+    ggnetwork::geom_nodes(data = g %>% filter(is.na(perturb_to_ctrl_raw_lfc)),
+                          mapping = aes(x, y), color="lightgray",
+                          size = node_size) +
     ggnetwork::theme_blank() + 
     scale_color_gradient2(low = "#006600",  mid = "white", high = "#800080", limits = fc_limits) + 
     # scale_color_gradient2(low = "royalblue3", mid = "white", high="orangered3", limits = fc_limits) + 
@@ -498,6 +506,16 @@ plot_degs = function(cell_state_graph,
     hooke_theme_opts() +
     scale_size_identity() +
     theme(legend.position='none')
+  
+  p = p + guides(color=guide_colourbar(title="log2(fc)"))
+  
+  if (plot_labels) {
+    p = p + ggrepel::geom_text_repel(data= g %>% select(x, y, name) %>% distinct(), 
+                                     aes(x, y, label=name),
+                                     color=I("black"), 
+                                     box.padding = 0.5) 
+  }
+  
   
   x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
   y_range = range(g$y) + c(-node_size*1.2, node_size*1.2)

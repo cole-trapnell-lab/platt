@@ -178,7 +178,7 @@ score_genes_for_expression_pattern <- function(cell_state, gene_patterns, state_
     #                    interpretation %in% c("Selectively maintained", "Specifically maintained") ~ js_dist_to_pattern(self_parent_sibs, c(1, rep(1, num_parents), rep(0, num_siblings))),
     #                    interpretation %in% c("Upregulated", "Activated") ~ js_dist_to_pattern(self_and_parent, c(1, rep(0, num_parents))),
     #                    interpretation %in% c("Selectively upregulated", "Specifically upregulated", "Selectively activated", "Specifically activated") ~ js_dist_to_pattern(self_parent_sibs, c(1, rep(0, num_parents), rep(0, num_siblings))),
-    #                    interpretation %in% c("Downregulated", "Dectivated") ~ js_dist_to_pattern(self_and_parent, c(0, rep(1, num_parents))),
+    #                    interpretation %in% c("Downregulated", "Deactivated") ~ js_dist_to_pattern(self_and_parent, c(0, rep(1, num_parents))),
     #                    interpretation %in% c("Selectively downregulated", "Specifically downregulated", "Selectively deactivated", "Specifically deactivated") ~ js_dist_to_pattern(self_parent_sibs, c(0, rep(1, num_parents), rep(0, num_siblings))),
     #                    TRUE ~ 0)
     # ) %>%
@@ -951,6 +951,16 @@ compare_gene_expression_within_node <- function(cell_group,
                                          PSEM = pb_coeffs$stdev.unscaled, 
                                          prefix = "perturb_to_ctrl",
                                          ash.control=list(mode=expected_effect_mode_interval)))
+  
+  gene_map = rowData(cg_pb_cds) %>% as.data.frame() %>% select(gene_short_name, id) %>% distinct()
+  
+  cell_perturbations =   cell_perturbations %>% 
+    filter(!is.na(perturb_effects)) %>% 
+    tidyr::unnest(perturb_effects) %>%
+    left_join(gene_map, by ="id") %>%
+    group_by(term) %>% tidyr::nest("perturb_effects"=-term)
+    
+    
   message(paste("\tcontrasts complete for", unique(perturbation_ids)))
   
   # cell_perturbations = cell_perturbations %>% 

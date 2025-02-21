@@ -1130,7 +1130,7 @@ connect_isolated_nodes <- function(G, node_metadata) {
     group_nodes <- node_metadata %>% filter(group_nodes_by == group) %>% pull(id)
     
     # Induce subgraph for the current group
-    G_sub <- igraph::induced.subgraph(G_aug, v = group_nodes)
+    G_sub <- igraph::induced_subgraph(G_aug, v = group_nodes)
     
     # Identify isolated nodes in the subgraph
     isolated_nodes <- igraph::V(G_sub)[igraph::degree(G_sub) == 0]$name
@@ -1229,13 +1229,13 @@ connect_hidden_nodes_for_layers <- function(G_with_hidden, layers) {
   
   # Add connections between tail nodes of one layer and head nodes of the next layer
   for (i in seq_len(num_layers - 1)) {
-    #current_layer_subgraph <- igraph::induced.subgraph(graph = connected_G_with_hidden, vids = layers[[i]])
+    #current_layer_subgraph <- igraph::induced_subgraph(graph = connected_G_with_hidden, vids = layers[[i]])
     current_layer_subgraph = igraph::make_ego_graph(connected_G_with_hidden, order=1, nodes = layers[[i]], mode="out") # get current layer plus its hidden tail nodes
     current_layer_subgraph = do.call(igraph::union, current_layer_subgraph)
     current_layer_tail_nodes <- igraph::V(current_layer_subgraph)[igraph::degree(current_layer_subgraph, mode = "out") == 0]$name
     current_layer_tail_nodes = current_layer_tail_nodes[grepl("^tail_", current_layer_tail_nodes)] #select only the hidden tail nodes
     
-    #next_layer_subgraph <- igraph::induced.subgraph(graph = connected_G_with_hidden, vids = layers[[i + 1]])
+    #next_layer_subgraph <- igraph::induced_subgraph(graph = connected_G_with_hidden, vids = layers[[i + 1]])
     next_layer_subgraph = igraph::make_ego_graph(connected_G_with_hidden, order=1, nodes = layers[[i+1]], mode="in") # get current layer plus its hidden tail nodes
     next_layer_subgraph = do.call(igraph::union, next_layer_subgraph)
     next_layer_head_nodes <- igraph::V(next_layer_subgraph)[igraph::degree(next_layer_subgraph, mode = "in") == 0]$name 
