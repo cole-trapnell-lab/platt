@@ -106,7 +106,12 @@ genes_within_cell_state = compare_genes_within_state_graph(ccs,
 
 
 ```
-genes_within_cell_state %>% filter(term == "tbx16,msgn1")
+genes_within_cell_state = genes_within_cell_state %>% tidyr::unnest(genes_within_cell_group)
+```
+
+
+```
+genes_within_cell_state %>% filter(term == "tbx16,msgn1") %>% tidyr::unnest(perturb_effects)
 ```
 
 | term       | mean_log_sf | ctrl_log_sf | detected_genes | ctrl_detected_genes | id                  | perturb_to_ctrl_raw_lfc | perturb_to_ctrl_raw_lfc_se | perturb_to_ctrl_raw_p_value | perturb_to_ctrl_shrunken_lfc | perturb_to_ctrl_shrunken_lfc_se | perturb_to_ctrl_p_value | effect_skew | log_mean_expression | coefficient_mode | cell_group                     |
