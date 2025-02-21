@@ -55,7 +55,7 @@ We can check some of these markers by plotting them either in the UMAP space:
 plot_cells(pf_ccs@cds, genes = c("emilin3a"))
 ```
 
-![](assets/pf_emilin3a.png)
+![](assets/pf_emilin3a.png){width=50%}
 
 ... or on our platt graph:
 
