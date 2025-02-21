@@ -1,4 +1,6 @@
-# Running DEGs over a graph
+# Differential expression analysis in Platt
+
+## Running DEGs over a graph
 
 Finding regulatory genes with fate-restricted patterns may help identify new genetic requirements of cell types. For example, “terminal selector” and “multilineage priming (MLP)” genes might activate specific fates, genes expressed in progenitors only might be required for maintaining the progenitor states, and genes excluded from certain fates might repress that fate [1-4](https://cole-trapnell-lab.github.io/platt/deg/#references). We can systematically identify these patterns by computing differential expression across our graphs and then classify these patterns based on a set of defined rules.  
 
@@ -63,11 +65,11 @@ plot_cells(pf_ccs@cds, genes = c("emilin3a"))
 plot_gene_expr(pf_cell_state_graph, genes = c("emilin3a"))
 ```
 
-![](assets/pf_graph_emilin3a.png)
+![](assets/pf_graph_emilin3a.png){width=75%}
 
 _For more information about plotting on a Platt graph, see our [plotting page](https://cole-trapnell-lab.github.io/platt/plotting)._
 
-# Running DEGs within each perturbation
+## Running DEGs within each perturbation
 
 The function `compare_genes_within_state_graph()`: 
 
@@ -93,6 +95,9 @@ genes_within_cell_state = compare_genes_within_state_graph(ccs,
                                                            control_ids = c("ctrl-inj"), 
                                                            perturbations = c("tbx16", "tbx16-msgn1", "tbx16-tbx16l"),
                                                            cores = 6)
+                                                           
+genes_within_cell_state %>% head()
+
 ```
 
 | cell_group                               | genes_within_cell_group | 
@@ -108,6 +113,7 @@ The results are nested by cell type. To look at a specific knockout term, you ca
 ```
 genes_within_cell_state = genes_within_cell_state %>% tidyr::unnest(genes_within_cell_group)
 genes_within_cell_state %>% filter(term == "tbx16,msgn1") %>% tidyr::unnest(perturb_effects)
+
 ```
 
 | term       | mean_log_sf | ctrl_log_sf | detected_genes | ctrl_detected_genes | id                  | perturb_to_ctrl_raw_lfc | perturb_to_ctrl_raw_lfc_se | perturb_to_ctrl_raw_p_value | perturb_to_ctrl_shrunken_lfc | perturb_to_ctrl_shrunken_lfc_se | perturb_to_ctrl_p_value | effect_skew | log_mean_expression | coefficient_mode | cell_group                     |
