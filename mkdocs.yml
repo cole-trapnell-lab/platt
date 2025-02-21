@@ -2,7 +2,8 @@ site_name: Platt
 site_author: Maddy Duran
 site_url: https://cole-trapnell-lab.github.io/platt
 nav:
-  - Overview: background.md
+  - Overview: index.md
+  - Background: background.md
   - Installation: install.md
   - Kinetics: kinetics.md
   - Graphs: graphs.md
@@ -30,4 +31,4 @@ extra_css:
   - stylesheets/extra.css
 
 copyright: |
-  &copy 2024 <a href="https://github.com/cole-trapnell-lab"  target="_blank" rel="noopener">Cole Trapnell</a>
+  &copy 2025 <a href="https://github.com/cole-trapnell-lab"  target="_blank" rel="noopener">Cole Trapnell</a>
