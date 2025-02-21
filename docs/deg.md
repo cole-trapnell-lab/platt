@@ -49,20 +49,21 @@ pf_graph_degs %>%
 | pectoral fin condensate | ENSDARG000000124…  | `<tibble>` | Selectively activated      | 3.77                   | col11a2         |
 | pectoral fin condensate | ENSDARG000000309…  | `<tibble>` | Selectively activated      | 2.00                   | mybl1           |
 
-We can check some of these markers by plotting them either in the UMAP space or on our platt graph:
-
-
-```
-plot_cells(pf_ccs@cds, genes = c())
-```
-
-![](assets/degs_over_graph.png)
+We can check some of these markers by plotting them either in the UMAP space:
 
 ```
-plot_gene_expr(pf_cell_state_graph, genes = c())
+plot_cells(pf_ccs@cds, genes = c("emilin3a"))
 ```
 
-![](assets/degs_over_graph.png)
+![](assets/pf_emilin3a.png)
+
+... or on our platt graph:
+
+```
+plot_gene_expr(pf_cell_state_graph, genes = c("emilin3a"))
+```
+
+![](assets/pf_graph_emilin3a.png)
 
 _For more information about plotting on a Platt graph, see our [plotting page](https://cole-trapnell-lab.github.io/platt/plotting)._
 
@@ -77,7 +78,7 @@ The function `compare_genes_within_state_graph()`:
 * `perturbations` - defaults to perturbation
 * `cores`
 
-For this example we will be using a subset of the skeletal muscle: 
+For this example we will be using a subset of the skeletal muscle, for which we have 510,093 reference cells: 
 
 ```
 platt:::plot_annotations(muscle_state_graph, plot_labels = T, node_size = 4)
