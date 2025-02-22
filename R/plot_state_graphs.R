@@ -437,6 +437,8 @@ plot_deg_change = function(cell_state_graph,
 
 #' this plotting function plots the fold change of a given gene in a deg table
 #' over the platt graph
+#' @param cell_state_graph 
+#' @param deg_table
 #' @export
 plot_degs = function(cell_state_graph, 
                      deg_table, 

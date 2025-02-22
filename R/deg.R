@@ -455,6 +455,8 @@ compare_genes_over_graph <- function(ccs,
     tidyr::nest() %>%
     dplyr::rename(gene_class_scores = data)
   
+  rm(pb_group_models)
+  
   return(cell_states)
   
 }
@@ -954,7 +956,7 @@ compare_gene_expression_within_node <- function(cell_group,
   
   gene_map = rowData(cg_pb_cds) %>% as.data.frame() %>% select(gene_short_name, id) %>% distinct()
   
-  cell_perturbations =   cell_perturbations %>% 
+  cell_perturbations = cell_perturbations %>% 
     filter(!is.na(perturb_effects)) %>% 
     tidyr::unnest(perturb_effects) %>%
     left_join(gene_map, by ="id") %>%
