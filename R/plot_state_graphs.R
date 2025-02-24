@@ -528,3 +528,117 @@ plot_degs = function(cell_state_graph,
   return(p)
   
 }
+
+#' plot a larger graph
+#' @export
+plot_by_annotations = function(cell_state_graph, 
+                               colname = "projection_group",
+                               arrow_unit = 4,
+                               node_size = 1,
+                               node_scale = 1, 
+                               node_label_width = 50,
+                               legend_position = "right", 
+                               group_label_font_size=1) {
+  
+  
+  g = cell_state_graph@g
+  bezier_df = cell_state_graph@layout_info$bezier_df
+  grouping_df = cell_state_graph@layout_info$grouping_df
+  
+  
+  
+  y_plot_range = max(g$y)
+  group_label_position_df = g %>%
+    select(x, y, group_nodes_by) %>% distinct() %>%
+    group_by(group_nodes_by) %>% summarize(x = mean(x), y = max(y) + y_plot_range * 0.02)
+  
+  # hidden_node_labels = cell_state_graph@layout_info$hidden_gvizl_coords
+  # hidden_node_labels = hidden_node_labels %>% filter(grepl("head", name)) %>% select(x,y,group) %>% distinct()
+  # hidden_node_labels = hidden_node_labels %>% group_by(group) %>% summarize(x = mean(x), y = mean(y))
+  
+  
+  p <- ggplot(aes(x,y), data = g) + 
+    ggplot2::geom_path(aes(x, y, 
+                           group = edge_name),
+                       # colour = con_colour,
+                       data = bezier_df %>% distinct(), 
+                       arrow = arrow(angle=20, length = unit(arrow_unit, "pt"), type="closed"), 
+                       linejoin='mitre') 
+  
+  if (is.null(grouping_df) == FALSE && identical(grouping_df$group_nodes_by, grouping_df$id) == FALSE){
+    
+    p = p + ggforce::geom_mark_rect(aes(x, y, group=group_nodes_by, color=I("lightgrey")),
+                                    size=0.25,
+                                    radius = unit(0.5, "mm"),
+                                    expand = unit(1, "mm"),
+                                    #con.linetype="dotted",
+                                    con.type="straight",
+                                    con.colour="lightgrey",
+                                    con.size=0.25,
+                                    con.border="one",
+                                    na.rm=TRUE,
+                                    data=g)
+    
+    p = p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_font_size)
+    
+  }
+  
+  
+  vibrant.colors =
+    c('#EE7733', '#0077BB', '#228833', '#33BBEE', '#EE3377', '#CC3311',
+      '#AA3377', '#009988', '#004488', '#DDAA33', '#99CC66','#D590DD')
+  
+  bright.colors =
+    c('#4477AA',
+      '#EE6677',
+      '#228833',
+      '#CCBB44',
+      '#66CCEE',
+      '#AA3377',
+      '#BBBBBB')
+  
+  
+  if (colname == "cell_type") {
+    
+    num.colors.tissue = igraph::V(cell_state_graph@graph)$name %>% unique() %>% length()
+    
+    tissue.colors =
+      colorRampPalette(c(vibrant.colors,bright.colors))(num.colors.tissue)
+    
+    names(tissue.colors) = igraph::V(cell_state_graph@graph)$name %>% unique()
+    
+  }else {
+    
+    num.colors.tissue = ref_ccs@cds_coldata[[colname]] %>% unique() %>% length()
+    
+    tissue.colors =
+      colorRampPalette(c(vibrant.colors,bright.colors))(num.colors.tissue)
+    
+    names(tissue.colors) = ref_ccs@colData$projection_group %>% unique()
+    
+  }
+  
+  
+  
+  # p = p + geom_text(data = hidden_node_labels, aes(x, y, label = group), size = 2)
+  
+  p = p + ggnewscale::new_scale_color() + 
+    ggnetwork::geom_nodes(data = g,
+                          aes(x, y) ,
+                          color=I("black"), size=node_size*1.2) +
+    ggnetwork::geom_nodes(data = g,
+                          aes(x, y,
+                              color = color_nodes_by)) + 
+    scale_color_manual(values = tissue.colors) + 
+    monocle3:::monocle_theme_opts() 
+  
+  p = p + 
+    scale_size_identity() +
+    ggnetwork::theme_blank() +
+    hooke_theme_opts() +
+    theme(legend.position=legend_position) 
+  
+  return(p)
+  
+  
+}

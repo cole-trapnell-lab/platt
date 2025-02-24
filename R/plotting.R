@@ -171,6 +171,7 @@ plot_state_graph_annotations <- function(ccs,
       }else{
         p = p + ggforce::geom_mark_rect(aes(x, y,
                                             fill = group_nodes_by,
+                                            col = group_nodes_by,
                                             filter = group_nodes_by %in% unlabeled_groups == FALSE),
                                         size=0,
                                         expand = unit(2, "mm"),
