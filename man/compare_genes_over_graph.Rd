@@ -13,13 +13,13 @@ compare_genes_over_graph(
   label_nodes_by = "cell_state",
   states_to_assess = list(),
   nuisance_model_formula_str = "0",
-  ambient_coeffs = NULL,
   log_fc_thresh = 1,
-  abs_expr_thresh = 1e-10,
+  abs_expr_thresh = 0.001,
   sig_thresh = 0.05,
   min_samples_detected = 2,
   min_cells_per_pseudobulk = 3,
   cores = 1,
+  cv_threshold = 10,
   ...
 )
 }
