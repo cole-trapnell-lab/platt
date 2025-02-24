@@ -1837,3 +1837,78 @@ compare_genes_in_cell_state <- function(cell_state,
   message("      completed ", cell_state)
   return(expr_df)
 }
+
+
+#' 
+#' @param perturb_degs 
+#' @param perturbation_table 
+#' @param ref_abundances 
+#' @param ref_degs
+#' @param sig_p_val_thresh
+#' @export
+calculate_dvegs <- function(perturb_degs, 
+                            ref_degs,
+                            sig_p_val_thresh = 0.05) {
+  
+  
+  ref_degs = ref_degs %>% 
+    mutate (interpretation_simple = case_when (NA ~ NA,
+                                               interpretation %in% c("Upregulated",  
+                                                                     "Activated", 
+                                                                     "Selectively upregulated", 
+                                                                     "Specifically upregulated", 
+                                                                     "Increasingly upregulated", 
+                                                                     "Transiently upregulated",
+                                                                     "Precursor-depleted") ~ "Up",
+                                               interpretation %in% c("Downregulated",  
+                                                                     "Deactivated", 
+                                                                     "Selectively downregulated", 
+                                                                     "Specifically downregulated", 
+                                                                     "Decreasingly downregulated", 
+                                                                     "Transiently downregulated",
+                                                                     "Precursor-specific") ~ "Down",
+                                               interpretation %in% c("Maintained",  
+                                                                     "Specifically maintained",
+                                                                     "Selectively maintained" ) ~ "Maintained",
+                                               TRUE ~ interpretation)) 
+  
+  wt_vs_perturb_degs = ref_degs %>% 
+    select(cell_state, gene_id, gene_short_name, interpretation, interpretation_simple) %>% 
+    left_join(perturb_degs, by=c("gene_id"="id", "cell_state"="cell_group")) 
+  
+  wt_vs_perturb_degs = wt_vs_perturb_degs %>% select(cell_state, 
+                                                     term, 
+                                                     gene_short_name, 
+                                                     interpretation, 
+                                                     interpretation_simple, 
+                                                     perturb_to_ctrl_shrunken_lfc, 
+                                                     perturb_to_ctrl_p_value) %>% distinct()
+  
+  
+  wt_vs_perturb_degs = wt_vs_perturb_degs %>% 
+    mutate(display_name = stringr::str_c(gene_short_name, ":\n", "Normally", 
+                                         stringr::str_to_lower(interpretation), "in", cell_state, sep = " "))
+  
+  # wt_vs_perturb_degs = wt_vs_perturb_degs %>% 
+  #   left_join(genetic_requirements, by=c("cell_state"="cell_group", "gene_short_name"), relationship = "many-to-many")
+  # 
+  # wt_vs_perturb_degs$type[is.na(wt_vs_perturb_degs$type)] = "Not required"
+  # 
+  # wt_vs_perturb_degs = wt_vs_perturb_degs %>% 
+  #   mutate (requirement_level = case_when (type %in% c("Cell type Biological Process", "Cell type phenotype") ~ "Required by cell type",
+  #                                          type %in% c("Tissue/Anatomy Biological Process", "Tissue/Anatomy Phenotype") ~ "Required by tissue",   
+  #                                          TRUE ~ type))
+  
+  wt_vs_perturb_degs = wt_vs_perturb_degs %>% 
+    mutate(dysreg_type = case_when (interpretation_simple %in% c("Up", "Maintained") & perturb_to_ctrl_shrunken_lfc < 0 ~ "Underexpressed",
+                                    interpretation_simple %in% c("Down", "Maintained") & perturb_to_ctrl_shrunken_lfc > 0 ~ "Overexpressed",
+                                    TRUE ~ "Other DEG"))
+  
+  
+
+  sig_dvegs = wt_vs_perturb_degs %>% filter(perturb_to_ctrl_p_value < sig_p_val_thresh & dysreg_type %in% c("Underexpressed", "Overexpressed"))
+  sig_dvegs$dysreg_type = factor(sig_dvegs$dysreg_type, levels = c("Underexpressed", "Overexpressed"))
+  
+  return(sig_dvegs)
+  
+}
