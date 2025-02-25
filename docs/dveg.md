@@ -7,9 +7,9 @@ Genes are “deviantly expressed” (DvEG) in each perturbation, when they are u
 
 The function `calculate_dvegs()` takes in the following inputs: 
 
-* perturb_degs
-* ref_degs
-* sig_p_val_thresh
+* `perturb_degs` - output of `compare_genes_within_state_graph`
+* `ref_degs` - output of `compare_genes_over_graph`
+* `sig_p_val_thresh`
 
 ```
 calculate_dvegs(perturb_degs, 
@@ -47,6 +47,6 @@ In the lmx1b KO, _col2a1a_ has significantly lower expression in the mutant than
 
 ![](assets/pf_col2a1a_dveg.png)
 
-_For more information on how to plotting Platt graphs, see our [plotting page](https://cole-trapnell-lab.github.io/platt/plotting/). 
+_For more information on how to plotting Platt graphs, see our [plotting page](https://cole-trapnell-lab.github.io/platt/plotting/)._ 
 
 
