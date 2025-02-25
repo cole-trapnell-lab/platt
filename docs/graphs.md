@@ -32,7 +32,30 @@ The `new_cell_state_graph` function takes the following as input:
 
 ```
 notochord_state_graph = new_cell_state_graph(state_graph, ccs)
+plot_annotations(notochord_state_graph, node_size = 4.5)
 ```
+![](assets/notochord_graph.png){width=75%}
+
+
+### Larger graphs
+
+if you have a larger graph that you want to plot by tissue level annotation, you can specify 
+a grouping in `new_cell_state_graph` and the number of layers you want to arrange each group in 
+
+```
+ref_state_graph = new_cell_state_graph(combined_state_graph, 
+                                       ref_ccs, 
+                                       group_nodes_by="projection_group", 
+                                       num_layers=3)
+
+
+plot_by_annotations(ref_state_graph) + theme(legend.position = "none")
+
+```
+
+
+![](assets/full_graph_by_tissue.png){width=75%}
+
 
 ### Manipulating graphs
 
