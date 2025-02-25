@@ -3,7 +3,8 @@
 ![](assets/DvEG.png){width=75%}
 
 
-Genes are “deviantly expressed” (DvEG) in each perturbation, when they are upregulated during a transition in wild-type, but are under- or overexpressed in perturbed cells undergoing that same transition relative to controls. 
+Genes are “deviantly expressed” (DvEG) in each perturbation, if they are 1) upregulated during a wild-type transition wild-type, but are underexpressed in perturbed cells undergoing that same transition relative to controls or 2) downregulated during a wild-type transition overexpressed in perturbed cells, but are overexpressed in perturbed cells undergoing that same transition relative to controls. 
+
 
 The function `calculate_dvegs()` takes in the following inputs: 
 
