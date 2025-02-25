@@ -20,7 +20,8 @@ setClass("cell_state_graph",
                    graph = "igraph", 
                    layout_info = "list", 
                    g = "data.frame", 
-                   metadata = "list")
+                   metadata = "list", 
+                   genetic_requirements = "data.frame")
 )
 
 # setMethod("is.na", "cell_state_graph", function(x) FALSE)
@@ -42,6 +43,7 @@ new_cell_state_graph <- function(state_graph,
                                  min_edge_size=0.1,
                                  max_edge_size=2, 
                                  hide_unlinked_nodes = F, 
+                                 genetic_requirements = data.frame(),
                                  num_layers = 1) {
     assertthat::assert_that(is(state_graph, 'igraph'))
     assertthat::assert_that(is(ccs, 'cell_count_set'))
@@ -86,7 +88,8 @@ new_cell_state_graph <- function(state_graph,
                                 metadata = list(color_nodes_by = color_nodes_by, 
                                                 label_nodes_by= label_nodes_by,
                                                 group_nodes_by= group_nodes_by, 
-                                                bezier_df = bezier_df))
+                                                bezier_df = bezier_df), 
+                                genetic_requirements = genetic_requirements)
     
     return(state_graph)
 }
