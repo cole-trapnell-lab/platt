@@ -12,14 +12,13 @@ The function `calculate_dvegs()` takes in the following inputs:
 * `sig_p_val_thresh`
 
 ```
-calculate_dvegs(perturb_degs, 
-                ref_degs, 
-                sig_p_val_thresh = 0.05)
-
+sig_dvegs = calculate_dvegs(perturb_degs, 
+                            ref_degs, 
+                            sig_p_val_thresh = 0.05)
 
 ```
 
-
+We can look for deviantly expressed genes in the pectoral fin in the lmx1b crispant. We first need to run WT and MT degs using `compare_genes_over_graph` and `compare_genes_within_state_graph`. _For more information on these functions see our [DEG page.](https://cole-trapnell-lab.github.io/platt/deg/)_
 
 ```
 pf_graph_degs = compare_genes_over_graph(pf_ccs,
@@ -39,7 +38,7 @@ dvegs = calculate_dvegs(perturb_degs,
 
 ```
 
-The gene _col2a1a_ comes up as a deviantly expressed gene in the pectoral fin condensate, in the wild type it is _*specifically upregulated*_, as shown on the Platt graph: 
+The gene _col2a1a_ comes up as a deviantly expressed gene in the pectoral fin condensate. In the wild type it is _*specifically upregulated*_, as shown on the Platt graph: 
 
 ![](assets/pf_col2a1a.png)
 
