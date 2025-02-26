@@ -42,15 +42,14 @@ dvegs = calculate_dvegs(perturb_degs,
 The gene _col2a1a_ comes up as a deviantly expressed gene in the pectoral fin condensate. In the wild type it is _*specifically upregulated*_, as shown on the Platt graph: 
 
 ```
-platt:::plot_gene_expr(pf_state_graph, genes = c("col2a1a"))
+plot_gene_expr(pf_state_graph, genes = c("col2a1a"))
 ```
 ![](assets/pf_col2a1a.png)
 
 In the lmx1b KO, _col2a1a_ has significantly lower expression in the mutant than in the wild type. We can plot it on the Platt graph:
 
 ```
-platt:::plot_degs(pf_state_graph, 
-                  perturb_degs %>% filter(gene_short_name == "col2a1a"))
+plot_degs(pf_state_graph, perturb_degs %>% filter(gene_short_name == "col2a1a"))
 ```
 ![](assets/pf_col2a1a_dveg.png)
 
