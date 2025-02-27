@@ -38,7 +38,7 @@ The function `plot_gene_expr`:
 plot_gene_expr(notochord_state_graph, genes=c("lmx1bb", "lmx1ba")) 
 ```
 
-![](assets/noto_expr_lmx1bb.png){width=75%}
+![](assets/noto_expr_lmx1bb.png)
 
 
 ```
