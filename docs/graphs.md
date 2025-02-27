@@ -116,21 +116,16 @@ returns
 To construct a platt graph: 
 
 ```
-
-construct_platt_graph(cds, 
-                      partition_name = "pectoral fin",
-                      sample_group = "embryo",
-                      cell_group = "cell_state",
-                      interval_col = "timepoint",
-                      component_col = "assembly_group",
-                      perturbation_col = "perturbation",
-                      ctrl_ids = c("ctrl-uninj", "ctrl-inj", "ctrl-met", 
-                                   "ctrl-hgfa", "ctrl-noto", "ctrl-mafba"),
-                      num_threads = 6,
-                      batch_col = "expt",
-                      edge_allowlist = global_wt_graph_edge_allowlist, 
-                      batches_excluded_from_assembly = c("CHEM10", "CHEM1", "GAP14", "GAP18",
-                                                         "GAP13", "CHEM3", "CHEM2", "HF4", "CHEM5"))
+partition_res = assemble_partition(cds, 
+                                   partition_name = "pectoral fin",
+                                   sample_group = "embryo",
+                                   cell_group = "cell_state",
+                                   interval_col = "timepoint",
+                                   component_col = "assembly_group",
+                                   perturbation_col = "perturbation",
+                                   ctrl_ids = c("ctrl-inj"),
+                                   num_threads = 6,
+                                   batch_col = "expt")
 
 ```
 

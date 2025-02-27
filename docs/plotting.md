@@ -31,13 +31,20 @@ plot_abundance_changes(notochord_state_graph, lmx_fc %>% filter(timepoint_x==60)
 The function `plot_gene_expr`: 
 
 * `cell_state_graph`
-* `genes`
+* `genes` - a list of genes to plot
+* `aggregate` - whether to sum the genes in the genes list
 
 ```
-plot_gene_expr(notochord_state_graph, genes=c("lmx1bb"))
+plot_gene_expr(notochord_state_graph, genes=c("lmx1bb", "lmx1ba")) 
 ```
 
 ![](assets/noto_expr_lmx1bb.png){width=75%}
+
+
+```
+plot_gene_expr(notochord_state_graph, genes=c("lmx1bb", "lmx1ba"), aggregate = T) 
+```
+![](assets/noto_expr_lmx1bba.png){width=75%}
 
 
 The function `plot_degs`: 
