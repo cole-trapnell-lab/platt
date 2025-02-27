@@ -103,7 +103,7 @@ plot_abundance_changes = function(cell_state_graph,
                                   comp_abund_table,
                                   facet_group = NULL,
                                   scale_node = FALSE,
-                                  plot_labels = FALSE, 
+                                  plot_labels = TRUE, 
                                   arrow_unit = 7,
                                   node_size = 2,
                                   node_scale = 1,
@@ -221,6 +221,8 @@ plot_gene_expr = function(cell_state_graph,
                           mean_expr = 0.0,
                           legend_position = "right", 
                           plot_labels = T, 
+                          aggregate = F, 
+                          scale_to_range = T, 
                           expr_limits = NULL) {
   
   g = cell_state_graph@g
@@ -248,14 +250,28 @@ plot_gene_expr = function(cell_state_graph,
       dplyr::mutate(value = 100 * (value - min_val_for_feature) / (max_val_for_feature - min_val_for_feature))
   }
   
-  gene_expr_summary =  sub_gene_expr %>% 
-    group_by(cell_group) %>% 
-    summarize( sum_expr = sum(mean_expression), 
-               mean_expr = mean(mean_expression), 
-               min_expr = min(mean_expression), 
-               max_expr = max(mean_expression), 
-               fraction_max = sum(fraction_max),
-               gene_expr = (min(gene_expr) == 1))
+  if (aggregate == FALSE) {
+    gene_expr_summary =  sub_gene_expr %>% 
+      group_by(cell_group, gene_short_name) %>% 
+      summarize( sum_expr = sum(mean_expression), 
+                 mean_expr = mean(mean_expression), 
+                 min_expr = min(mean_expression), 
+                 max_expr = max(mean_expression), 
+                 fraction_max = sum(fraction_max),
+                 gene_expr = (min(gene_expr) == 1))
+  } else {
+    gene_expr_summary =  sub_gene_expr %>% 
+      group_by(cell_group) %>% 
+      summarize( sum_expr = sum(mean_expression), 
+                 mean_expr = mean(mean_expression), 
+                 min_expr = min(mean_expression), 
+                 max_expr = max(mean_expression), 
+                 fraction_max = sum(fraction_max),
+                 gene_expr = (min(gene_expr) == 1)) %>% 
+      mutate(gene_short_name = paste(sort(genes), collapse =";"))
+  }
+  
+  
   
   if (is.null(expr_limits) == FALSE){
     min = expr_limits[1]
@@ -294,7 +310,7 @@ plot_gene_expr = function(cell_state_graph,
     ggnetwork::theme_blank() +
     scale_size_identity() +
     scale_size(range=c(1, 5)) + 
-    hooke_theme_opts() + theme(legend.position = "none") 
+    hooke_theme_opts() + theme(legend.position = legend_position) 
   
   if (plot_labels) {
     p = p + ggrepel::geom_text_repel(data= g %>% select(x, y, name) %>% distinct(), 
@@ -303,7 +319,7 @@ plot_gene_expr = function(cell_state_graph,
   }
   
   p = p + guides(color=guide_colourbar(title="Gene Expr.")) + 
-    labs(size = "% Cells")
+    labs(size = "Fract. of Embryos") + facet_grid(~gene_short_name)
   
   x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
   y_range = range(g$y) + c(-node_size*1.2, node_size*1.2)
@@ -359,7 +375,7 @@ plot_deviation_plot = function(cell_state_graph,
     scale_size_identity() +
     ggnetwork::theme_blank() +
     hooke_theme_opts() +
-    theme(legend.position='none') 
+    theme(legend.position=legend_position) 
   
   if (plot_labels) {
     p = p + ggrepel::geom_text_repel(data= g %>% select(x, y, name) %>% distinct(), 
@@ -420,7 +436,7 @@ plot_deg_change = function(cell_state_graph,
     # sc + 
     scale_color_viridis_c(option="B")+
     hooke_theme_opts() +
-    theme(legend.position='none')
+    theme(legend.position=legend_position)
   
   
   x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
@@ -507,7 +523,7 @@ plot_degs = function(cell_state_graph,
                              color=I("black")) + 
     hooke_theme_opts() +
     scale_size_identity() +
-    theme(legend.position='none')
+    theme(legend.position=legend_position)
   
   p = p + guides(color=guide_colourbar(title="log2(fc)"))
   
@@ -637,6 +653,89 @@ plot_by_annotations = function(cell_state_graph,
     ggnetwork::theme_blank() +
     hooke_theme_opts() +
     theme(legend.position=legend_position) 
+  
+  return(p)
+  
+  
+}
+
+
+plot_perturb_effects <- function(cell_state_graph,
+                                 num_top_perturbs=3,
+                                 num_top_genes=3, 
+                                 arrow_unit = 7,
+                                 node_size = 2,
+                                 con_colour = "darkgrey",
+                                 fract_expr = 0.0,
+                                 mean_expr = 0.0,
+                                 legend_position = "none", 
+                                 plot_labels=T) {
+  
+  
+  num_top_genes=3
+  node_support_df = igraph::as_data_frame(cell_state_graph@graph, what="vertices") %>%
+    tibble::as_tibble() %>% rename(id=name)
+  
+  g = cell_state_graph@g
+  bezier_df = cell_state_graph@layout_info$bezier_df
+  
+  perturbation_table = cell_state_graph@genetic_requirements
+  perturbation_table = perturbation_table %>% 
+    mutate(name = sapply(strsplit(id, "-"), `[`, 2))
+  
+  perturbation_table = perturbation_table %>% group_by(id) %>%
+    mutate(perturb_display_name = case_when(perturb_effect == "direct" ~ glue::glue("<i style='color:#2B9EB3'>{perturb_name}</i>"),
+                                            perturb_effect == "indirect" ~ glue::glue("<i style='color:#FCAB10'>{perturb_name}</i>"),
+                                            perturb_effect == "predicted" ~ glue::glue("<i style='color:#F8333C'>{perturb_name}</i>"),
+                                            TRUE ~ glue::glue("<i style='color:#44AF69'>{perturb_name}</i>"))) %>%
+    summarize(perturb_effect_label = ifelse(n() > num_top_genes,
+                                            paste0(c(perturb_display_name[1:num_top_genes], paste("+", n()-num_top_genes, " more", sep="")), collapse = "<br>"),
+                                            paste0(perturb_display_name, collapse = "<br>")))
+
+  
+  g = left_join(g, perturbation_table, by = c("name"="id"), relationship = "many-to-many") 
+
+  
+  g = g %>% mutate(label_nodes_by=perturb_effect_label)
+  
+  p <- ggplot(aes(x,y), data = g) + 
+    ggplot2::geom_path(aes(x, y, group = edge_name), 
+                       colour = con_colour, data = bezier_df %>% distinct(), 
+                       arrow = arrow(angle=30, length = unit(arrow_unit, "pt"), type="closed"), 
+                       linejoin='mitre')
+  p =  p + 
+    ggnewscale::new_scale_fill() +
+    ggnetwork::geom_nodes(data = g,
+                          aes(x, y) ,
+                          color=I("black"), size=node_size*1.2) +
+    ggnetwork::geom_nodes(data = g,
+                          mapping = aes(x, y, color = color_nodes_by),
+                          size = node_size) +
+    ggnetwork::theme_blank() + 
+    hooke_theme_opts() +
+    scale_size_identity() +
+    theme(legend.position=legend_position)
+  
+  p = p + annotate(geom='richtext', x=0.15*max(g$xend), y=0.01*max(g$yend),
+                   size=2,
+                   fill = NA, label.color = NA,
+                   label="<i style='color:#2B9EB3'>direct</i> <i style='color:#FCAB10'>indirect</i> <i style='color:#F8333C'>predicted</i> <i style='color:#44AF69'>other</i> ")
+  
+  p = p + guides(color=guide_colourbar(title="log2(fc)"))
+  
+  if (plot_labels) {
+    p = p + ggrepel::geom_text_repel(data= g %>% select(x, y, name) %>% distinct(), 
+                                     aes(x, y, label=name),
+                                     color=I("black"), 
+                                     box.padding = 0.5) 
+  }
+  
+  
+  x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
+  y_range = range(g$y) + c(-node_size*1.2, node_size*1.2)
+  point_df = expand.grid("x" = x_range, "y" = y_range)
+  p = p + geom_point(point_df,
+                     mapping = aes(x,y), color="white", alpha=0)
   
   return(p)
   
