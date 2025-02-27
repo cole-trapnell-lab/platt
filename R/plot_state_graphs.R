@@ -210,6 +210,7 @@ plot_abundance_changes = function(cell_state_graph,
 #' @param cell_state_graph
 #' @param genes
 #' @param color_nodes_by
+#' @param node_size Does not actually control the sizes of nodes, but is used to specify the offset to use for invisible points that help prevent the plot from getting clipped upon saving
 #' @export
 plot_gene_expr = function(cell_state_graph, 
                           genes, 
@@ -294,19 +295,23 @@ plot_gene_expr = function(cell_state_graph,
   p = p + ggnewscale::new_scale_color() +
     ggnetwork::geom_nodes(data = g %>% filter(gene_expr),
                           aes(x, y,
-                              size = fraction_max * node_size * 1.2), 
-                          color=I("black")) +
-    ggnetwork::geom_nodes(data = g %>% filter(gene_expr),
-                          aes(x, y,
-                              size = fraction_max * node_size,
-                              color = I(con_colour))) +
-    ggnewscale::new_scale_color() +
+                              size = fraction_max,
+                          ),
+                          shape = "circle filled",
+                          fill = I(con_colour),
+                          color = I("black")
+      ) +
+    ggnewscale::new_scale_fill() +
     ggnetwork::geom_nodes(data = g %>% filter(gene_expr & fraction_max > 0),
                           aes(x, y,
-                              size = fraction_max * node_size,
-                              color = sum_expr)) +
+                              size = fraction_max,
+                              fill = sum_expr
+                            ),
+                            shape = "circle filled",
+                            color = I("black")
+      ) +
     labs(color = color_nodes_by) +
-    scale_color_viridis_c(limits = expr_limits) +
+    scale_fill_viridis_c(limits = expr_limits) +
     ggnetwork::theme_blank() +
     scale_size_identity() +
     scale_size(range=c(1, 5)) + 
@@ -320,7 +325,6 @@ plot_gene_expr = function(cell_state_graph,
   
   p = p + guides(color=guide_colourbar(title="Gene Expr.")) + 
     labs(size = "Fract. of Embryos") + facet_wrap(~gene_short_name)
-  
   x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
   y_range = range(g$y) + c(-node_size*1.2, node_size*1.2)
   point_df = expand.grid("x" = x_range, "y" = y_range)
