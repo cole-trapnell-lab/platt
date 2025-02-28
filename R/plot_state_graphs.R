@@ -257,7 +257,6 @@ plot_gene_expr = function(cell_state_graph,
   gene_expr = hooke:::aggregated_expr_data(ccs@cds[rownames(gene_info), ], group_cells_by = ccs@info$cell_group)
   sub_gene_expr = gene_expr %>%
     group_by(gene_id) %>%
-    # group_by(gene_short_name) %>%
     mutate(
       max_expr = max(mean_expression),
       fraction_max = ifelse (max_expr > 0, mean_expression / max_expr, 0),
@@ -269,7 +268,6 @@ plot_gene_expr = function(cell_state_graph,
     sub_gene_expr = sub_gene_expr %>%
       mutate(value = mean_expression) %>%
       group_by(gene_id) %>%
-      # group_by(gene_short_name) %>%
       dplyr::mutate(max_val_for_feature = max(value),
                     min_val_for_feature = min(value)) %>%
       dplyr::mutate(value = 100 * (value - min_val_for_feature) / (max_val_for_feature - min_val_for_feature))
@@ -278,7 +276,6 @@ plot_gene_expr = function(cell_state_graph,
   if (aggregate == FALSE) {
     gene_expr_summary = sub_gene_expr %>%
       group_by(cell_group, gene_id) %>%
-      # group_by(cell_group, gene_short_name) %>%
       summarize(
         sum_expr = sum(mean_expression),
         mean_expr = mean(mean_expression),
