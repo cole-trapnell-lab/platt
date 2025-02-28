@@ -348,7 +348,7 @@ plot_gene_expr = function(cell_state_graph,
                                      color=I("black")) 
   }
   
-  p = p + guides(color=guide_colourbar(title="Gene Expr.")) + 
+  p = p + guides(fill=guide_colourbar(title="Gene Expr.")) + 
     labs(size = "Fract. of Embryos") + facet_wrap(~gene_short_name)
   x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
   y_range = range(g$y) + c(-node_size*1.2, node_size*1.2)
