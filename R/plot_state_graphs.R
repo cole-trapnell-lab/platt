@@ -231,10 +231,33 @@ plot_gene_expr = function(cell_state_graph,
   bezier_df = cell_state_graph@layout_info$bezier_df
   color_nodes_by = match.arg(color_nodes_by)
   
-  gene_ids = rowData(ccs@cds) %>% as.data.frame %>% filter(gene_short_name %in% genes) %>% rownames()
-  gene_expr = hooke:::aggregated_expr_data(ccs@cds[gene_ids,], group_cells_by = ccs@info$cell_group)
+  gene_info = rowData(ccs@cds) %>%
+    as.data.frame() %>%
+    filter(gene_short_name %in% genes) %>%
+    select(gene_short_name)
+  duplicated_genes = gene_info %>%
+    summarize(n = n(), .by = gene_short_name) %>%
+    filter(n > 1) %>%
+    pull(gene_short_name)
+  if (length(duplicated_genes) > 0) {
+    message(
+      "The following gene names are represented by multiple ENSEMBL IDs: ",
+      paste(duplicated_genes, collapse = ", "),
+      ". Each ENSEMBL ID will be represented separately in the plot."
+    )
+    gene_info = gene_info %>%
+      mutate(gene_short_name = ave(gene_short_name, gene_short_name, FUN = function(x) {
+        if (length(x) > 1) {
+          paste0(x, "_", seq_along(x))
+        } else {
+          x
+        }
+      }))
+  }
+  gene_expr = hooke:::aggregated_expr_data(ccs@cds[rownames(gene_info), ], group_cells_by = ccs@info$cell_group)
   sub_gene_expr = gene_expr %>%
-    group_by(gene_short_name) %>%
+    group_by(gene_id) %>%
+    # group_by(gene_short_name) %>%
     mutate(
       max_expr = max(mean_expression),
       fraction_max = ifelse (max_expr > 0, mean_expression / max_expr, 0),
@@ -245,21 +268,26 @@ plot_gene_expr = function(cell_state_graph,
   if (scale_to_range) {
     sub_gene_expr = sub_gene_expr %>%
       mutate(value = mean_expression) %>%
-      group_by(gene_short_name) %>%
+      group_by(gene_id) %>%
+      # group_by(gene_short_name) %>%
       dplyr::mutate(max_val_for_feature = max(value),
                     min_val_for_feature = min(value)) %>%
       dplyr::mutate(value = 100 * (value - min_val_for_feature) / (max_val_for_feature - min_val_for_feature))
   }
   
   if (aggregate == FALSE) {
-    gene_expr_summary =  sub_gene_expr %>% 
-      group_by(cell_group, gene_short_name) %>% 
-      summarize( sum_expr = sum(mean_expression), 
-                 mean_expr = mean(mean_expression), 
-                 min_expr = min(mean_expression), 
-                 max_expr = max(mean_expression), 
-                 fraction_max = sum(fraction_max),
-                 gene_expr = (min(gene_expr) == 1))
+    gene_expr_summary = sub_gene_expr %>%
+      group_by(cell_group, gene_id) %>%
+      # group_by(cell_group, gene_short_name) %>%
+      summarize(
+        sum_expr = sum(mean_expression),
+        mean_expr = mean(mean_expression),
+        min_expr = min(mean_expression),
+        max_expr = max(mean_expression),
+        fraction_max = sum(fraction_max),
+        gene_expr = (min(gene_expr) == 1)
+      ) %>%
+      mutate(gene_short_name = gene_info[gene_id, "gene_short_name"])
   } else {
     gene_expr_summary =  sub_gene_expr %>% 
       group_by(cell_group) %>% 
