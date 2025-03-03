@@ -256,13 +256,16 @@ plot_gene_expr = function(cell_state_graph,
   }
   gene_expr = hooke:::aggregated_expr_data(ccs@cds[rownames(gene_info), ], group_cells_by = ccs@info$cell_group)
   sub_gene_expr = gene_expr %>%
-    group_by(gene_id) %>%
     mutate(
       max_expr = max(mean_expression),
-      fraction_max = ifelse (max_expr > 0, mean_expression / max_expr, 0),
+      min_expr = min(mean_expression),
+      fraction_max = ifelse(max_expr > 0, mean_expression / max_expr, 0),
       gene_expr = case_when(
         fraction_expressing >= fract_expr & mean_expression >= mean_expr ~ TRUE,
-        TRUE ~ FALSE)) 
+        TRUE ~ FALSE
+      ),
+      .by = gene_id
+    )
   if (scale_to_range) {
     sub_gene_expr = sub_gene_expr %>%
       mutate(value = mean_expression) %>%
