@@ -211,6 +211,7 @@ plot_abundance_changes = function(cell_state_graph,
 #' @param genes
 #' @param color_nodes_by
 #' @param node_size Does not actually control the sizes of nodes, but is used to specify the offset to use for invisible points that help prevent the plot from getting clipped upon saving
+#' @param log_expr If TRUE, the expression values will be log-transformed
 #' @export
 plot_gene_expr = function(cell_state_graph, 
                           genes, 
@@ -223,7 +224,9 @@ plot_gene_expr = function(cell_state_graph,
                           legend_position = "right", 
                           plot_labels = T, 
                           aggregate = F, 
-                          scale_to_range = T, 
+                          scale_to_range = F,
+                          log_expr = F,
+                          pseudocount = 1e-5,
                           expr_limits = NULL) {
   
   if (scale_to_range && aggregate) {
@@ -295,7 +298,13 @@ plot_gene_expr = function(cell_state_graph,
       mutate(gene_short_name = paste(sort(genes), collapse =";"))
   }
   
-  
+  if (log_expr) {
+    gene_expr_summary = gene_expr_summary %>%
+      mutate(
+        sum_expr = if_else(sum_expr >= pseudocount, sum_expr, pseudocount),
+        sum_expr = log10(sum_expr)
+      )
+  }
   
   if (is.null(expr_limits) == FALSE){
     min = expr_limits[1]
@@ -346,8 +355,11 @@ plot_gene_expr = function(cell_state_graph,
                                      color=I("black")) 
   }
   
+  fill_title = "Gene Expr."
+  if (scale_to_range) fill_title = paste("Rel.", fill_title)
+  if (log_expr) fill_title = paste("log10(", fill_title, ")")
   p = p +
-    guides(fill = guide_colourbar(title = ifelse(scale_to_range, "Rel. Gene Expr.", "Gene Expr."))) +
+    guides(fill = guide_colourbar(title = fill_title)) +
     labs(size = "Fract. of Embryos") +
     facet_wrap(~gene_short_name)
   x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
