@@ -280,9 +280,9 @@ plot_gene_expr = function(cell_state_graph,
       group_by(cell_group, gene_id) %>%
       summarize(
         sum_expr = sum(mean_expression),
-        mean_expr = mean(mean_expression),
-        min_expr = min(mean_expression),
-        max_expr = max(mean_expression),
+        # mean_expr = mean(mean_expression),
+        # min_expr = min(mean_expression),
+        # max_expr = max(mean_expression),
         fraction_max = sum(fraction_max),
         gene_expr = (min(gene_expr) == 1)
       ) %>%
@@ -291,9 +291,9 @@ plot_gene_expr = function(cell_state_graph,
     gene_expr_summary =  sub_gene_expr %>% 
       group_by(cell_group) %>% 
       summarize( sum_expr = sum(mean_expression), 
-                 mean_expr = mean(mean_expression), 
-                 min_expr = min(mean_expression), 
-                 max_expr = max(mean_expression), 
+                #  mean_expr = mean(mean_expression), 
+                #  min_expr = min(mean_expression), 
+                #  max_expr = max(mean_expression), 
                  fraction_max = sum(fraction_max),
                  gene_expr = (min(gene_expr) == 1)) %>% 
       mutate(gene_short_name = paste(sort(genes), collapse =";"))
