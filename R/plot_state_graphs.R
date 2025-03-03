@@ -357,7 +357,7 @@ plot_gene_expr = function(cell_state_graph,
   
   fill_title = "Gene Expr."
   if (scale_to_range) fill_title = paste("Rel.", fill_title)
-  if (log_expr) fill_title = paste("log10(", fill_title, ")")
+  if (log_expr) fill_title = paste("log10(", fill_title, "+", pseudocount, ")")
   p = p +
     guides(fill = guide_colourbar(title = fill_title)) +
     labs(size = "Fract. of Embryos") +
