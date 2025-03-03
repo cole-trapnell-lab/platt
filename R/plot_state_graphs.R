@@ -263,7 +263,6 @@ plot_gene_expr = function(cell_state_graph,
       gene_expr = case_when(
         fraction_expressing >= fract_expr & mean_expression >= mean_expr ~ TRUE,
         TRUE ~ FALSE)) 
-  scale_to_range = T
   if (scale_to_range) {
     sub_gene_expr = sub_gene_expr %>%
       mutate(value = mean_expression) %>%
