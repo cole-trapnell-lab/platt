@@ -226,6 +226,11 @@ plot_gene_expr = function(cell_state_graph,
                           scale_to_range = T, 
                           expr_limits = NULL) {
   
+  if (scale_to_range && aggregate) {
+    message("Warning: scale_to_range is not compatible with aggregate. Setting scale_to_range to FALSE.")
+    scale_to_range = FALSE
+  }
+  
   g = cell_state_graph@g
   ccs = cell_state_graph@ccs
   bezier_df = cell_state_graph@layout_info$bezier_df
@@ -239,7 +244,7 @@ plot_gene_expr = function(cell_state_graph,
     summarize(n = n(), .by = gene_short_name) %>%
     filter(n > 1) %>%
     pull(gene_short_name)
-  if (length(duplicated_genes) > 0) {
+  if (aggregate == FALSE && length(duplicated_genes) > 0) {
     message(
       "The following gene names are represented by multiple ENSEMBL IDs: ",
       paste(duplicated_genes, collapse = ", "),
@@ -266,27 +271,18 @@ plot_gene_expr = function(cell_state_graph,
       ),
       .by = gene_id
     )
-  if (scale_to_range) {
-    sub_gene_expr = sub_gene_expr %>%
-      mutate(value = mean_expression) %>%
-      group_by(gene_id) %>%
-      dplyr::mutate(max_val_for_feature = max(value),
-                    min_val_for_feature = min(value)) %>%
-      dplyr::mutate(value = 100 * (value - min_val_for_feature) / (max_val_for_feature - min_val_for_feature))
-  }
   
   if (aggregate == FALSE) {
     gene_expr_summary = sub_gene_expr %>%
-      group_by(cell_group, gene_id) %>%
-      summarize(
-        sum_expr = sum(mean_expression),
-        # mean_expr = mean(mean_expression),
-        # min_expr = min(mean_expression),
-        # max_expr = max(mean_expression),
-        fraction_max = sum(fraction_max),
-        gene_expr = (min(gene_expr) == 1)
-      ) %>%
-      mutate(gene_short_name = gene_info[gene_id, "gene_short_name"])
+      mutate(gene_short_name = gene_info[gene_id, "gene_short_name"]) %>%
+      dplyr::rename(sum_expr = mean_expression)
+    if (scale_to_range) {
+      gene_expr_summary = gene_expr_summary %>%
+        mutate(
+          sum_expr = (sum_expr - min_expr) / (max_expr - min_expr),
+          .by = gene_id
+        )
+    }
   } else {
     gene_expr_summary =  sub_gene_expr %>% 
       group_by(cell_group) %>% 
@@ -350,8 +346,10 @@ plot_gene_expr = function(cell_state_graph,
                                      color=I("black")) 
   }
   
-  p = p + guides(fill=guide_colourbar(title="Gene Expr.")) + 
-    labs(size = "Fract. of Embryos") + facet_wrap(~gene_short_name)
+  p = p +
+    guides(fill = guide_colourbar(title = ifelse(scale_to_range, "Rel. Gene Expr.", "Gene Expr."))) +
+    labs(size = "Fract. of Embryos") +
+    facet_wrap(~gene_short_name)
   x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
   y_range = range(g$y) + c(-node_size*1.2, node_size*1.2)
   point_df = expand.grid("x" = x_range, "y" = y_range)
