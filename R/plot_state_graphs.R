@@ -290,7 +290,7 @@ plot_gene_expr = function(cell_state_graph,
                 #  mean_expr = mean(mean_expression), 
                 #  min_expr = min(mean_expression), 
                 #  max_expr = max(mean_expression), 
-                 fraction_max = sum(fraction_max),
+                 fraction_max = mean(fraction_max),
                  gene_expr = (min(gene_expr) == 1)) %>% 
       mutate(gene_short_name = paste(sort(genes), collapse =";"))
   }
