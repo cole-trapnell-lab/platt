@@ -494,12 +494,15 @@ plot_deg_change = function(cell_state_graph,
 #' over the platt graph
 #' @param cell_state_graph 
 #' @param deg_table
+#' @param 
 #' @export
 plot_degs = function(cell_state_graph, 
                      deg_table, 
+                     # fold_change = 
+                     perturb_table = NULL,
                      facet_group = "term", 
                      arrow_unit = 7,
-                     node_size = 2,
+                     node_size = 1,
                      con_colour = "darkgrey",
                      fract_expr = 0.0,
                      mean_expr = 0.0,
@@ -507,13 +510,6 @@ plot_degs = function(cell_state_graph,
                      fc_limits = c(-3,3), 
                      plot_labels=T){ 
   
-  # deg_table = deg_table %>%
-  #   mutate(
-  #     delta_q_value = pmax(0.0001, perturb_to_ctrl_p_value),
-  #     p_value_sig_code = calc_sig_ind(perturb_to_ctrl_p_value, html=FALSE)) 
-  # 
-  # deg_table[["contrast"]] = deg_table[[facet_group]]
-  # deg_table$contrast = as.factor(deg_table$contrast)
   
   g = cell_state_graph@g
   bezier_df = cell_state_graph@layout_info$bezier_df
@@ -524,8 +520,8 @@ plot_degs = function(cell_state_graph,
     min = fc_limits[1]
     max = fc_limits[2]
     deg_table = deg_table %>%
-      mutate(perturb_to_ctrl_raw_lfc = ifelse(perturb_to_ctrl_raw_lfc > max, max, perturb_to_ctrl_raw_lfc)) %>%
-      mutate(perturb_to_ctrl_raw_lfc = ifelse(perturb_to_ctrl_raw_lfc < min, min, perturb_to_ctrl_raw_lfc))
+      mutate(perturb_to_ctrl_shrunken_lfc = ifelse(perturb_to_ctrl_shrunken_lfc > max, max, perturb_to_ctrl_shrunken_lfc)) %>%
+      mutate(perturb_to_ctrl_shrunken_lfc = ifelse(perturb_to_ctrl_shrunken_lfc < min, min, perturb_to_ctrl_shrunken_lfc))
   }
   
   
@@ -536,6 +532,18 @@ plot_degs = function(cell_state_graph,
   g = left_join(g, deg_table, by = c("name"="cell_group"), relationship = "many-to-many") 
   
   
+  if (is.null(perturb_table) == FALSE) {
+    # make non sig dacts change
+    perturb_table = perturb_table %>% mutate(delta_log_abund = ifelse(delta_q_value < 0.05, delta_log_abund, 0))
+    
+    g = left_join(g, perturb_table, by = c("name"="cell_group"), relationship = "many-to-many")
+    g = g %>% mutate(size = exp(delta_log_abund)*node_size)
+    
+  } else {
+    g = g %>% mutate(size = node_size)
+  }
+  
+  
   p <- ggplot(aes(x,y), data = g) + 
     ggplot2::geom_path(aes(x, y, group = edge_name), 
                        colour = con_colour, data = bezier_df %>% distinct(), 
@@ -543,28 +551,44 @@ plot_degs = function(cell_state_graph,
                        linejoin='mitre')
   p =  p + 
     ggnewscale::new_scale_fill() +
-    ggnetwork::geom_nodes(data = g,
-                          aes(x, y) ,
-                          color=I("black"), size=node_size*1.2) +
-    ggnetwork::geom_nodes(data = g %>% filter(!is.na(perturb_to_ctrl_raw_lfc)),
-                          mapping = aes(x, y, color = perturb_to_ctrl_raw_lfc),
-                          size = node_size) + 
-    ggnetwork::geom_nodes(data = g %>% filter(is.na(perturb_to_ctrl_raw_lfc)),
-                          mapping = aes(x, y), color="lightgray",
-                          size = node_size) +
+    # ggnetwork::geom_nodes(data = g,
+    #                       aes(x, y, size=node_size*1.2), color=I("black")) +
+    ggnetwork::geom_nodes(data = g %>% filter(!is.na(perturb_to_ctrl_shrunken_lfc)),
+                          mapping = aes(x, y, fill = perturb_to_ctrl_shrunken_lfc, size = size), 
+                          shape = "circle filled",
+                          color = I("black")) + 
+    ggnetwork::geom_nodes(data = g %>% filter(is.na(perturb_to_ctrl_shrunken_lfc)),
+                          mapping = aes(x, y, size = size), 
+                          fill="lightgray", 
+                          shape = "circle filled",
+                          color = I("black")) +
     ggnetwork::theme_blank() + 
-    scale_color_gradient2(low = "#006600",  mid = "white", high = "#800080", limits = fc_limits) + 
-    # scale_color_gradient2(low = "royalblue3", mid = "white", high="orangered3", limits = fc_limits) + 
-    # scale_color_viridis_c(option="B", limits = fc_limits)+
-    ggnetwork::geom_nodetext(data = g,
-                             aes(x, y,
-                                 label = q_value_sig_code),
-                             color=I("black")) + 
+    scale_fill_gradient2(low = "#006600",  mid = "white", high = "#800080", limits = fc_limits) + 
+    # ggnetwork::geom_nodetext(data = g,
+    #                          aes(x, y,
+    #                              label = q_value_sig_code),
+    #                          color=I("black")) + 
     hooke_theme_opts() +
-    scale_size_identity() +
     theme(legend.position=legend_position)
   
-  p = p + guides(color=guide_colourbar(title="log2(fc)"))
+  
+  if (is.null(perturb_table) == FALSE) {
+    p = p + scale_size_identity(guide = "legend") 
+    ggb <- ggplot_build(p)
+    size_breaks <- ggb$plot$scales$get_scales("size")$get_breaks()
+    size_breaks_scale = size_breaks/node_size
+    
+    new_breaks = round(size_breaks_scale, 1)*node_size
+    new_breaks_labels = round(size_breaks_scale, 1)
+    p = p + scale_size_continuous(breaks = new_breaks,
+                                  labels = new_breaks_labels)
+    
+  } else {
+    p = p + guides(size="none")
+  }
+  
+  
+  p = p + guides(fill=guide_colourbar(title="log(FC)"))
   
   if (plot_labels) {
     p = p + ggrepel::geom_text_repel(data= g %>% select(x, y, name) %>% distinct(), 
@@ -578,7 +602,7 @@ plot_degs = function(cell_state_graph,
   y_range = range(g$y) + c(-node_size*1.2, node_size*1.2)
   point_df = expand.grid("x" = x_range, "y" = y_range)
   p = p + geom_point(point_df,
-                     mapping = aes(x,y), color="white", alpha=0)
+                     mapping = aes(x,y), color="white", alpha=0) #+ facet_wrap(gene_short_name)
   
   return(p)
   
@@ -801,6 +825,8 @@ plot_by_table = function(cell_state_graph,
   group_nodes_by = cell_state_graph@metadata$group_nodes_by
   
   g = cell_state_graph@g
+  
+  table[["cell_group"]] = table[[cell_state_graph@ccs@info$cell_group]]
   g = left_join(g, table, by = c("name"="cell_group"))
   g[["color_nodes_by_col"]] = g[[color_nodes_by]]
   
@@ -855,7 +881,8 @@ plot_by_table = function(cell_state_graph,
   }
   
   
-  p = p + scale_size_identity() +
+  p = p + 
+    scale_size_identity() +
     ggnetwork::theme_blank() +
     hooke_theme_opts() + 
     theme(legend.position=legend_position)
@@ -863,7 +890,6 @@ plot_by_table = function(cell_state_graph,
   if (!is.numeric(g[["color_nodes_by_col"]])) {
     p = p + scale_color_manual(values = hooke:::get_colors(length(unique(g$name)), type="vibrant"))
   }
-  
   
   # plot an invisible point to help with nodes not being cut off
   x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
