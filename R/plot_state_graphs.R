@@ -298,10 +298,7 @@ plot_gene_expr = function(cell_state_graph,
   
   if (log_expr) {
     gene_expr_summary = gene_expr_summary %>%
-      mutate(
-        sum_expr = if_else(sum_expr >= pseudocount, sum_expr, pseudocount),
-        sum_expr = log10(sum_expr)
-      )
+      mutate(sum_expr = log10(sum_expr + pseudocount))
   }
   
   if (is.null(expr_limits) == FALSE){
