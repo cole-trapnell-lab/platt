@@ -23,6 +23,7 @@ plot_annotations = function(cell_state_graph,
   group_nodes_by = cell_state_graph@metadata$group_nodes_by
   
   g = cell_state_graph@g
+
   bezier_df = cell_state_graph@layout_info$bezier_df
  
   
@@ -86,9 +87,6 @@ plot_annotations = function(cell_state_graph,
   point_df = expand.grid("x" = x_range, "y" = y_range)
   p = p + geom_point(point_df,
              mapping = aes(x,y), color="white", alpha=0)
-  
-
-
   
   
   return(p)
@@ -781,4 +779,99 @@ plot_perturb_effects <- function(cell_state_graph,
   return(p)
   
   
+}
+
+
+
+
+plot_by_table = function(cell_state_graph, 
+                         table, 
+                            color_nodes_by = NULL, 
+                            label_nodes_by = NULL, 
+                            arrow_unit = 7,
+                            node_size = 2,
+                            con_colour = "darkgrey", 
+                            legend_position = "none", 
+                            min_edge_size=0.1,
+                            max_edge_size=2,
+                            edge_weights=NULL, 
+                            plot_labels=T) {
+  
+  
+  group_nodes_by = cell_state_graph@metadata$group_nodes_by
+  
+  g = cell_state_graph@g
+  g = left_join(g, table, by = c("name"="cell_group"))
+  g[["color_nodes_by_col"]] = g[[color_nodes_by]]
+  
+  bezier_df = cell_state_graph@layout_info$bezier_df
+  
+  
+  p <- ggplot(aes(x,y), data=g) + 
+    ggplot2::geom_path(aes(x, y, group = edge_name, linetype=unsupported_edge), 
+                       colour = con_colour, 
+                       data = bezier_df %>% distinct(), 
+                       arrow = arrow(angle=30, length = unit(arrow_unit, "pt"), type="closed"), 
+                       linejoin='mitre')
+  
+  if (is.null(group_nodes_by) == FALSE) {
+    
+    p =  p + 
+      ggnetwork::geom_nodes(data = g,
+                            aes(x, y) ,
+                            color=I("black"), size=node_size*1.2) +
+      # ggnetwork::geom_nodes(data = g,
+      #                       aes(x, y,
+      #                           color = color_nodes_by),
+      #                       size = node_size)  +
+      labs(fill = color_nodes_by)
+    
+    p = p + ggforce::geom_mark_rect(aes(x, y,
+                                        fill = group_nodes_by),
+                                    size=0,
+                                    expand = unit(2, "mm"),
+                                    radius = unit(1.5, "mm"),
+                                    data=g)
+    
+  } else {
+    p = p + 
+      ggnetwork::geom_nodes(data = g,
+                            aes(x, y) ,
+                            color=I("black"), size=node_size*1.2) +
+      ggnetwork::geom_nodes(data = g,
+                            aes(x, y,
+                                color = color_nodes_by_col),
+                            size = node_size)  +
+      labs(fill = color_nodes_by)
+    
+  }
+  
+  
+  if (plot_labels) {
+    p = p + ggrepel::geom_text_repel(data= g %>% select(x, y, name) %>% distinct(), 
+                                     aes(x, y, label=name),
+                                     color=I("black"), 
+                                     box.padding = 0.5) 
+  }
+  
+  
+  p = p + scale_size_identity() +
+    ggnetwork::theme_blank() +
+    hooke_theme_opts() + 
+    theme(legend.position=legend_position)
+  
+  if (!is.numeric(g[["color_nodes_by_col"]])) {
+    p = p + scale_color_manual(values = hooke:::get_colors(length(unique(g$name)), type="vibrant"))
+  }
+  
+  
+  # plot an invisible point to help with nodes not being cut off
+  x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
+  y_range = range(g$y) + c(-node_size*1.2, node_size*1.2)
+  point_df = expand.grid("x" = x_range, "y" = y_range)
+  p = p + geom_point(point_df,
+                     mapping = aes(x,y), color="white", alpha=0)
+  
+  
+  return(p)
 }
