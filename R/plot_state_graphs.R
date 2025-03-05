@@ -360,7 +360,7 @@ plot_gene_expr = function(cell_state_graph,
   if (log_expr) fill_title = paste("log10(", fill_title, "+", pseudocount, ")")
   p = p +
     guides(fill = guide_colourbar(title = fill_title)) +
-    labs(size = "Fract. of Embryos") +
+    labs(size = "Fract. of Cells") +
     facet_wrap(~gene_short_name)
   x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
   y_range = range(g$y) + c(-node_size*1.2, node_size*1.2)
