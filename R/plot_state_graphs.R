@@ -59,7 +59,6 @@ plot_annotations = function(cell_state_graph,
     p = p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_font_size)
     plot_labels = FALSE
     color_nodes_by = group_nodes_by
-    print("hi")
   } 
   
   p = p + 
@@ -269,7 +268,9 @@ plot_gene_expr = function(cell_state_graph,
                           scale_to_range = F,
                           log_expr = F,
                           pseudocount = 1e-5,
-                          expr_limits = NULL) {
+                          expr_limits = NULL, 
+                          node_label_width = 50,
+                          group_label_font_size=1) {
   
   if (scale_to_range && aggregate) {
     message("Warning: scale_to_range is not compatible with aggregate. Setting scale_to_range to FALSE.")
@@ -279,6 +280,13 @@ plot_gene_expr = function(cell_state_graph,
   g = cell_state_graph@g
   ccs = cell_state_graph@ccs
   bezier_df = cell_state_graph@layout_info$bezier_df
+  grouping_df = cell_state_graph@layout_info$grouping_df
+  
+  y_plot_range = max(g$y)
+  group_label_position_df = g %>%
+    select(x, y, group_nodes_by) %>% distinct() %>%
+    group_by(group_nodes_by) %>% summarize(x = mean(x), y = max(y) + y_plot_range * 0.02)
+  
   color_nodes_by = match.arg(color_nodes_by)
   
   gene_info = rowData(ccs@cds) %>%
@@ -362,6 +370,25 @@ plot_gene_expr = function(cell_state_graph,
                        colour=con_colour, data=bezier_df %>% distinct(), 
                        arrow = arrow(angle=30, length = unit(arrow_unit, "pt"), type="closed"), 
                        linejoin='mitre')
+  
+  
+  if (is.null(grouping_df) == FALSE && identical(grouping_df$group_nodes_by, grouping_df$id) == FALSE){
+    
+    p = p + ggforce::geom_mark_rect(aes(x, y, group=group_nodes_by, color=I("lightgrey")),
+                                    size=0.25,
+                                    radius = unit(0.5, "mm"),
+                                    expand = unit(1, "mm"),
+                                    #con.linetype="dotted",
+                                    con.type="straight",
+                                    con.colour="lightgrey",
+                                    con.size=0.25,
+                                    con.border="one",
+                                    na.rm=TRUE,
+                                    data=g)
+    
+    p = p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_font_size)
+    plot_labels = FALSE
+  }
   
   p = p + ggnewscale::new_scale_color() +
     ggnetwork::geom_nodes(data = g %>% filter(gene_expr),
@@ -548,11 +575,20 @@ plot_degs = function(cell_state_graph,
                      mean_expr = 0.0,
                      legend_position = "none", 
                      fc_limits = c(-3,3), 
-                     plot_labels=T){ 
+                     plot_labels=T, 
+                     node_label_width = 50,
+                     group_label_font_size=1){ 
   
   
   g = cell_state_graph@g
   bezier_df = cell_state_graph@layout_info$bezier_df
+  
+  grouping_df = cell_state_graph@layout_info$grouping_df
+  
+  y_plot_range = max(g$y)
+  group_label_position_df = g %>%
+    select(x, y, group_nodes_by) %>% distinct() %>%
+    group_by(group_nodes_by) %>% summarize(x = mean(x), y = max(y) + y_plot_range * 0.02)
   
   # g = left_join(g, deg_table, by = c("name"="cell_group", "term"), relationship = "many-to-many") 
   
@@ -589,6 +625,25 @@ plot_degs = function(cell_state_graph,
                        colour = con_colour, data = bezier_df %>% distinct(), 
                        arrow = arrow(angle=30, length = unit(arrow_unit, "pt"), type="closed"), 
                        linejoin='mitre')
+  
+  if (is.null(grouping_df) == FALSE && identical(grouping_df$group_nodes_by, grouping_df$id) == FALSE){
+    
+    p = p + ggforce::geom_mark_rect(aes(x, y, group=group_nodes_by, color=I("lightgrey")),
+                                    size=0.25,
+                                    radius = unit(0.5, "mm"),
+                                    expand = unit(1, "mm"),
+                                    #con.linetype="dotted",
+                                    con.type="straight",
+                                    con.colour="lightgrey",
+                                    con.size=0.25,
+                                    con.border="one",
+                                    na.rm=TRUE,
+                                    data=g)
+    
+    p = p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_font_size)
+    plot_labels=FALSE 
+  }
+  
   p =  p + 
     ggnewscale::new_scale_fill() +
     ggnetwork::geom_nodes(data = g %>% filter(!is.na(perturb_to_ctrl_shrunken_lfc)),
@@ -622,7 +677,7 @@ plot_degs = function(cell_state_graph,
                                   labels = new_breaks_labels)
     
   } else {
-    p = p + guides(size="none")
+    p = p + guides(size="none") + scale_size_identity() 
   }
   
   
