@@ -919,7 +919,9 @@ plot_by_table = function(cell_state_graph,
                             min_edge_size=0.1,
                             max_edge_size=2,
                             edge_weights=NULL, 
-                            plot_labels=T) {
+                            plot_labels=T,
+                           node_label_width = 50,
+                           group_label_font_size=1) {
   
   
   group_nodes_by = cell_state_graph@metadata$group_nodes_by
@@ -931,6 +933,12 @@ plot_by_table = function(cell_state_graph,
   g[["color_nodes_by_col"]] = g[[color_nodes_by]]
   
   bezier_df = cell_state_graph@layout_info$bezier_df
+  grouping_df = cell_state_graph@layout_info$grouping_df
+  
+  y_plot_range = max(g$y)
+  group_label_position_df = g %>%
+    select(x, y, group_nodes_by) %>% distinct() %>%
+    group_by(group_nodes_by) %>% summarize(x = mean(x), y = max(y) + y_plot_range * 0.02)
   
   
   p <- ggplot(aes(x,y), data=g) + 
@@ -940,27 +948,25 @@ plot_by_table = function(cell_state_graph,
                        arrow = arrow(angle=30, length = unit(arrow_unit, "pt"), type="closed"), 
                        linejoin='mitre')
   
-  if (is.null(group_nodes_by) == FALSE) {
+  if (is.null(grouping_df) == FALSE && identical(grouping_df$group_nodes_by, grouping_df$id) == FALSE){
     
-    p =  p + 
-      ggnetwork::geom_nodes(data = g,
-                            aes(x, y) ,
-                            color=I("black"), size=node_size*1.2) +
-      # ggnetwork::geom_nodes(data = g,
-      #                       aes(x, y,
-      #                           color = color_nodes_by),
-      #                       size = node_size)  +
-      labs(fill = color_nodes_by)
-    
-    p = p + ggforce::geom_mark_rect(aes(x, y,
-                                        fill = group_nodes_by),
-                                    size=0,
-                                    expand = unit(2, "mm"),
-                                    radius = unit(1.5, "mm"),
+    p = p + ggforce::geom_mark_rect(aes(x, y, group=group_nodes_by, color=I("lightgrey")),
+                                    size=0.25,
+                                    radius = unit(0.5, "mm"),
+                                    expand = unit(1, "mm"),
+                                    #con.linetype="dotted",
+                                    con.type="straight",
+                                    con.colour="lightgrey",
+                                    con.size=0.25,
+                                    con.border="one",
+                                    na.rm=TRUE,
                                     data=g)
     
-  } else {
-    p = p + 
+    p = p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_font_size)
+    plot_labels=FALSE 
+  }
+  
+  p = p + 
       # ggnetwork::geom_nodes(data = g,
       #                       aes(x, y) ,
       #                       color=I("black"), size=node_size*1.2) +
@@ -972,7 +978,6 @@ plot_by_table = function(cell_state_graph,
                             size = node_size)  +
       labs(fill = color_nodes_by)
     
-  }
   
   
   if (plot_labels) {
