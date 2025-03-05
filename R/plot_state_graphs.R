@@ -12,7 +12,9 @@ plot_annotations = function(cell_state_graph,
                             min_edge_size=0.1,
                             max_edge_size=2,
                             edge_weights=NULL, 
-                            plot_labels=T) {
+                            plot_labels=T,
+                            group_label_font_size=1, 
+                            node_label_width = 50) {
   
   if (is.null(color_nodes_by)){
     color_nodes_by = cell_state_graph@ccs@info$cell_group
@@ -25,6 +27,12 @@ plot_annotations = function(cell_state_graph,
   g = cell_state_graph@g
 
   bezier_df = cell_state_graph@layout_info$bezier_df
+  grouping_df = cell_state_graph@layout_info$grouping_df
+  
+  y_plot_range = max(g$y)
+  group_label_position_df = g %>%
+    select(x, y, group_nodes_by) %>% distinct() %>%
+    group_by(group_nodes_by) %>% summarize(x = mean(x), y = max(y) + y_plot_range * 0.02)
  
   
   p <- ggplot(aes(x,y), data=g) + 
@@ -34,51 +42,49 @@ plot_annotations = function(cell_state_graph,
                        arrow = arrow(angle=30, length = unit(arrow_unit, "pt"), type="closed"), 
                        linejoin='mitre')
   
-  if (is.null(group_nodes_by) == FALSE) {
+  if (is.null(grouping_df) == FALSE && identical(grouping_df$group_nodes_by, grouping_df$id) == FALSE){
     
-    p =  p + 
-      ggnetwork::geom_nodes(data = g,
-                            aes(x, y) ,
-                            color=I("black"), size=node_size*1.2) +
-      # ggnetwork::geom_nodes(data = g,
-      #                       aes(x, y,
-      #                           color = color_nodes_by),
-      #                       size = node_size)  +
-      labs(fill = color_nodes_by)
-    
-    p = p + ggforce::geom_mark_rect(aes(x, y,
-                                        fill = group_nodes_by),
-                                    size=0,
-                                    expand = unit(2, "mm"),
-                                    radius = unit(1.5, "mm"),
+    p = p + ggforce::geom_mark_rect(aes(x, y, group=group_nodes_by, color=I("lightgrey")),
+                                    size=0.25,
+                                    radius = unit(0.5, "mm"),
+                                    expand = unit(1, "mm"),
+                                    #con.linetype="dotted",
+                                    con.type="straight",
+                                    con.colour="lightgrey",
+                                    con.size=0.25,
+                                    con.border="one",
+                                    na.rm=TRUE,
                                     data=g)
     
-  } else {
-    p = p + 
-      ggnetwork::geom_nodes(data = g,
-                            aes(x, y) ,
-                            color=I("black"), size=node_size*1.2) +
+    p = p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_font_size)
+    plot_labels = FALSE
+    color_nodes_by = group_nodes_by
+    print("hi")
+  } 
+  
+  p = p + 
       ggnetwork::geom_nodes(data = g,
                             aes(x, y,
-                                color = color_nodes_by),
-                            size = node_size)  +
+                                fill = color_nodes_by),
+                            size = node_size, 
+                            shape = "circle filled",
+                            color = I("black"))  +
       labs(fill = color_nodes_by)
     
-  }
-  
-  
   if (plot_labels) {
-    p = p + ggrepel::geom_text_repel(data= g %>% select(x, y, name) %>% distinct(), 
-                                     aes(x, y, label=name),
-                                     color=I("black"), 
-                                     box.padding = 0.5) 
+      p = p + ggrepel::geom_text_repel(data= g %>% select(x, y, name) %>% distinct(), 
+                                       aes(x, y, label=name),
+                                       color=I("black"), 
+                                       box.padding = 0.5) 
   }
-  
+    
+
+  num.colors = cell_state_graph@g[["color_nodes_by"]] %>% unique() %>% length()
   
   p = p + scale_size_identity() +
     ggnetwork::theme_blank() +
     hooke_theme_opts() +
-    scale_color_manual(values = hooke:::get_colors(length(unique(g$name)), type="vibrant")) +
+    scale_fill_manual(values = hooke:::get_colors(num.colors, type="vibrant")) +
     theme(legend.position=legend_position)
   
   # plot an invisible point to help with nodes not being cut off
@@ -107,10 +113,19 @@ plot_abundance_changes = function(cell_state_graph,
                                   node_scale = 1,
                                   con_colour = "darkgrey", 
                                   legend_position = "none", 
+                                  node_label_width = 50,
+                                  group_label_font_size = 1,
                                   fc_limits = c(-3,3)) {
   
   g = cell_state_graph@g
   bezier_df = cell_state_graph@layout_info$bezier_df
+  grouping_df = cell_state_graph@layout_info$grouping_df
+  
+  y_plot_range = max(g$y)
+  group_label_position_df = g %>%
+    select(x, y, group_nodes_by) %>% distinct() %>%
+    group_by(group_nodes_by) %>% summarize(x = mean(x), y = max(y) + y_plot_range * 0.02)
+  
   
   if (is.null(facet_group) == FALSE) {
     comp_abund_table[["contrast"]] = comp_abund_table[[facet_group]]
@@ -135,22 +150,48 @@ plot_abundance_changes = function(cell_state_graph,
                        arrow = arrow(angle=30, length = unit(arrow_unit, "pt"), type="closed"), 
                        linejoin='mitre')
   
+  
+  
+  if (is.null(grouping_df) == FALSE && identical(grouping_df$group_nodes_by, grouping_df$id) == FALSE){
+    
+    p = p + ggforce::geom_mark_rect(aes(x, y, group=group_nodes_by, color=I("lightgrey")),
+                                    size=0.25,
+                                    radius = unit(0.5, "mm"),
+                                    expand = unit(1, "mm"),
+                                    #con.linetype="dotted",
+                                    con.type="straight",
+                                    con.colour="lightgrey",
+                                    con.size=0.25,
+                                    con.border="one",
+                                    na.rm=TRUE,
+                                    data=g)
+    
+    p = p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_font_size)
+    plot_labels = F
+    scale_node = T
+    
+  }
+  
+  
+  
   if (scale_node) {
     
     p = p + ggnewscale::new_scale_color() +
-      ggnetwork::geom_nodes(data = g,
-                            aes(x, y, 
-                                size = -log10(delta_q_value)*1.2 * node_scale), 
-                            color=I("black")) +
+      # ggnetwork::geom_nodes(data = g,
+      #                       aes(x, y, 
+      #                           size = -log10(delta_q_value)*1.2 * node_scale), 
+      #                       color=I("black")) +
       ggnetwork::geom_nodes(data = g,
                             aes(x, y,
                                 size = -log10(delta_q_value) * node_scale,
-                                color=delta_log_abund)) +
+                                fill=delta_log_abund), 
+                            shape = "circle filled",
+                            color = I("black")) +
       ggnetwork::geom_nodetext(data = g,
                                aes(x, y,
                                    label = q_value_sig_code),
                                color=I("black")) +  
-      scale_color_gradient2(low = "royalblue3", mid = "white", high="orangered3", limits = fc_limits) + 
+      scale_fill_gradient2(low = "royalblue3", mid = "white", high="orangered3", limits = fc_limits) + 
       scale_size_identity() +
       ggnetwork::theme_blank() +
       hooke_theme_opts() +
@@ -161,17 +202,20 @@ plot_abundance_changes = function(cell_state_graph,
   } else {
     
     p = p + ggnewscale::new_scale_color() +
-      ggnetwork::geom_nodes(data = g,
-                            aes(x, y) ,
-                            color=I("black"), size=node_size*1.2) +
+      # ggnetwork::geom_nodes(data = g,
+      #                       aes(x, y) ,
+      #                       color=I("black"), size=node_size*1.2) +
       ggnetwork::geom_nodes(data = g,
                             aes(x, y,
-                                color=delta_log_abund), size=node_size) +
+                                fill=delta_log_abund), 
+                            shape = "circle filled",
+                            color = I("black"),
+                            size=node_size) +
       ggnetwork::geom_nodetext(data = g,
                                aes(x, y,
                                    label = q_value_sig_code),
                                color=I("black")) +
-      scale_color_gradient2(low = "royalblue3", mid = "white", high="orangered3", limits = fc_limits) +  
+      scale_fill_gradient2(low = "royalblue3", mid = "white", high="orangered3", limits = fc_limits) +  
       # scale_size(range=c(2, 6)) +
       scale_size_identity() +
       ggnetwork::theme_blank() +
@@ -191,7 +235,7 @@ plot_abundance_changes = function(cell_state_graph,
     p = p + facet_wrap(~contrast)
   }
   
-  p = p + guides(color=guide_colourbar(title="log(\u0394 Abundance)"))
+  p = p + guides(fill=guide_colourbar(title="log(\u0394 Abundance)"))
   
   x_range = range(g$x) + c(-node_size*1.2, node_size*1.2)
   y_range = range(g$y) + c(-node_size*1.2, node_size*1.2)
@@ -491,11 +535,10 @@ plot_deg_change = function(cell_state_graph,
 #' over the platt graph
 #' @param cell_state_graph 
 #' @param deg_table
-#' @param 
+#' @param perturb_table output of Hooke compare_abundances, if provide will scale the node size by delta_log_abundance
 #' @export
 plot_degs = function(cell_state_graph, 
                      deg_table, 
-                     # fold_change = 
                      perturb_table = NULL,
                      facet_group = "term", 
                      arrow_unit = 7,
@@ -548,8 +591,6 @@ plot_degs = function(cell_state_graph,
                        linejoin='mitre')
   p =  p + 
     ggnewscale::new_scale_fill() +
-    # ggnetwork::geom_nodes(data = g,
-    #                       aes(x, y, size=node_size*1.2), color=I("black")) +
     ggnetwork::geom_nodes(data = g %>% filter(!is.na(perturb_to_ctrl_shrunken_lfc)),
                           mapping = aes(x, y, fill = perturb_to_ctrl_shrunken_lfc, size = size), 
                           shape = "circle filled",
@@ -699,12 +740,15 @@ plot_by_annotations = function(cell_state_graph,
   # p = p + geom_text(data = hidden_node_labels, aes(x, y, label = group), size = 2)
   
   p = p + ggnewscale::new_scale_color() + 
-    ggnetwork::geom_nodes(data = g,
-                          aes(x, y) ,
-                          color=I("black"), size=node_size*1.2) +
+    # ggnetwork::geom_nodes(data = g,
+    #                       aes(x, y) ,
+    #                       color=I("black"), size=node_size*1.2) +
     ggnetwork::geom_nodes(data = g,
                           aes(x, y,
-                              color = color_nodes_by)) + 
+                              fill = color_nodes_by), 
+                          size=node_size,
+                          shape = "circle filled",
+                          color = I("black"),) + 
     scale_color_manual(values = tissue.colors) + 
     monocle3:::monocle_theme_opts() 
   
@@ -765,11 +809,13 @@ plot_perturb_effects <- function(cell_state_graph,
                        linejoin='mitre')
   p =  p + 
     ggnewscale::new_scale_fill() +
+    # ggnetwork::geom_nodes(data = g,
+    #                       aes(x, y) ,
+    #                       color=I("black"), size=node_size*1.2) +
     ggnetwork::geom_nodes(data = g,
-                          aes(x, y) ,
-                          color=I("black"), size=node_size*1.2) +
-    ggnetwork::geom_nodes(data = g,
-                          mapping = aes(x, y, color = color_nodes_by),
+                          mapping = aes(x, y, fill = color_nodes_by),
+                          shape = "circle filled",
+                          color = I("black"),
                           size = node_size) +
     ggnetwork::theme_blank() + 
     hooke_theme_opts() +
@@ -804,7 +850,9 @@ plot_perturb_effects <- function(cell_state_graph,
 
 
 
-
+#' plots a cell_state_graph by any column name in the provide table
+#' @param cell_state_graph
+#' @param table with attributes for each node in the graph
 plot_by_table = function(cell_state_graph, 
                          table, 
                             color_nodes_by = NULL, 
@@ -858,12 +906,14 @@ plot_by_table = function(cell_state_graph,
     
   } else {
     p = p + 
-      ggnetwork::geom_nodes(data = g,
-                            aes(x, y) ,
-                            color=I("black"), size=node_size*1.2) +
+      # ggnetwork::geom_nodes(data = g,
+      #                       aes(x, y) ,
+      #                       color=I("black"), size=node_size*1.2) +
       ggnetwork::geom_nodes(data = g,
                             aes(x, y,
-                                color = color_nodes_by_col),
+                                fill = color_nodes_by_col),
+                            shape = "circle filled",
+                            color = I("black"),
                             size = node_size)  +
       labs(fill = color_nodes_by)
     
