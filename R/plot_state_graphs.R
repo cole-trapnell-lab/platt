@@ -276,17 +276,16 @@ plot_abundance_changes <- function(cell_state_graph,
 #' @export
 plot_gene_expr <- function(cell_state_graph,
                            genes,
-                           color_nodes_by = c("sum_expr", "mean_expr", "min_expr", "max_expr"),
                            arrow_unit = 7,
                            node_size = 2,
                            con_colour = "lightgrey",
                            fract_expr = 0.0,
                            mean_expr = 0.0,
                            legend_position = "right",
-                           plot_labels = T,
-                           aggregate = F,
-                           scale_to_range = F,
-                           log_expr = F,
+                           plot_labels = TRUE,
+                           aggregate = FALSE,
+                           scale_to_range = FALSE,
+                           log_expr = FALSE,
                            pseudocount = 1e-5,
                            expr_limits = NULL,
                            node_label_width = 50,
@@ -308,7 +307,6 @@ plot_gene_expr <- function(cell_state_graph,
     group_by(group_nodes_by) %>%
     summarize(x = mean(x), y = max(y) + y_plot_range * 0.02)
 
-  color_nodes_by <- match.arg(color_nodes_by)
 
   gene_info <- rowData(ccs@cds) %>%
     as.data.frame() %>%
@@ -341,8 +339,16 @@ plot_gene_expr <- function(cell_state_graph,
       is_expr = (fraction_expressing >= fract_expr & mean_expression >= mean_expr),
       .by = gene_id
     )
-
-  if (aggregate == FALSE) {
+  if (aggregate) {
+    gene_expr_summary <- sub_gene_expr %>%
+      group_by(cell_group) %>%
+      summarize(
+        sum_expr = sum(mean_expression),
+        fraction_expressing = mean(fraction_expressing),
+        is_expr = all(is_expr)
+      ) %>%
+      mutate(gene_short_name = paste(sort(genes), collapse = ";"))
+  } else {
     gene_expr_summary <- sub_gene_expr %>%
       mutate(gene_short_name = gene_info[gene_id, "gene_short_name"]) %>%
       dplyr::rename(sum_expr = mean_expression)
@@ -353,18 +359,6 @@ plot_gene_expr <- function(cell_state_graph,
           .by = gene_id
         )
     }
-  } else {
-    gene_expr_summary <- sub_gene_expr %>%
-      group_by(cell_group) %>%
-      summarize(
-        sum_expr = sum(mean_expression),
-        #  mean_expr = mean(mean_expression),
-        #  min_expr = min(mean_expression),
-        #  max_expr = max(mean_expression),
-        fraction_max = mean(fraction_max),
-        gene_expr = (min(gene_expr) == 1)
-      ) %>%
-      mutate(gene_short_name = paste(sort(genes), collapse = ";"))
   }
 
   if (log_expr) {
@@ -381,8 +375,6 @@ plot_gene_expr <- function(cell_state_graph,
   }
 
   g <- left_join(g, gene_expr_summary, by = c("name" = "cell_group"), relationship = "many-to-many")
-
-
 
   p <- ggplot(aes(x, y), data = g) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
@@ -412,9 +404,10 @@ plot_gene_expr <- function(cell_state_graph,
 
   p <- p + ggnewscale::new_scale_color() +
     ggnetwork::geom_nodes(
-      data = g %>% filter(gene_expr),
+      data = g %>% filter(is_expr),
       aes(x, y,
-        size = fraction_max,
+        size = fraction_expressing,
+        # size = fraction_max,
       ),
       shape = "circle filled",
       fill = I(con_colour),
@@ -422,15 +415,14 @@ plot_gene_expr <- function(cell_state_graph,
     ) +
     ggnewscale::new_scale_fill() +
     ggnetwork::geom_nodes(
-      data = g %>% filter(gene_expr & fraction_max > 0),
+      data = g %>% filter(is_expr & fraction_expressing > 0),
       aes(x, y,
-        size = fraction_max,
+        size = fraction_expressing,
         fill = sum_expr
       ),
       shape = "circle filled",
       color = I("black")
     ) +
-    labs(color = color_nodes_by) +
     scale_fill_viridis_c(limits = expr_limits) +
     ggnetwork::theme_blank() +
     scale_size_identity() +
