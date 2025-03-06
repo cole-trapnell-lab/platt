@@ -1439,3 +1439,67 @@ fit_subset_genotype_ccm = function(ccm, umap_space = NULL, ... ) {
 
 
 
+
+
+construct_platt_graph = function(cds,
+                                partition_name, 
+                                sample_group, 
+                                comb_cds, 
+                                perturbation_col = "perturbation",
+                                interval_col = "timepoint",
+                                component_col = "assembly_group",
+                                ctrl_ids = c(), 
+                                num_threads = 6,
+                                k=15, 
+                                resolution = NULL, 
+                                edge_allowlist = NULL,
+                                batch_col = "expt", 
+                                newdata = tibble(), 
+                                batches_excluded_from_assembly = c()){
+  
+  cds = cluster_cells(cds, random_seed = 42, res=resolution, k = k)
+  colData(cds)$cell_state = monocle3:::clusters(cds)
+  
+  res_cluster = assemble_partition(cds,
+                                   partition_name = partition_name, 
+                                   sample_group = sample_group,
+                                   cell_group = cell_group,
+                                   interval_col = interval_col,
+                                   component_col = component_col,
+                                   perturbation_col = perturbation_col,
+                                   ctrl_ids = ctrl_ids,
+                                   num_threads = num_threads,
+                                   batch_col = batch_col,
+                                   newdata = newdata, 
+                                   batches_excluded_from_assembly = batches_excluded_from_assembly)
+  
+  contract_graph = platt::contract_state_graph(ccs, 
+                                               mt_graph = res_cluster$mt_graph[[1]], 
+                                               group_nodes_by = "cell_type")
+  
+  global_wt_graph_edge_allowlist = igraph::as_data_frame(contract_graph)
+  global_wt_graph_edge_allowlist = global_wt_graph_edge_allowlist %>% select(from, to) %>% distinct()
+  
+  res_cell_type = assemble_partition(cds,
+                                     partition_name = partition_name, 
+                                     sample_group = sample_group,
+                                     cell_group = cell_group,
+                                     interval_col = interval_col,
+                                     component_col = component_col,
+                                     perturbation_col = perturbation_col,
+                                     ctrl_ids = ctrl_ids,
+                                     num_threads = num_threads,
+                                     batch_col = batch_col,
+                                     newdata = newdata, 
+                                     batches_excluded_from_assembly = batches_excluded_from_assembly,
+                                     edge_allowlist = global_wt_graph_edge_allowlist)
+  
+
+  
+  return(res_cell_type)
+  
+}
+
+
+
+
