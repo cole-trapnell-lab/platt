@@ -608,6 +608,302 @@ compare_genes_over_graph <- function(ccs,
   return(cell_states)
 }
 
+#'
+#' @param cds
+#' @param model_tbl
+#' @param abs_expr_thresh
+#' @param term_to_keep
+collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, term_to_keep) {
+  model_tbl <- model_tbl %>%
+    dplyr::mutate(dispersion = purrr::map2(
+      .f = purrr::possibly(
+        extract_dispersion_helper, NA_real_
+      ), .x = model,
+      .y = model_summary
+    )) %>%
+    tidyr::unnest(dispersion)
+
+  mean_expr_helper <- function(model, new_data, type = "response") {
+    res <- tryCatch(
+      {
+        # mean(stats::predict(model, newdata=new_data, type=type))
+        # FIXME: this is a hack to avoid attaching speedglm for now
+        mean(speedglm:::predict.speedglm(model, newdata = new_data, type = type))
+      },
+      error = function(e) {
+        NA
+      }
+    )
+    return(res)
+  }
+
+  model_tbl <- model_tbl %>%
+    dplyr::mutate(mean_expr = purrr::map(model, mean_expr_helper, new_data = colData(cds) %>% as.data.frame())) %>%
+    tidyr::unnest(mean_expr)
+  model_tbl$disp_fit <- rep(1.0, nrow(model_tbl))
+  tryCatch(
+    {
+      disp_fit <- mgcv::gam(log(dispersion) ~ s(log(mean_expr), bs = "cs"), data = model_tbl)
+      model_tbl$disp_fit <- exp(predict(disp_fit))
+    },
+    error = function(e) {
+      print(e)
+      print(head(model_tbl[, c("mean_expr", "dispersion")]))
+      model_tbl$disp_fit <- rep(1.0, nrow(model_tbl))
+    }
+  )
+
+  # model_tbl$disp_fit = 1
+
+  model_tbl <- update_summary(model_tbl, dispersion_type = "fitted")
+  print(head(model_tbl))
+
+  print("\tdispersions updated")
+
+  raw_coefficient_table <- coefficient_table(model_tbl)
+
+  # print (head(raw_coefficient_table))
+  raw_coefficient_table %>%
+    select(id, term, estimate) %>%
+    print()
+
+
+  extract_extra_model_stats <- function(model, newdata) {
+    if (class(model)[1] == "speedglm") {
+      extra_stats <- tibble(RSS = model$RSS, df.residual = model$df, mean_expr = mean(predict(model, newdata = newdata)))
+      return(extra_stats)
+    } else {
+      extra_stats <- tibble(RSS = NA_real_, df.residual = NA_real_, mean_expr = NA_real_)
+      return(extra_stats)
+    }
+  }
+
+  print("\tcomputing extra model stats")
+
+  extra_model_stats <- model_tbl %>%
+    dplyr::mutate(extra_stats = purrr::map(.f = purrr::possibly(
+      extract_extra_model_stats, NA_real_
+    ), .x = model, newdata = colData(cds) %>% as.data.frame())) %>%
+    dplyr::select(id, extra_stats) %>%
+    tidyr::unnest(extra_stats)
+
+  raw_coefficient_table <- left_join(raw_coefficient_table, extra_model_stats %>% dplyr::select(id, RSS, df.residual), by = "id") %>%
+    # left_join(model_tbl %>% select(id, disp_fit, dispersion), by = "id") %>%
+    # coefficient_table(pb_group_models) %>%
+    # dplyr::select(gene_short_name, id, term, estimate, std_err, p_value, status) %>%
+    filter(grepl(term_to_keep, term)) %>%
+    mutate(term = stringr::str_replace_all(term, term_to_keep, "")) %>%
+    mutate(term = stringr::str_replace(term, "\\(\\)", "Intercept"))
+
+  fail_gene_ids <- model_tbl %>%
+    filter(status == "FAIL") %>%
+    select(id)
+  term_to_keep_levels <- levels(as.factor(colData(cds)[, term_to_keep]))
+  # term_table = tibble(term=stringr::str_c(term_to_keep, term_to_keep_levels))
+  term_table <- tibble(term = term_to_keep_levels)
+
+  fail_coeff_rows <- tidyr::crossing(fail_gene_ids, term_table) %>% mutate(estimate = NA_real_)
+  raw_coefficient_table <- raw_coefficient_table %>%
+    mutate(estimate = if_else(id %in% fail_gene_ids$id, NA_real_, estimate))
+  # raw_coefficient_table = bind_rows(raw_coefficient_table, fail_coeff_rows)
+
+  estimate_matrix <- raw_coefficient_table %>% dplyr::select(id, term, estimate)
+  if (term_to_keep != "(Intercept)") {
+    estimate_matrix <- estimate_matrix %>% mutate(term = factor(term, levels = term_to_keep_levels))
+  }
+  estimate_matrix <- estimate_matrix %>% mutate(id = factor(id, levels = model_tbl$id))
+
+  print("\tpivoting coefficient table:")
+  # print(head(estimate_matrix))
+  estimate_matrix <- estimate_matrix %>% tidyr::pivot_wider(names_from = term, values_from = estimate, id_expand = TRUE, values_fill = 0)
+
+  gene_ids <- estimate_matrix$id
+  estimate_matrix$id <- NULL
+  estimate_matrix <- as.matrix(estimate_matrix)
+  row.names(estimate_matrix) <- gene_ids
+  colnames(estimate_matrix) <- as.character(colnames(estimate_matrix))
+
+  stderr_matrix <- raw_coefficient_table %>% dplyr::select(id, term, std_err)
+  if (term_to_keep != "(Intercept)") {
+    stderr_matrix <- stderr_matrix %>% mutate(term = factor(term, levels = term_to_keep_levels))
+  }
+  stderr_matrix <- stderr_matrix %>% mutate(id = factor(id, levels = model_tbl$id))
+
+  print("\tpivoting coefficient stderr table")
+  stderr_matrix <- stderr_matrix %>% tidyr::pivot_wider(names_from = term, values_from = std_err, id_expand = TRUE, values_fill = 0)
+
+  gene_ids <- stderr_matrix$id
+  stderr_matrix$id <- NULL
+  stderr_matrix <- as.matrix(stderr_matrix)
+  row.names(stderr_matrix) <- gene_ids
+  colnames(stderr_matrix) <- as.character(colnames(stderr_matrix))
+
+  # collect the ids of any genes that threw an exception in fit_models and
+  # set their estimates and std_errors to NA
+
+  if (length(fail_gene_ids$id) > 0) {
+    print("\tzero-ing out failed gene models")
+    estimate_matrix[fail_gene_ids$id, ] <- log(abs_expr_thresh)
+    stderr_matrix[fail_gene_ids$id, ] <- Inf
+  }
+
+
+  sigma_df <- raw_coefficient_table %>%
+    dplyr::select(id, RSS, df.residual, mean_expr, disp_fit, dispersion) %>%
+    distinct() %>%
+    as.data.frame()
+  row.names(sigma_df) <- sigma_df$id
+  sigma_df$id <- NULL
+  sigma_df <- sigma_df[row.names(estimate_matrix), ]
+  sigma_df$sigma <- sigma_df$RSS / sigma_df$df.residual
+
+  std_dev.unscaled <- stderr_matrix^2 / sigma_df$sigma
+
+  print("estimates")
+  print(head(estimate_matrix))
+
+  print("std errs")
+  print(head(stderr_matrix))
+
+  print("\treporting final stats")
+  coefs_for_shrinkage <- tibble(
+    coefficients = estimate_matrix,
+    stdev.unscaled = stderr_matrix,
+    sigma = sigma_df$sigma,
+    df.residual = sigma_df$df.residual,
+    trend = sigma_df$mean_expr,
+    est_dispersion = sigma_df$dispersion,
+    disp_fit = sigma_df$disp_fit
+  )
+
+  return(coefs_for_shrinkage)
+}
+
+#' @param ccs
+#' @param perturbation_col
+#' @param control_ids
+#' @param nuisance_model_formula_str
+#' @param cell_groups
+#' @export
+compare_genes_within_state_graph <- function(ccs,
+                                             perturbation_col = "perturbation",
+                                             control_ids = c("Control"),
+                                             nuisance_model_formula_str = "0",
+                                             ambient_coeffs = NULL,
+                                             cell_groups = NULL,
+                                             assembly_group = NULL,
+                                             state_graph = NULL,
+                                             perturbations = NULL,
+                                             gene_ids = NULL,
+                                             group_nodes_by = NULL,
+                                             log_fc_thresh = 1,
+                                             abs_expr_thresh = 1e-10,
+                                             sig_thresh = 0.05,
+                                             min_samples_detected = 2,
+                                             min_cells_per_pseudobulk = NULL,
+                                             cores = 1,
+                                             write_dir = NULL,
+                                             max_simultaneous_genes = NULL,
+                                             ...) {
+  # to do make sure that ccs and state graph match
+  # check if all nodes in the state graph exist in the cds
+
+  # if (is.null(state_graph) == FALSE) {
+  #
+  # }
+
+  expts <- unique(colData(ccs)$expt)
+
+  pb_cds <- hooke:::pseudobulk_ccs_for_states(ccs, cell_agg_fun = "sum")
+  colData(pb_cds)$Size_Factor <- colData(pb_cds)$num_cells_in_group
+
+  # Once we pseudobulks, we are going to overwrite the provided control ids with "Control"
+  # pb_cds = hooke:::add_covariate(ccs, pb_cds, perturbation_col)
+  colData(pb_cds)[["perturbation"]] <- colData(pb_cds)[[perturbation_col]]
+  colData(pb_cds)[["perturbation"]] <- ifelse(colData(pb_cds)$perturbation %in% control_ids,
+    "Control", colData(pb_cds)$perturbation
+  )
+
+  # to do: if we want to run it by assembly group, must provide a state graph
+  if (is.null(assembly_group) == FALSE & is.null(state_graph) == FALSE) {
+    pb_cds <- hooke:::add_covariate(ccs, pb_cds, "assembly_group")
+    pb_cds <- pb_cds[, colData(pb_cds)$assembly_group == assembly_group]
+
+    if (is(state_graph, "igraph")) {
+      state_graph <- igraph::as_data_frame(state_graph)
+    }
+    state_graph <- state_graph %>% filter(assembly_group == assembly_group)
+  }
+
+  # If the user provided a set of perturbations, subset the pseudobulk CDS to include just them and the controls
+  if (!is.null(perturbations)) {
+    perturbations <- setdiff(perturbations, "Control")
+    pb_cds <- pb_cds[, colData(pb_cds)[[perturbation_col]] %in% c("Control", perturbations)]
+  } else { # otherwise, grab the perturbation ids from the CDS and process them all
+    perturbations <- unique(colData(pb_cds)[["perturbation"]])
+    print(paste("pre-filter controls:", "Control"))
+    print(paste("pre-filter", perturbations))
+    perturbations <- setdiff(perturbations, "Control")
+    print(paste("post-filter", perturbations))
+  }
+
+  # subset to genes that are expressed over a certain min value
+  expr_over_thresh <- normalized_counts(pb_cds, "size_only", pseudocount = 0)
+  genes_to_test <- which(Matrix::rowSums(expr_over_thresh) >= min_samples_detected)
+  pb_cds <- pb_cds[genes_to_test, ]
+
+
+
+  # # Collect background estimate
+  # pb_ambient = fit_models(pb_cds,
+  #                         model_formula_str="~ 1",
+  #                         cores=cores)
+  # ambient_coeffs = collect_coefficients_for_shrinkage(pb_cds, pb_ambient, abs_expr_thresh, term_to_keep = "(Intercept)")
+
+
+  if (is.null(cell_groups)) {
+    cell_groups <- rownames(counts(ccs))
+  }
+
+  # if (is.null(ambient_coeffs)){
+  #   ambient_estimate_matrix = NULL
+  #   ambient_stderr_matrix =  NULL
+  # } else {
+  #   ambient_estimate_matrix = ambient_coeffs$coefficients
+  #   ambient_stderr_matrix = ambient_coeffs$stdev.unscaled
+  # }
+
+  if (is.null(write_dir) == FALSE) {
+    if (!file.exists(write_dir)) {
+      dir.create(write_dir)
+    }
+  }
+
+  df <- data.frame(cell_group = cell_groups) %>%
+    mutate(genes_within_cell_group = purrr::map(
+      .f = compare_gene_expression_within_node,
+      .x = cell_group,
+      pb_cds = pb_cds,
+      ccs = ccs,
+      control_ids = c("Control"),
+      perturbation_ids = perturbations,
+      ambient_estimate_matrix = ambient_coeffs$coefficients,
+      ambient_stderr_matrix = ambient_coeffs$stdev.unscaled,
+      cores = cores,
+      max_simultaneous_genes = max_simultaneous_genes,
+      nuisance_model_formula_str = nuisance_model_formula_str,
+      min_cells_per_pseudobulk = min_cells_per_pseudobulk,
+      write_dir = write_dir
+    ))
+
+
+  # df %>%
+  #   tidyr::unnest(genes_within_cell_group) %>% tidyr::unnest(perturb_effects) %>%
+  #   left_join(rowData(pb_cds) %>% as.data.frame %>%  select(id, gene_short_name), by = c("id" = "id")) #%>%
+  #   group_by(cell_state) %>% tidyr::nest() %>% dplyr::rename(gene_class_scores = data)
+
+  return(df)
+}
 
 #' Compare Gene Expression Within Node
 #'
