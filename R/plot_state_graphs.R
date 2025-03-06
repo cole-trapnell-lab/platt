@@ -271,7 +271,6 @@ plot_abundance_changes <- function(cell_state_graph,
 # on top of a cell_state_graph
 #' @param cell_state_graph
 #' @param genes
-#' @param color_nodes_by
 #' @param node_size Does not actually control the sizes of nodes, but is used to specify the offset to use for invisible points that help prevent the plot from getting clipped upon saving
 #' @param log_expr If TRUE, the expression values will be log-transformed
 #' @export
@@ -339,11 +338,7 @@ plot_gene_expr <- function(cell_state_graph,
     mutate(
       max_expr = max(mean_expression),
       min_expr = min(mean_expression),
-      fraction_max = ifelse(max_expr > 0, mean_expression / max_expr, 0),
-      gene_expr = case_when(
-        fraction_expressing >= fract_expr & mean_expression >= mean_expr ~ TRUE,
-        TRUE ~ FALSE
-      ),
+      is_expr = (fraction_expressing >= fract_expr & mean_expression >= mean_expr),
       .by = gene_id
     )
 
