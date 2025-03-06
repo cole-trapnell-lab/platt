@@ -262,31 +262,24 @@ plot_gene_expr = function(cell_state_graph,
     mutate(
       max_expr = max(mean_expression),
       min_expr = min(mean_expression),
-      fraction_max = ifelse(max_expr > 0, mean_expression / max_expr, 0),
-      gene_expr = case_when(
-        fraction_expressing >= fract_expr & mean_expression >= mean_expr ~ TRUE,
-        TRUE ~ FALSE
-      ),
+      is_expr = (fraction_expressing >= fract_expr & mean_expression >= mean_expr),
       .by = gene_id
     )
   if (aggregate) {
-    gene_expr_summary <- sub_gene_expr %>%
+    gene_expr_summary = sub_gene_expr %>%
       group_by(cell_group) %>%
       summarize(
         sum_expr = sum(mean_expression),
-        #  mean_expr = mean(mean_expression),
-        #  min_expr = min(mean_expression),
-        #  max_expr = max(mean_expression),
-        fraction_max = mean(fraction_max),
-        gene_expr = (min(gene_expr) == 1)
+        fraction_expressing = mean(fraction_expressing),
+        is_expr = all(is_expr)
       ) %>%
       mutate(gene_short_name = paste(sort(genes), collapse = ";"))
   } else {
-    gene_expr_summary <- sub_gene_expr %>%
+    gene_expr_summary = sub_gene_expr %>%
       mutate(gene_short_name = gene_info[gene_id, "gene_short_name"]) %>%
       dplyr::rename(sum_expr = mean_expression)
     if (scale_to_range) {
-      gene_expr_summary <- gene_expr_summary %>%
+      gene_expr_summary = gene_expr_summary %>%
         mutate(
           sum_expr = (sum_expr - min_expr) / (max_expr - min_expr),
           .by = gene_id
@@ -316,24 +309,24 @@ plot_gene_expr = function(cell_state_graph,
                        linejoin='mitre')
   
   p = p + ggnewscale::new_scale_color() +
-    ggnetwork::geom_nodes(data = g %>% filter(gene_expr),
+    ggnetwork::geom_nodes(data = g %>% filter(is_expr),
                           aes(x, y,
-                              size = fraction_max,
+                              size = fraction_expressing,
+                              # size = fraction_max,
                           ),
                           shape = "circle filled",
                           fill = I(con_colour),
                           color = I("black")
       ) +
     ggnewscale::new_scale_fill() +
-    ggnetwork::geom_nodes(data = g %>% filter(gene_expr & fraction_max > 0),
+    ggnetwork::geom_nodes(data = g %>% filter(is_expr & fraction_expressing > 0),
                           aes(x, y,
-                              size = fraction_max,
+                              size = fraction_expressing,
                               fill = sum_expr
                             ),
                             shape = "circle filled",
                             color = I("black")
       ) +
-    labs(color = color_nodes_by) +
     scale_fill_viridis_c(limits = expr_limits) +
     ggnetwork::theme_blank() +
     scale_size_identity() +
