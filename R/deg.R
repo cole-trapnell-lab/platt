@@ -531,6 +531,9 @@ compare_genes_over_graph <- function(ccs,
   message("fitting regression models")
   pb_cds <- pb_cds[, pseudobulks_to_test]
 
+  # subset to just the graph cells
+  pb_cds <- pb_cds[, colData(pb_cds)$cell_group %in% igraph::V(state_graph)$name]
+
   colData(pb_cds)$Size_Factor <- colData(pb_cds)$num_cells_in_group
 
   full_model_str <- paste0("~ 0 + cell_group")
@@ -608,11 +611,49 @@ compare_genes_over_graph <- function(ccs,
   return(cell_states)
 }
 
+
+#' Collect Coefficients for Shrinkage
 #'
-#' @param cds
-#' @param model_tbl
-#' @param abs_expr_thresh
-#' @param term_to_keep
+#' This function collects coefficients for shrinkage from a given cell data set (cds) and model table (model_tbl).
+#' It calculates the dispersion, mean expression, and other statistics for each model in the table.
+#'
+#' @param cds A cell data set object.
+#' @param model_tbl A table containing models and their summaries.
+#' @param abs_expr_thresh Absolute expression threshold for filtering.
+#' @param term_to_keep The term to keep in the coefficient table.
+#'
+#' @return A tibble containing coefficients, standard deviations, sigma, degrees of freedom, trend, estimated dispersion, and fitted dispersion.
+#'
+#' @details
+#' The function performs the following steps:
+#' \itemize{
+#'   \item Mutates the model table to include dispersion values.
+#'   \item Calculates mean expression for each model.
+#'   \item Fits a generalized additive model (GAM) to the log of dispersion values.
+#'   \item Updates the model summary with fitted dispersion values.
+#'   \item Extracts raw coefficients and extra model statistics.
+#'   \item Joins the raw coefficient table with extra model statistics.
+#'   \item Filters and mutates the coefficient table based on the term to keep.
+#'   \item Handles failed gene models by setting their estimates and standard errors to NA.
+#'   \item Pivots the coefficient and standard error tables.
+#'   \item Calculates sigma and unscaled standard deviations.
+#' }
+#'
+#' @examples
+#' \dontrun{
+#' coefs_for_shrinkage <- collect_coefficients_for_shrinkage(cds, model_tbl, abs_expr_thresh, term_to_keep)
+#' }
+#'
+#' @import dplyr
+#' @import purrr
+#' @import tidyr
+#' @import mgcv
+#' @import speedglm
+#' @import tibble
+#' @import stringr
+#' @importFrom stats predict
+#' @importFrom utils head
+#' @export
 collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, term_to_keep) {
   model_tbl <- model_tbl %>%
     dplyr::mutate(dispersion = purrr::map2(
@@ -779,11 +820,37 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   return(coefs_for_shrinkage)
 }
 
-#' @param ccs
-#' @param perturbation_col
-#' @param control_ids
-#' @param nuisance_model_formula_str
-#' @param cell_groups
+#' Compare Gene Expression Within State Graph
+#'
+#' This function compares gene expression within a state graph for a given cell cluster set (ccs).
+#'
+#' @param ccs A cell cluster set object.
+#' @param perturbation_col The column name in the cell data set that contains perturbation information. Default is "perturbation".
+#' @param control_ids A vector of control IDs. Default is c("Control").
+#' @param nuisance_model_formula_str A string representing the nuisance model formula. Default is "0".
+#' @param ambient_coeffs Coefficients for ambient noise. Default is NULL.
+#' @param cell_groups A vector of cell groups to be analyzed. Default is NULL.
+#' @param assembly_group The assembly group to be analyzed. Default is NULL.
+#' @param state_graph A state graph object. Default is NULL.
+#' @param perturbations A vector of perturbations to be analyzed. Default is NULL.
+#' @param gene_ids A vector of gene IDs to be analyzed. Default is NULL.
+#' @param group_nodes_by A parameter to group nodes by. Default is NULL.
+#' @param log_fc_thresh Log fold change threshold. Default is 1.
+#' @param abs_expr_thresh Absolute expression threshold. Default is 1e-10.
+#' @param sig_thresh Significance threshold. Default is 0.05.
+#' @param min_samples_detected Minimum number of samples detected. Default is 2.
+#' @param min_cells_per_pseudobulk Minimum number of cells per pseudobulk. Default is NULL.
+#' @param cores Number of cores to use for parallel processing. Default is 1.
+#' @param write_dir Directory to write output files. Default is NULL.
+#' @param max_simultaneous_genes Maximum number of genes to analyze simultaneously. Default is NULL.
+#' @param ... Additional arguments.
+#'
+#' @return A data frame containing the comparison results.
+#'
+#' @examples
+#' # Example usage:
+#' compare_genes_within_state_graph(ccs, perturbation_col = "perturbation", control_ids = c("Control"))
+#'
 #' @export
 compare_genes_within_state_graph <- function(ccs,
                                              perturbation_col = "perturbation",
@@ -2169,16 +2236,57 @@ compare_genes_in_cell_state <- function(cell_state,
 }
 
 
+
+#' Calculate Differentially Expressed Genes (DVEGs)
 #'
-#' @param perturb_degs
-#' @param perturbation_table
-#' @param ref_abundances
-#' @param ref_degs
-#' @param sig_p_val_thresh
+#' This function calculates differentially expressed genes (DVEGs) by comparing
+#' perturbation data with reference data. It identifies genes that are
+#' significantly underexpressed or overexpressed based on a specified p-value threshold.
+#'
+#' @param perturb_degs A data frame containing perturbation differentially expressed genes (DEGs).
+#' @param ref_degs A data frame containing reference differentially expressed genes (DEGs).
+#' @param sig_p_val_thresh A numeric value specifying the significance p-value threshold for filtering DVEGs. Default is 1.
+#'
+#' @return A data frame containing significantly differentially expressed genes (DVEGs) with their dysregulation type.
+#'
+#' @details The function performs the following steps:
+#' \itemize{
+#'   \item Mutates the `ref_degs` data frame to simplify the interpretation of gene expression.
+#'   \item Joins the `ref_degs` and `perturb_degs` data frames based on gene ID and cell state.
+#'   \item Selects and renames relevant columns for further analysis.
+#'   \item Creates a display name for each gene based on its interpretation and cell state.
+#'   \item Determines the dysregulation type (underexpressed or overexpressed) based on log fold change (LFC) and interpretation.
+#'   \item Filters the results to include only significantly dysregulated genes based on the specified p-value threshold.
+#' }
+#'
+#' @examples
+#' \dontrun{
+#' perturb_degs <- data.frame(id = c("gene1", "gene2"), cell_group = c("state1", "state2"), perturb_to_ctrl_shrunken_lfc = c(-1.5, 2.0), perturb_to_ctrl_p_value = c(0.01, 0.05))
+#' ref_degs <- data.frame(gene_id = c("gene1", "gene2"), cell_state = c("state1", "state2"), interpretation = c("Upregulated", "Downregulated"), gene_short_name = c("G1", "G2"))
+#' sig_dvegs <- calculate_dvegs(perturb_degs, ref_degs, sig_p_val_thresh = 0.05)
+#' print(sig_dvegs)
+#' }
+#'
+#' @import dplyr
+#' @import stringr
 #' @export
 calculate_dvegs <- function(perturb_degs,
                             ref_degs,
-                            sig_p_val_thresh = 0.05) {
+                            sig_p_val_thresh = 1) {
+  
+  if ("gene_class_scores" %in% colnames(ref_degs)) {
+    ref_degs = ref_degs %>% tidyr::unnest(gene_class_scores)
+  }
+  
+  if ("genes_within_cell_group" %in% colnames(perturb_degs)){
+    perturb_degs = perturb_degs %>% tidyr::unnest(genes_within_cell_group)
+  }
+  
+  if ("perturb_effects" %in% colnames(perturb_degs)) {
+    perturb_degs = perturb_degs %>% tidyr::unnest(perturb_effects)
+  }
+  
+  
   ref_degs <- ref_degs %>%
     mutate(interpretation_simple = case_when(
       NA ~ NA,
@@ -2210,7 +2318,7 @@ calculate_dvegs <- function(perturb_degs,
 
   wt_vs_perturb_degs <- ref_degs %>%
     select(cell_state, gene_id, gene_short_name, interpretation, interpretation_simple) %>%
-    left_join(perturb_degs, by = c("gene_id" = "id", "cell_state" = "cell_group"))
+    left_join(perturb_degs, by = c("gene_id" = "id", "cell_state" = "cell_group", "gene_short_name"))
 
   wt_vs_perturb_degs <- wt_vs_perturb_degs %>%
     select(
@@ -2224,22 +2332,11 @@ calculate_dvegs <- function(perturb_degs,
     ) %>%
     distinct()
 
-
   wt_vs_perturb_degs <- wt_vs_perturb_degs %>%
     mutate(display_name = stringr::str_c(gene_short_name, ":\n", "Normally",
       stringr::str_to_lower(interpretation), "in", cell_state,
       sep = " "
     ))
-
-  # wt_vs_perturb_degs = wt_vs_perturb_degs %>%
-  #   left_join(genetic_requirements, by=c("cell_state"="cell_group", "gene_short_name"), relationship = "many-to-many")
-  #
-  # wt_vs_perturb_degs$type[is.na(wt_vs_perturb_degs$type)] = "Not required"
-  #
-  # wt_vs_perturb_degs = wt_vs_perturb_degs %>%
-  #   mutate (requirement_level = case_when (type %in% c("Cell type Biological Process", "Cell type phenotype") ~ "Required by cell type",
-  #                                          type %in% c("Tissue/Anatomy Biological Process", "Tissue/Anatomy Phenotype") ~ "Required by tissue",
-  #                                          TRUE ~ type))
 
   wt_vs_perturb_degs <- wt_vs_perturb_degs %>%
     mutate(dysreg_type = case_when(
@@ -2247,8 +2344,6 @@ calculate_dvegs <- function(perturb_degs,
       interpretation_simple %in% c("Down", "Maintained") & perturb_to_ctrl_shrunken_lfc > 0 ~ "Overexpressed",
       TRUE ~ "Other DEG"
     ))
-
-
 
   sig_dvegs <- wt_vs_perturb_degs %>% filter(perturb_to_ctrl_p_value < sig_p_val_thresh & dysreg_type %in% c("Underexpressed", "Overexpressed"))
   sig_dvegs$dysreg_type <- factor(sig_dvegs$dysreg_type, levels = c("Underexpressed", "Overexpressed"))
