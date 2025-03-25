@@ -1386,6 +1386,7 @@ estimate_loss_timing <- function(perturbation_ccm,
       mutate(is_gained_when_present = present_above_thresh & delta_log_abund_when_present > -abs(delta_log_abund_loss_thresh))
     #loss_when_present_in_wt = loss_when_present_in_wt %>% group_by(cell_group) %>% slice_min(peak_wt_time, n=1, with_ties=with_ties)
 
+
     # FIXME: maybe should refactor the code below into another function that summarizes contrast over intervals:
     # num samples
     n = nrow(model(perturbation_ccm)$fitted)
@@ -1395,6 +1396,7 @@ estimate_loss_timing <- function(perturbation_ccm,
     #df_correction = sqrt(n / (n - k - 1))
     loss_summary_tbl = changes_when_present_in_wt %>%
       filter(is_lost_when_present) %>%
+      filter(wt_time_present %in% timepoints) %>%
       group_by(cell_group) %>%
       summarize(loss_when_present = weighted.mean(delta_log_abund_when_present, percent_max_abund, na.rm=T),
                 loss_when_present_se = weighted.mean(delta_log_abund_when_present_se, percent_max_abund, na.rm=T),
@@ -1425,7 +1427,12 @@ estimate_loss_timing <- function(perturbation_ccm,
              gain_when_present = ifelse(is.na(gain_when_present), NA, gain_when_present),
              is_gained_when_present = gain_when_present_q_val < q_val)
 
-    peak_wt_abundance = estimate_abundances_over_interval(control_ccm, control_start_time, control_stop_time, interval_col=interval_col, interval_step=interval_step, newdata = newdata) %>%
+    peak_wt_abundance = estimate_abundances_over_interval(control_ccm, 
+                                                          control_start_time, 
+                                                          control_stop_time, 
+                                                          interval_col=interval_col, 
+                                                          interval_step=interval_step, 
+                                                          newdata = newdata_wt) %>%
           group_by(cell_group) %>% slice_max(log_abund, n=1) %>%
           select(cell_group, peak_wt_time=!!sym(interval_col))
 
@@ -1688,7 +1695,7 @@ assess_perturbation_effects = function(control_timeseries_ccm,
       collect_perturb_effects, NA_real_),
       .x = perturb_ccm,
       .y = perturb_time_window,
-      pathfinding_graph,
+      # pathfinding_graph,
       control_ccm=control_timeseries_ccm,
       control_time_window=tibble(start_time=start_time, stop_time=stop_time),
       interval_col=interval_col,
@@ -1711,10 +1718,10 @@ assess_perturbation_effects = function(control_timeseries_ccm,
     ungroup() %>%
     mutate(loss_when_present_q_val = p.adjust(loss_when_present_q_val, method="bonferroni"),
            loss_when_present_q_val = ifelse(is.na(loss_when_present_q_val), 1, loss_when_present_q_val),
-           is_lost_when_present = loss_when_present_q_val < q_val,
+           is_lost_when_present = loss_when_present_p_value < q_val,
            gain_when_present_q_val = p.adjust(gain_when_present_q_val, method="bonferroni"),
            gain_when_present_q_val = ifelse(is.na(gain_when_present_q_val), 1, gain_when_present_q_val),
-           is_gained_when_present = gain_when_present_q_val < q_val)
+           is_gained_when_present = gain_when_present_p_value < q_val)
   perturbs = perturbs %>% tidyr::nest(perturb_summary_tbl = !perturb_name)
   
   perturbation_ccm_tbl$perturb_summary_tbl= NULL
