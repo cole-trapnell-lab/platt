@@ -4,7 +4,7 @@ Reference
 All functions
 -------------------------------
 
-# Kinetic functions
+#### Kinetic functions
 
 [`fit_genotype_ccm()`](fit_genotype_ccm)
 
@@ -16,13 +16,13 @@ All functions
 
 [`plot_cell_type_perturb_kinetics()`](plot_cell_type_perturb_kinetics)
 
-# Graph functions
+### Graph functions
 
 [`new_cell_state_graph()`](new_cell_state_graph)
 
 [`assemble_partition()`](assemble_partition)
 
-# Plotting functions
+## Plotting functions
 
 [`plot_annotations()`](plot_annotations)
 
