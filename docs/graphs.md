@@ -129,12 +129,14 @@ partition_res = assemble_partition(cds,
 
 ```
 
+The output is as follows: 
 
 | data                  | wt_graph | mt_graph | perturbation_effects | perturbation_table  |
 |-----------------------|----------|----------|------------------------|-------------------------|
 | `<tibble [29,181 × 6]>` | `<igraph>` | `<igraph>` | `<tibble [27 × 2]> `     | `<tibble [1,422 × 23]>`   |
 
 
+You can extract the graph from the dataframe to construct a `cell_state_graph`. 
 ```
 
 pf_graph = partition_res$mt_graph[[1]]
