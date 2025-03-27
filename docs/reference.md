@@ -6,21 +6,21 @@ All functions
 
 # Kinetic functions
 
-[`fit_genotype_ccm`](fit_genotype_ccm)
+[`fit_genotype_ccm()`](fit_genotype_ccm)
 
-[`fit_wt_model`](fit_wt_model)
+[`fit_wt_model()`](fit_wt_model)
 
-[`fit_mt_model`](fit_mt_model)
+[`fit_mt_model()`](fit_mt_model)
 
-[`plot_cell_type_control_kinetics`](plot_cell_type_control_kinetics)
+[`plot_cell_type_control_kinetics()`](plot_cell_type_control_kinetics)
 
-[`plot_cell_type_perturb_kinetics`](plot_cell_type_perturb_kinetics)
+[`plot_cell_type_perturb_kinetics()`](plot_cell_type_perturb_kinetics)
 
 # Graph functions
 
 [`new_cell_state_graph()`](new_cell_state_graph)
 
-[`construct_graph`](construct_graph)
+[`assemble_partition()`](assemble_partition)
 
 # Plotting functions
 
