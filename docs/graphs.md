@@ -119,7 +119,7 @@ To construct a platt graph:
 partition_res = assemble_partition(cds, 
                                    partition_name = "pectoral fin",
                                    sample_group = "embryo",
-                                   cell_group = "cell_state",
+                                   cell_group = "cell_type",
                                    interval_col = "timepoint",
                                    component_col = "assembly_group",
                                    perturbation_col = "perturbation",
@@ -130,20 +130,30 @@ partition_res = assemble_partition(cds,
 ```
 
 
+| data                  | wt_graph | mt_graph | perturbation_effects | perturbation_table     | mt_graph_denylist | mt_graph_denylist_plot |
+|-----------------------|----------|----------|------------------------|-------------------------|--------------------|--------------------------|
+| `<tibble [29,181 × 6]>` | `<igraph>` | `<igraph>` | `<tibble [27 × 2]> `     | `<tibble [1,422 × 23]>`   | `<lgl [1]>`          | `<lgl [1]>`                |
+
+
 ```
-plot_annotations(pf_state_graph, node_size = 4.5)
+
+pf_graph = partition_res$mt_graph[[1]]
+pf_ccs = new_cell_count_set(pf_cds, cell_group = "cell_type", sample_group = "embryo")
+pf_csg = new_cell_state_graph(pf_graph, pf_ccs)
+
+plot_annotations(pf_csg, node_size = 4.5)
 ```
 
 ![](assets/pec_fin_graph.png){width=75%}
 
 _For more information about plotting on a Platt graph, see our [Plotting page](https://cole-trapnell-lab.github.io/platt/plotting/)_
 
-
-```
-genetic_requirements = categorize_genetic_requirements(res_cluster$perturbation_effects[[1]],
-                                                       mt_graph)
-
-```
+# 
+# ```
+# genetic_requirements = categorize_genetic_requirements(res_cluster$perturbation_effects[[1]],
+#                                                        mt_graph)
+# 
+# ```
 
 
 
