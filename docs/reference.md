@@ -4,18 +4,23 @@ Reference
 All functions
 -------------------------------
 
-# Constructors 
+# Kinetic functions
+
+[`fit_genotype_ccm`](fit_genotype_ccm)
+
+[`fit_wt_model`](fit_wt_model)
+
+[`fit_mt_model`](fit_mt_model)
+
+[`plot_cell_type_control_kinetics`](plot_cell_type_control_kinetics)
+
+[`plot_cell_type_perturb_kinetics`](plot_cell_type_perturb_kinetics)
+
+# Graph functions
 
 [`new_cell_state_graph()`](new_cell_state_graph)
 
-# Kinetic functions
-
-
-# Helper functions
-
-[`fit_genotype_ccm`](fit_genotype_ccm)
-[`fit_wt_model`]()
-[`fit_mt_model`]()
+[`construct_graph`](construct_graph)
 
 # Plotting functions
 
