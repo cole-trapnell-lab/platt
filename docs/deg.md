@@ -110,6 +110,7 @@ genes_within_cell_state %>% head()
 | head and neck mesoderm, migrating        | `<tibble [33,189 × 15]>`  |
 
 The results are nested by cell type. To look at a specific knockout term, you can unnest the dataframe and filter: 
+
 ```
 genes_within_cell_state = genes_within_cell_state %>% tidyr::unnest(genes_within_cell_group)
 genes_within_cell_state %>% filter(term == "tbx16,msgn1") %>% tidyr::unnest(perturb_effects)
@@ -125,12 +126,13 @@ genes_within_cell_state %>% filter(term == "tbx16,msgn1") %>% tidyr::unnest(pert
 | tbx16,msgn1 | 3.955547   | 2.302981    | 6042.273       | 2235.279             | ENSDARG00000000069   | 0.22385107              | 0.2309466                  | 0.16620371                 | 0.076271650                 | 0.15154521                    | 0.5804131               | -2.799458    | -2.281009           | -0.02203216     | paraxial mesoderm (tbx16+)     |
 | tbx16,msgn1 | 3.955547   | 2.302981    | 6042.273       | 2235.279             | ENSDARG00000000086   | -0.04488597             | 0.1612511                  | 0.39036776                 | -0.014688242                | 0.09378365                    | 0.7574802               | -2.799458    | -1.528009           | -0.02203216     | paraxial mesoderm (tbx16+)     |
 
-Pax3a is a MLP gene observed in paraxial mesoderm progenitors as they commit to either head and neck mesoderm or fast muscle fates. 
+_Pax3a_ is a MLP gene observed in paraxial mesoderm progenitors as they commit to either head and neck mesoderm or fast muscle fates. 
 
 ```
 plot_gene_expr(muscle_state_graph, genes = c("pax3a"), node_size = 4, plot_labels = F) + 
   theme(legend.position = "right")
 ```
+
 ![](assets/muscle_pax3a.png){width=75%}
 
 
