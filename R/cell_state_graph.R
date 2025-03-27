@@ -175,8 +175,25 @@ get_graph_layout <- function(ccs,
   edges <- edges %>% dplyr::select(from, to)
   edges$weight <- 1
   edges <- edges %>% dplyr::filter(from %in% node_metadata$id & to %in% node_metadata$id)
+  
+  bidirectional_edges = find_bidirectional_edges(state_graph)
+  
+  reversed_edges <- bidirectional_edges %>%
+    dplyr::rename(temp = from) %>%
+    dplyr::mutate(from = to, to = temp) %>%
+    dplyr::select(from, to)
+  reversed_edges$edge = paste0(reversed_edges$from, reversed_edges$to)
+  
 
-  G <- edges %>%
+  filtered_edges <- edges %>%
+    dplyr::anti_join(bidirectional_edges, by = c("from", "to"))
+  filtered_edges$edge = paste0(filtered_edges$from, filtered_edges$to)
+  
+  
+  filtered_edges$bidirectional = (filtered_edges$edge %in% reversed_edges$edge)
+  filtered_edges$edge = NULL
+  
+  G <- filtered_edges %>%
     dplyr::distinct() %>%
     igraph::graph_from_data_frame(directed = TRUE, vertices = node_metadata)
 
@@ -248,3 +265,25 @@ update_graph_layout <- function(cell_state_graph,
 
   return(cell_state_graph)
 }
+
+find_bidirectional_edges <- function(graph) {
+  if (!igraph::is.directed(graph)) {
+    stop("Graph must be directed to find bidirectional edges.")
+  }
+  
+  edges <- igraph::as_data_frame(graph, what = "edges")
+  
+  # Create a pair key to identify reverse duplicates
+  edges$pair_key <- paste(pmin(edges$from, edges$to), pmax(edges$from, edges$to), sep = "_")
+  
+  # Find keys that occur twice (i.e., bidirectional)
+  bidir_keys <- edges %>%
+    dplyr::group_by(pair_key) %>%
+    dplyr::filter(n() == 2) %>%
+    dplyr::slice(1) %>%  # Keep only one of the two directions
+    dplyr::ungroup() %>%
+    dplyr::select(from, to)
+  
+  return(bidir_keys)
+}
+
