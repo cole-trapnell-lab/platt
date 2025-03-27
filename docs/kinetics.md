@@ -43,7 +43,6 @@ their peak abundance in the data set. It requires the following inputs:
 plot_cell_type_control_kinetics(muscle_wt_ccm, 
                                 start_time = 18, 
                                 stop_time = 48, 
-                                nrow = 2, 
                                 newdata = tibble(expt = "GAP16"),
                                 color_points_by = "expt",
                                 raw_counts = F)
@@ -89,8 +88,7 @@ It requires the following inputs:
 ```
 plot_cell_type_perturb_kinetics(tbx16_msgn1_ccm, 
                                 newdata = tibble("expt"= "GAP16"), 
-                                raw_counts = F, 
-                                nrow = 2) + 
+                                raw_counts = F) + 
                                 xlab("time")
 ```
 

@@ -102,12 +102,12 @@ genes_within_cell_state %>% head()
 
 | cell_group                               | genes_within_cell_group | 
 |------------------------------------------|-------------------------|
-| paraxial mesoderm (tbx16+)               | <tibble [33,189 × 15]>  | 
-| paraxial mesoderm (pax3+, pax7-)         | <tibble [33,189 × 15]>  | 
-| fast-committed myocyte, pre-fusion       | <tibble [33,189 × 15]>  |
-| fast-committed myocyte, fusing (pcdh7b+) | <tibble [33,189 × 15]>  |
-| head and neck mesoderm (pax3+, pax7+)    | <tibble [33,189 × 15]>  |
-| head and neck mesoderm, migrating        | <tibble [33,189 × 15]>  |
+| paraxial mesoderm (tbx16+)               | `<tibble [33,189 × 15]>`  | 
+| paraxial mesoderm (pax3+, pax7-)         | `<tibble [33,189 × 15]>`  | 
+| fast-committed myocyte, pre-fusion       | `<tibble [33,189 × 15]>`  |
+| fast-committed myocyte, fusing (pcdh7b+) | `<tibble [33,189 × 15]>`  |
+| head and neck mesoderm (pax3+, pax7+)    | `<tibble [33,189 × 15]>`  |
+| head and neck mesoderm, migrating        | `<tibble [33,189 × 15]>`  |
 
 The results are nested by cell type. To look at a specific knockout term, you can unnest the dataframe and filter: 
 ```
@@ -148,7 +148,7 @@ a key regulator of myogenesis was differentially expressed in myogenic progenito
 ... we can plot the DEG fold change of _pax3a_ in the tbx16-msgn1 mutant on the platt graph: 
 
 ```
-plot_degs(muscle_state_graph, tbx16_degs %>% left_join(gene_df, by = "id") %>% 
+plot_degs(muscle_state_graph, tbx16_degs %>% 
             filter(term == "tbx16,msgn1", gene_short_name == "pax3a"), node_size = 4.5)
 ```
 
