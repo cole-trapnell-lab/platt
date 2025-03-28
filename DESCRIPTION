@@ -4,11 +4,11 @@ Version: 0.0.0.9000
 Authors@R: c(
     person(given = "Madeleine",
            family = "Duran",
-           role = c("aut", "cre"),
+           role = c("cre"),
            email = "duran@uw.edu"),
     person(given = "Cole",
            family = "Trapnell",
-           role = c("aut", "cre"),
+           role = c("aut"),
            email = "coletrap@uw.edu"))
 Description: What the package does (one paragraph).
 License: MIT + file LICENSE
