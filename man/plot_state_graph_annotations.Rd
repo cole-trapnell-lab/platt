@@ -2,7 +2,7 @@
 % Please edit documentation in R/plotting.R
 \name{plot_state_graph_annotations}
 \alias{plot_state_graph_annotations}
-\title{Plot the state graph with annotations.}
+\title{Plot State Graph Annotations}
 \usage{
 plot_state_graph_annotations(
   ccs,
@@ -30,11 +30,69 @@ plot_state_graph_annotations(
 )
 }
 \arguments{
-\item{ccm}{cell_count_model A cell_count_model.}
+\item{ccs}{A cell count set object containing metadata for nodes.}
+
+\item{state_graph}{An igraph object or data frame representing the state graph.}
+
+\item{color_nodes_by}{Column name in \code{ccs} to color nodes by. Default is \code{NULL}.}
+
+\item{label_nodes_by}{Column name in \code{ccs} to label nodes by. Default is \code{NULL}.}
+
+\item{group_nodes_by}{Column name in \code{ccs} to group nodes by. Default is \code{NULL}.}
+
+\item{label_edges_by}{Column name in \code{state_graph} to label edges by. Default is \code{NULL}.}
+
+\item{edge_weights}{Column name in \code{state_graph} for edge weights. Default is \code{NULL}.}
+
+\item{arrow.gap}{Numeric value for the gap between arrows and nodes. Default is \code{0.03}.}
+
+\item{arrow_unit}{Numeric value for arrow size in points. Default is \code{2}.}
+
+\item{bar_unit}{Numeric value for bar size. Default is \code{0.075}.}
+
+\item{node_size}{Numeric value for node size. Default is \code{2}.}
+
+\item{min_edge_size}{Minimum edge thickness. Default is \code{0.1}.}
+
+\item{max_edge_size}{Maximum edge thickness. Default is \code{2}.}
+
+\item{unlabeled_groups}{Character vector of group names to exclude from labeling. Default is \code{c("Unknown")}.}
+
+\item{label_groups}{Logical indicating whether to label groups. Default is \code{TRUE}.}
+
+\item{hide_unlinked_nodes}{Logical indicating whether to hide nodes not linked by edges. Default is \code{TRUE}.}
+
+\item{group_label_font_size}{Font size for group labels. Default is \code{6}.}
+
+\item{edge_label_font_size}{Font size for edge labels. Default is \code{2}.}
+
+\item{label_conn_linetype}{Line type for group label connectors. Default is \code{"dotted"}.}
+
+\item{legend_position}{Position of the legend in the plot. Default is \code{"none"}.}
+
+\item{con_colour}{Color for connectors and edges. Default is \code{"darkgrey"}.}
+
+\item{group_outline}{Logical indicating whether to draw an outline around groups. Default is \code{FALSE}.}
 }
 \value{
-A ggplot2 plot object.
+A ggplot object representing the state graph visualization.
 }
 \description{
-Plot the state graph with annotations.
+This function generates a state graph visualization with customizable node and edge attributes.
+}
+\details{
+The function allows for flexible customization of node and edge attributes, including coloring, labeling, and grouping.
+It supports both igraph objects and data frames as input for the state graph. Nodes and edges can be filtered, styled,
+and annotated based on the provided metadata.
+}
+\examples{
+# Example usage:
+plot_state_graph_annotations(
+  ccs = my_ccs,
+  state_graph = my_graph,
+  color_nodes_by = "group",
+  label_nodes_by = "name",
+  edge_weights = "weight"
+)
+
 }

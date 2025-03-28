@@ -2,7 +2,7 @@
 % Please edit documentation in R/assembly_utils.R
 \name{assemble_wt_graph}
 \alias{assemble_wt_graph}
-\title{assembles a graph using timepoint data}
+\title{Assemble Wild-Type State Transition Graph}
 \usage{
 assemble_wt_graph(
   cds,
@@ -32,6 +32,76 @@ assemble_wt_graph(
   verbose = FALSE
 )
 }
+\arguments{
+\item{cds}{A CellDataSet object containing single-cell data.}
+
+\item{wt_ccm}{A cell count model object for wild-type cells.}
+
+\item{sample_group}{A grouping variable for samples (not used directly in this function).}
+
+\item{cell_group}{A grouping variable for cells (not used directly in this function).}
+
+\item{newdata}{A tibble containing new data for predictions (default: empty tibble).}
+
+\item{main_model_formula_str}{A string specifying the main model formula (default: NULL).}
+
+\item{num_breaks}{Number of breaks for discretizing continuous variables (default: 4).}
+
+\item{nuisance_model_formula_str}{A string specifying the nuisance model formula (default: "~1").}
+
+\item{ctrl_ids}{A vector of control IDs (default: NULL, automatically inferred).}
+
+\item{mt_ids}{A vector of mitochondrial IDs (default: NULL).}
+
+\item{sparsity_factor}{A numeric factor for sparsity adjustment (default: 1).}
+
+\item{vhat_method}{Method for estimating variance ("bootstrap" by default).}
+
+\item{interval_col}{Column name representing time intervals (default: "timepoint").}
+
+\item{perturbation_col}{Column name representing perturbation groups (default: "knockout").}
+
+\item{start_time}{Start time for the state transition graph (default: NULL, inferred from data).}
+
+\item{stop_time}{Stop time for the state transition graph (default: NULL, inferred from data).}
+
+\item{interval_step}{Step size for time intervals (default: 2).}
+
+\item{links_between_components}{Method for linking components in the graph
+(default: c("ctp", "none", "strongest-pcor", "strong-pcor")).}
+
+\item{log_abund_detection_thresh}{Log abundance detection threshold (default: -5).}
+
+\item{q_val}{Q-value threshold for significance (default: 0.1).}
+
+\item{break_cycles}{Logical indicating whether to break cycles in the graph (default: TRUE).}
+
+\item{edge_allowlist}{A list of edges to allow in the graph (default: NULL).}
+
+\item{edge_denylist}{A list of edges to deny in the graph (default: NULL).}
+
+\item{component_col}{Column name representing components (default: "partition").}
+
+\item{verbose}{Logical indicating whether to print verbose output (default: FALSE).}
+}
+\value{
+A state transition graph object representing the transitions between
+states in the wild-type cell population.
+}
 \description{
-assembles a graph using timepoint data
+This function constructs a state transition graph for wild-type (WT) cells
+based on a provided cell count model (CCM) and other parameters. It processes
+the input data, filters for control IDs, and generates a graph representing
+state transitions over time.
+}
+\details{
+The function filters the input dataset to include only control IDs and valid
+time intervals. It then constructs a state transition graph using the provided
+cell count model and parameters. If \code{break_cycles} is TRUE, cycles in the graph
+are removed to ensure acyclic transitions.
+}
+\examples{
+# Example usage:
+wt_graph <- assemble_wt_graph(cds, wt_ccm, sample_group, cell_group)
+
 }

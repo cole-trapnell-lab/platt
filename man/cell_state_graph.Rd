@@ -4,7 +4,7 @@
 \name{cell_state_graph}
 \alias{cell_state_graph}
 \alias{cell_state_graph-class}
-\title{The cell_state_graph class}
+\title{The main class used by Platt to store state graphs}
 \description{
 The main class used by Platt to store state graphs
 }
@@ -12,5 +12,15 @@ The main class used by Platt to store state graphs
 
 \describe{
 \item{\code{ccs}}{cell_count_set, the Hooke cell count set}
+
+\item{\code{graph}}{igraph, the graph structure representing cell states}
+
+\item{\code{layout_info}}{list, information about the layout of the graph}
+
+\item{\code{g}}{data.frame, additional data associated with the graph}
+
+\item{\code{metadata}}{list, metadata associated with the cell state graph}
+
+\item{\code{genetic_requirements}}{data.frame, genetic requirements for the cell states}
 }}
 

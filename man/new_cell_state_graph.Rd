@@ -14,17 +14,36 @@ new_cell_state_graph(
   min_edge_size = 0.1,
   max_edge_size = 2,
   hide_unlinked_nodes = F,
+  genetic_requirements = data.frame(),
   num_layers = 1
 )
 }
 \arguments{
-\item{ccs}{input cell count set}
+\item{state_graph}{An input graph of class 'igraph'.}
 
-\item{graph}{input graph}
+\item{ccs}{An input cell count set of class 'cell_count_set'.}
+
+\item{color_nodes_by}{Optional parameter to color nodes by a specific attribute.}
+
+\item{label_nodes_by}{Optional parameter to label nodes by a specific attribute.}
+
+\item{group_nodes_by}{Optional parameter to group nodes by a specific attribute.}
+
+\item{edge_weights}{Optional parameter to specify edge weights.}
+
+\item{min_edge_size}{Minimum edge size for visualization. Default is 0.1.}
+
+\item{max_edge_size}{Maximum edge size for visualization. Default is 2.}
+
+\item{hide_unlinked_nodes}{Logical parameter to hide unlinked nodes. Default is FALSE.}
+
+\item{genetic_requirements}{A data frame specifying genetic requirements. Default is an empty data frame.}
+
+\item{num_layers}{Number of layers for the graph layout. Default is 1.}
 }
 \value{
-a new cell_state_graph object
+A new cell_state_graph object.
 }
 \description{
-Create a new cell state graph object.
+This function creates a new cell state graph object from an input graph and cell count set.
 }

@@ -2,27 +2,62 @@
 % Please edit documentation in R/plot_state_graphs.R
 \name{plot_degs}
 \alias{plot_degs}
-\title{this plotting function plots the fold change of a given gene in a deg table
-over the platt graph}
+\title{Plot Differentially Expressed Genes (DEGs) on a Cell State Graph}
 \usage{
 plot_degs(
   cell_state_graph,
   deg_table,
+  perturb_table = NULL,
   facet_group = "term",
   arrow_unit = 7,
-  node_size = 2,
+  node_size = 1,
   con_colour = "darkgrey",
   fract_expr = 0,
   mean_expr = 0,
   legend_position = "none",
   fc_limits = c(-3, 3),
-  plot_labels = T
+  plot_labels = T,
+  node_label_width = 50,
+  group_label_font_size = 1
 )
 }
 \arguments{
-\item{cell_state_graph}{}
+\item{cell_state_graph}{An object containing the cell state graph and its layout information.}
+
+\item{deg_table}{A data frame containing the DEGs information, including log fold changes and p-values.}
+
+\item{perturb_table}{An optional data frame containing perturbation information. Default is NULL.}
+
+\item{facet_group}{A string specifying the facet group. Default is "term".}
+
+\item{arrow_unit}{Numeric value specifying the size of the arrows. Default is 7.}
+
+\item{node_size}{Numeric value specifying the size of the nodes. Default is 1.}
+
+\item{con_colour}{A string specifying the color of the connections. Default is "darkgrey".}
+
+\item{fract_expr}{Numeric value specifying the fraction of expression. Default is 0.0.}
+
+\item{mean_expr}{Numeric value specifying the mean expression. Default is 0.0.}
+
+\item{legend_position}{A string specifying the position of the legend. Default is "none".}
+
+\item{fc_limits}{A numeric vector specifying the limits for the fold change scale. Default is c(-3, 3).}
+
+\item{plot_labels}{Logical value indicating whether to plot labels. Default is TRUE.}
+
+\item{node_label_width}{Numeric value specifying the width of the node labels. Default is 50.}
+
+\item{group_label_font_size}{Numeric value specifying the font size of the group labels. Default is 1.}
+}
+\value{
+A ggplot object representing the cell state graph with DEGs plotted.
 }
 \description{
-this plotting function plots the fold change of a given gene in a deg table
-over the platt graph
+This function plots DEGs on a cell state graph, with options to customize the appearance and layout of the graph.
+}
+\examples{
+# Example usage:
+plot_degs(cell_state_graph, deg_table, perturb_table = NULL)
+
 }

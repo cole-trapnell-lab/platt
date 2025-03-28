@@ -2,15 +2,28 @@
 % Please edit documentation in R/deg.R
 \name{fit_genotype_deg}
 \alias{fit_genotype_deg}
-\title{Function to find degs within a cell type}
+\title{Function to find differentially expressed genes (DEGs) within a cell type}
 \usage{
 fit_genotype_deg(ccm, cores = 1, cell_agg_fun = c("sum", "mean"), ...)
 }
 \arguments{
-\item{ccm}{output from fit_genotype_ccm}
+\item{ccm}{A list containing the output from \code{fit_genotype_ccm}.}
 
-\item{...}{filtering criteria for}
+\item{cores}{An integer specifying the number of cores to use for parallel processing. Default is 1.}
+
+\item{cell_agg_fun}{A character string specifying the function to use for cell aggregation. Options are "sum" or "mean". Default is "sum".}
+
+\item{...}{Additional filtering criteria for subsetting cell types.}
+}
+\value{
+A list of fitted models for each gene.
 }
 \description{
-Function to find degs within a cell type
+This function identifies DEGs within a specified cell type by fitting models to pseudobulked cell data.
+}
+\examples{
+# Example usage:
+# ccm <- fit_genotype_ccm(...)
+# degs <- fit_genotype_deg(ccm, cores = 2, cell_agg_fun = "mean", cell_type = "T cells")
+
 }

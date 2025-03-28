@@ -2,7 +2,7 @@
 % Please edit documentation in R/plotting.R
 \name{plot_state_graph_abundance_changes}
 \alias{plot_state_graph_abundance_changes}
-\title{Plot the expression of a single gene on the state transition graph}
+\title{Plot State Graph Abundance Changes}
 \usage{
 plot_state_graph_abundance_changes(
   ccs,
@@ -35,6 +35,66 @@ plot_state_graph_abundance_changes(
   flip_x = FALSE
 )
 }
+\arguments{
+\item{ccs}{A data frame containing cell cluster information.}
+
+\item{state_graph}{An igraph object or data frame representing the state graph.}
+
+\item{comp_abund_table}{A data frame containing the comparison abundance table.}
+
+\item{contrast}{A string specifying the contrast column in the comparison abundance table. Default is "contrast".}
+
+\item{label_nodes_by}{A string specifying the column to label nodes by. Default is NULL.}
+
+\item{group_nodes_by}{A string specifying the column to group nodes by. Default is NULL.}
+
+\item{label_edges_by}{A string specifying the column to label edges by. Default is NULL.}
+
+\item{edge_weights}{A string specifying the column to use for edge weights. Default is NULL.}
+
+\item{size_nodes_by}{A string specifying the column to size nodes by. Default is NULL.}
+
+\item{num_degs}{A data frame containing the number of differentially expressed genes. Default is NULL.}
+
+\item{fc_limits}{A numeric vector specifying the fold change limits. Default is c(-3, 3).}
+
+\item{arrow.gap}{A numeric value specifying the gap for arrows. Default is 0.03.}
+
+\item{arrow_unit}{A numeric value specifying the unit for arrows. Default is 2.}
+
+\item{bar_unit}{A numeric value specifying the unit for bars. Default is 0.075.}
+
+\item{node_size}{A numeric value specifying the size of nodes. Default is 6.}
+
+\item{min_edge_size}{A numeric value specifying the minimum edge size. Default is 0.1.}
+
+\item{max_edge_size}{A numeric value specifying the maximum edge size. Default is 2.}
+
+\item{unlabeled_groups}{A character vector specifying the groups to be unlabeled. Default is c("Unknown").}
+
+\item{label_subset}{A character vector specifying the subset of labels. Default is NULL.}
+
+\item{label_groups}{A logical value specifying whether to label groups. Default is TRUE.}
+
+\item{hide_unlinked_nodes}{A logical value specifying whether to hide unlinked nodes. Default is TRUE.}
+
+\item{group_label_font_size}{A numeric value specifying the font size for group labels. Default is 6.}
+
+\item{edge_label_font_size}{A numeric value specifying the font size for edge labels. Default is 2.}
+
+\item{label_conn_linetype}{A string specifying the line type for label connections. Default is "dotted".}
+
+\item{legend_position}{A string specifying the position of the legend. Default is "none".}
+
+\item{con_colour}{A string specifying the color for connections. Default is "darkgrey".}
+
+\item{group_outline}{A logical value specifying whether to outline groups. Default is FALSE.}
+
+\item{flip_x}{A logical value specifying whether to flip the x-axis. Default is FALSE.}
+}
+\value{
+A ggplot object representing the state graph with abundance changes.
+}
 \description{
-Plot the expression of a single gene on the state transition graph
+This function plots the changes in abundance across different states in a state graph.
 }

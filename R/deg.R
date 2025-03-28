@@ -294,10 +294,7 @@ score_genes_for_expression_pattern <- function(cell_state, gene_patterns, state_
 }
 
 #' helper function
-#' @param ccs
-#' @param cell_states
-#' @param label_nodes_by
-
+#' @noRd
 unnest_degs <- function(ccs,
                         cell_states,
                         label_nodes_by) {
@@ -424,11 +421,6 @@ estimate_ambient_rna <- function(ccs,
 }
 
 
-#' Classify each gene's pattern of expression in each state in a state transition graph
-#' @param ccs a cell_count_set object
-#' @param state_graph a graph to run the DEG testing over
-#' @param cores
-#' @export
 #' Compare Genes Over Graph
 #'
 #' This function compares gene expression over a given state graph.
@@ -1019,7 +1011,6 @@ compare_genes_within_state_graph <- function(ccs,
 #' @importFrom purrr map possibly
 #' @importFrom tidyr unnest nest
 #' @importFrom gc gc
-#' @importFrom stats model
 #' @importFrom utils write.csv
 #' @export
 compare_gene_expression_within_node <- function(cell_group,
@@ -2273,20 +2264,19 @@ compare_genes_in_cell_state <- function(cell_state,
 calculate_dvegs <- function(perturb_degs,
                             ref_degs,
                             sig_p_val_thresh = 1) {
-  
   if ("gene_class_scores" %in% colnames(ref_degs)) {
-    ref_degs = ref_degs %>% tidyr::unnest(gene_class_scores)
+    ref_degs <- ref_degs %>% tidyr::unnest(gene_class_scores)
   }
-  
-  if ("genes_within_cell_group" %in% colnames(perturb_degs)){
-    perturb_degs = perturb_degs %>% tidyr::unnest(genes_within_cell_group)
+
+  if ("genes_within_cell_group" %in% colnames(perturb_degs)) {
+    perturb_degs <- perturb_degs %>% tidyr::unnest(genes_within_cell_group)
   }
-  
+
   if ("perturb_effects" %in% colnames(perturb_degs)) {
-    perturb_degs = perturb_degs %>% tidyr::unnest(perturb_effects)
+    perturb_degs <- perturb_degs %>% tidyr::unnest(perturb_effects)
   }
-  
-  
+
+
   ref_degs <- ref_degs %>%
     mutate(interpretation_simple = case_when(
       NA ~ NA,

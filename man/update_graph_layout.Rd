@@ -2,14 +2,14 @@
 % Please edit documentation in R/cell_state_graph.R
 \name{update_graph_layout}
 \alias{update_graph_layout}
-\title{update anything about the layout information about a graph}
+\title{Update the layout information of a cell state graph}
 \usage{
 update_graph_layout(
   cell_state_graph,
   color_nodes_by = NULL,
   label_nodes_by = NULL,
   group_nodes_by = NULL,
-  arrow.gap = 0.03,
+  arrow_gap = 0.03,
   arrow_unit = 7,
   bar_unit = 0.075,
   node_size = 2,
@@ -17,16 +17,44 @@ update_graph_layout(
   max_edge_size = 2,
   fract_expr = 0,
   mean_expr = 0,
-  con_colour = "darkgrey"
+  con_colour = "lightgray"
 )
 }
 \arguments{
-\item{color_nodes_by}{description}
+\item{cell_state_graph}{An object representing the cell state graph.}
 
-\item{label_nodes_by}{description}
+\item{color_nodes_by}{A parameter to specify how to color the nodes (default is NULL).}
 
-\item{group_nodes_by}{}
+\item{label_nodes_by}{A parameter to specify how to label the nodes (default is NULL).}
+
+\item{group_nodes_by}{A parameter to specify how to group the nodes (default is NULL).}
+
+\item{arrow_gap}{A numeric value specifying the gap for arrows (default is 0.03).}
+
+\item{arrow_unit}{A numeric value specifying the unit for arrows (default is 7).}
+
+\item{bar_unit}{A numeric value specifying the unit for bars (default is 0.075).}
+
+\item{node_size}{A numeric value specifying the size of the nodes (default is 2).}
+
+\item{min_edge_size}{A numeric value specifying the minimum size of the edges (default is 0.1).}
+
+\item{max_edge_size}{A numeric value specifying the maximum size of the edges (default is 2).}
+
+\item{fract_expr}{A numeric value specifying the fraction expression (default is 0.0).}
+
+\item{mean_expr}{A numeric value specifying the mean expression (default is 0.0).}
+
+\item{con_colour}{A character string specifying the color for connections (default is "lightgray").}
+}
+\value{
+The updated cell state graph with new layout information.
 }
 \description{
-update anything about the layout information about a graph
+This function updates the layout information of a given cell state graph
+based on various parameters such as node color, node label, and node grouping.
+}
+\examples{
+# Example usage:
+updated_graph <- update_graph_layout(cell_state_graph, color_nodes_by = "type", label_nodes_by = "name")
 }

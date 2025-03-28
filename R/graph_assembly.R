@@ -1396,7 +1396,7 @@ estimate_loss_timing <- function(perturbation_ccm,
     #df_correction = sqrt(n / (n - k - 1))
     loss_summary_tbl = changes_when_present_in_wt %>%
       filter(is_lost_when_present) %>%
-      filter(wt_time_present %in% timepoints) %>%
+      # filter(wt_time_present %in% timepoints) %>%
       group_by(cell_group) %>%
       summarize(loss_when_present = weighted.mean(delta_log_abund_when_present, percent_max_abund, na.rm=T),
                 loss_when_present_se = weighted.mean(delta_log_abund_when_present_se, percent_max_abund, na.rm=T),

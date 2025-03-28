@@ -63,9 +63,10 @@ plot_annotations <- function(cell_state_graph,
     dplyr::summarize(x = mean(x), y = max(y) + y_plot_range * 0.02)
 
   p <- ggplot(aes(x, y), data = g) +
-    ggplot2::geom_path(aes(x, y, group = edge_name), 
-                       colour = con_colour, 
-                       data = bezier_df %>% distinct() %>% filter(bidirectional)) + 
+    ggplot2::geom_path(aes(x, y, group = edge_name),
+      colour = con_colour,
+      data = bezier_df %>% distinct() %>% filter(bidirectional)
+    ) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
       colour = con_colour,
       data = bezier_df %>% distinct() %>% filter(!bidirectional),
@@ -161,9 +162,7 @@ plot_annotations <- function(cell_state_graph,
 #' @import ggnewscale
 #' @import ggnetwork
 #' @import ggrepel
-#' @importFrom platt calc_sig_ind
 #' @importFrom grid unit
-#' @importFrom stats pmax
 #'
 #' @examples
 #' # Example usage:
@@ -213,14 +212,15 @@ plot_abundance_changes <- function(cell_state_graph,
   g <- left_join(g, comp_abund_table, by = c("name" = "cell_group"), relationship = "many-to-many")
 
   p <- ggplot(aes(x, y), data = g) +
-    ggplot2::geom_path(aes(x, y, group = edge_name), 
-                       colour = con_colour, 
-                       data = bezier_df %>% distinct() %>% filter(bidirectional)) + 
     ggplot2::geom_path(aes(x, y, group = edge_name),
-                       colour = con_colour,
-                       data = bezier_df %>% distinct() %>% filter(!bidirectional),
-                       arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
-                       linejoin = "mitre"
+      colour = con_colour,
+      data = bezier_df %>% distinct() %>% filter(bidirectional)
+    ) +
+    ggplot2::geom_path(aes(x, y, group = edge_name),
+      colour = con_colour,
+      data = bezier_df %>% distinct() %>% filter(!bidirectional),
+      arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
+      linejoin = "mitre"
     )
 
 
@@ -458,14 +458,15 @@ plot_gene_expr <- function(cell_state_graph,
   g <- dplyr::left_join(g, gene_expr_summary, by = c("name" = "cell_group"), relationship = "many-to-many")
 
   p <- ggplot(aes(x, y), data = g) +
-    ggplot2::geom_path(aes(x, y, group = edge_name), 
-                       colour = con_colour, 
-                       data = bezier_df %>% distinct() %>% filter(bidirectional)) + 
     ggplot2::geom_path(aes(x, y, group = edge_name),
-                       colour = con_colour,
-                       data = bezier_df %>% distinct() %>% filter(!bidirectional),
-                       arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
-                       linejoin = "mitre"
+      colour = con_colour,
+      data = bezier_df %>% distinct() %>% filter(bidirectional)
+    ) +
+    ggplot2::geom_path(aes(x, y, group = edge_name),
+      colour = con_colour,
+      data = bezier_df %>% distinct() %>% filter(!bidirectional),
+      arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
+      linejoin = "mitre"
     )
 
 
@@ -561,16 +562,17 @@ plot_deviation_plot <- function(cell_state_graph,
 
 
   p <- ggplot(aes(x, y), data = g) +
-    ggplot2::geom_path(aes(x, y, group = edge_name), 
-                       colour = con_colour, 
-                       data = bezier_df %>% distinct() %>% filter(bidirectional)) + 
     ggplot2::geom_path(aes(x, y, group = edge_name),
-                       colour = con_colour,
-                       data = bezier_df %>% distinct() %>% filter(!bidirectional),
-                       arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
-                       linejoin = "mitre"
+      colour = con_colour,
+      data = bezier_df %>% distinct() %>% filter(bidirectional)
+    ) +
+    ggplot2::geom_path(aes(x, y, group = edge_name),
+      colour = con_colour,
+      data = bezier_df %>% distinct() %>% filter(!bidirectional),
+      arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
+      linejoin = "mitre"
     )
-  
+
   # deviation plot
   p <- p + ggnewscale::new_scale_fill() +
     ggnetwork::geom_nodes(
@@ -644,16 +646,17 @@ plot_deg_change <- function(cell_state_graph,
   # sc <- scale_colour_gradientn(colours = myPalette(100), limits=fc_limits)
 
   p <- ggplot(aes(x, y), data = g) +
-    ggplot2::geom_path(aes(x, y, group = edge_name), 
-                       colour = con_colour, 
-                       data = bezier_df %>% distinct() %>% filter(bidirectional)) + 
     ggplot2::geom_path(aes(x, y, group = edge_name),
-                       colour = con_colour,
-                       data = bezier_df %>% distinct() %>% filter(!bidirectional),
-                       arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
-                       linejoin = "mitre"
+      colour = con_colour,
+      data = bezier_df %>% distinct() %>% filter(bidirectional)
+    ) +
+    ggplot2::geom_path(aes(x, y, group = edge_name),
+      colour = con_colour,
+      data = bezier_df %>% distinct() %>% filter(!bidirectional),
+      arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
+      linejoin = "mitre"
     )
-  
+
   p <- p +
     ggnewscale::new_scale_fill() +
     ggnetwork::geom_nodes(
@@ -714,8 +717,6 @@ plot_deg_change <- function(cell_state_graph,
 #' @import ggnewscale
 #' @import ggnetwork
 #' @import ggrepel
-#' @importFrom platt calc_sig_ind
-#' @importFrom stats pmax
 #' @importFrom utils head
 #' @export
 plot_degs <- function(cell_state_graph,
@@ -775,14 +776,15 @@ plot_degs <- function(cell_state_graph,
 
 
   p <- ggplot(aes(x, y), data = g) +
-    ggplot2::geom_path(aes(x, y, group = edge_name), 
-                       colour = con_colour, 
-                       data = bezier_df %>% distinct() %>% filter(bidirectional)) + 
     ggplot2::geom_path(aes(x, y, group = edge_name),
-                       colour = con_colour,
-                       data = bezier_df %>% distinct() %>% filter(!bidirectional),
-                       arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
-                       linejoin = "mitre"
+      colour = con_colour,
+      data = bezier_df %>% distinct() %>% filter(bidirectional)
+    ) +
+    ggplot2::geom_path(aes(x, y, group = edge_name),
+      colour = con_colour,
+      data = bezier_df %>% distinct() %>% filter(!bidirectional),
+      arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
+      linejoin = "mitre"
     )
 
   if (is.null(grouping_df) == FALSE && identical(grouping_df$group_nodes_by, grouping_df$id) == FALSE) {
@@ -820,10 +822,13 @@ plot_degs <- function(cell_state_graph,
     ) +
     ggnetwork::theme_blank() +
     scale_fill_gradient2(low = "#006600", mid = "white", high = "#800080", limits = fc_limits) +
-    ggnetwork::geom_nodetext(data = g,
-                             aes(x, y,
-                                 label = q_value_sig_code),
-                             color=I("black")) +
+    ggnetwork::geom_nodetext(
+      data = g,
+      aes(x, y,
+        label = q_value_sig_code
+      ),
+      color = I("black")
+    ) +
     hooke::hooke_theme_opts() +
     theme(legend.position = legend_position)
 
@@ -909,16 +914,17 @@ plot_perturb_effects <- function(cell_state_graph,
   g <- g %>% mutate(label_nodes_by = perturb_effect_label)
 
   p <- ggplot(aes(x, y), data = g) +
-    ggplot2::geom_path(aes(x, y, group = edge_name), 
-                       colour = con_colour, 
-                       data = bezier_df %>% distinct() %>% filter(bidirectional)) + 
     ggplot2::geom_path(aes(x, y, group = edge_name),
-                       colour = con_colour,
-                       data = bezier_df %>% distinct() %>% filter(!bidirectional),
-                       arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
-                       linejoin = "mitre"
+      colour = con_colour,
+      data = bezier_df %>% distinct() %>% filter(bidirectional)
+    ) +
+    ggplot2::geom_path(aes(x, y, group = edge_name),
+      colour = con_colour,
+      data = bezier_df %>% distinct() %>% filter(!bidirectional),
+      arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
+      linejoin = "mitre"
     )
-  
+
   p <- p +
     ggnewscale::new_scale_fill() +
     # ggnetwork::geom_nodes(data = g,
@@ -1032,14 +1038,15 @@ plot_by_table <- function(cell_state_graph,
 
 
   p <- ggplot(aes(x, y), data = g) +
-    ggplot2::geom_path(aes(x, y, group = edge_name), 
-                       colour = con_colour, 
-                       data = bezier_df %>% distinct() %>% filter(bidirectional)) + 
     ggplot2::geom_path(aes(x, y, group = edge_name),
-                       colour = con_colour,
-                       data = bezier_df %>% distinct() %>% filter(!bidirectional),
-                       arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
-                       linejoin = "mitre"
+      colour = con_colour,
+      data = bezier_df %>% distinct() %>% filter(bidirectional)
+    ) +
+    ggplot2::geom_path(aes(x, y, group = edge_name),
+      colour = con_colour,
+      data = bezier_df %>% distinct() %>% filter(!bidirectional),
+      arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
+      linejoin = "mitre"
     )
 
   if (is.null(grouping_df) == FALSE && identical(grouping_df$group_nodes_by, grouping_df$id) == FALSE) {
@@ -1172,19 +1179,19 @@ plot_by_support <- function(cell_state_graph,
     group_by(group_nodes_by) %>%
     summarize(x = mean(x), y = max(y) + y_plot_range * 0.02)
 
-  
+
   p <- ggplot(aes(x, y), data = g) +
     ggplot2::geom_path(
       aes(x, y,
-          group = edge_name,
-          color = color_edges_by_col
+        group = edge_name,
+        color = color_edges_by_col
       ),
       data = bezier_df %>% distinct() %>% filter(!is.na(color_edges_by_col)) %>% filter(bidirectional)
     ) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-                       color = con_colour,
-                       data = bezier_df %>% distinct() %>% filter(is.na(color_edges_by_col)) %>% filter(bidirectional)
-    )+
+      color = con_colour,
+      data = bezier_df %>% distinct() %>% filter(is.na(color_edges_by_col)) %>% filter(bidirectional)
+    ) +
     ggplot2::geom_path(
       aes(x, y,
         group = edge_name,

@@ -32,7 +32,6 @@
 #' @import tidyr
 #' @import dplyr
 #' @import ggplot2
-#' @importFrom monocle3 monocle_theme_opts
 #' @importFrom Matrix t
 #' @importFrom purrr map
 #' @importFrom tibble tibble rownames_to_column
@@ -322,10 +321,8 @@ plot_cell_type_control_kinetics <- function(control_ccm,
 #' @importFrom purrr map
 #' @importFrom ggplot2 ggplot aes geom_point geom_line facet_wrap scale_y_log10 xlab ylab
 #' @importFrom ggh4x stat_difference
-#' @importFrom monocle3 monocle_theme_opts
 #' @importFrom tibble tibble rownames_to_column
 #' @importFrom Matrix t
-#' @importFrom stats exp
 #' @importFrom rlang sym
 #'
 #' @examples

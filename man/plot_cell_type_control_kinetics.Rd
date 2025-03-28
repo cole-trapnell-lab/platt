@@ -2,7 +2,7 @@
 % Please edit documentation in R/kinetics.R
 \name{plot_cell_type_control_kinetics}
 \alias{plot_cell_type_control_kinetics}
-\title{plots the control}
+\title{Plot Cell Type Control Kinetics}
 \usage{
 plot_cell_type_control_kinetics(
   control_ccm,
@@ -18,7 +18,7 @@ plot_cell_type_control_kinetics(
   log_scale = TRUE,
   group_nodes_by = "cell_type",
   nrow = 1,
-  newdata = tibble(),
+  newdata = tidyr::tibble(),
   color_points_by = NULL,
   size = 0.5,
   alpha = 0.5,
@@ -26,12 +26,51 @@ plot_cell_type_control_kinetics(
 )
 }
 \arguments{
-\item{interval_step}{}
+\item{control_ccm}{A control cell count matrix object.}
 
-\item{interval_col}{}
+\item{cell_groups}{A vector of cell groups to include in the plot. Default is NULL.}
 
-\item{batch_col}{}
+\item{start_time}{The start time for the plot. Default is NULL, which uses the minimum timepoint in the data.}
+
+\item{stop_time}{The stop time for the plot. Default is NULL, which uses the maximum timepoint in the data.}
+
+\item{interval_step}{The step size for the time intervals. Default is 1.}
+
+\item{log_abund_detection_thresh}{The log abundance detection threshold. Default is -3.}
+
+\item{delta_log_abund_loss_thresh}{The delta log abundance loss threshold. Default is 0.}
+
+\item{interval_col}{The column name for the time intervals. Default is "timepoint".}
+
+\item{q_val}{The q-value threshold for significance. Default is 0.01.}
+
+\item{min_log_abund}{The minimum log abundance. Default is -5.}
+
+\item{log_scale}{A boolean indicating whether to use a log scale for the y-axis. Default is TRUE.}
+
+\item{group_nodes_by}{The column name to group nodes by. Default is "cell_type".}
+
+\item{nrow}{The number of rows in the facet wrap. Default is 1.}
+
+\item{newdata}{A tibble containing new data to be used in the plot. Default is an empty tibble.}
+
+\item{color_points_by}{The column name to color points by. Default is NULL.}
+
+\item{size}{The size of the points in the plot. Default is 0.5.}
+
+\item{alpha}{The alpha transparency of the points in the plot. Default is 0.5.}
+
+\item{raw_counts}{A boolean indicating whether to use raw counts. Default is FALSE.}
+}
+\value{
+A ggplot object representing the kinetic plot.
 }
 \description{
-plots the control
+This function generates a kinetic plot of cell type control data over time.
+}
+\examples{
+# Example usage:
+plot <- plot_cell_type_control_kinetics(control_ccm)
+print(plot)
+
 }

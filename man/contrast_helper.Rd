@@ -2,7 +2,7 @@
 % Please edit documentation in R/deg.R
 \name{contrast_helper}
 \alias{contrast_helper}
-\title{function to help run an ashr comparison}
+\title{Contrast Helper Function}
 \usage{
 contrast_helper(
   state_1,
@@ -17,20 +17,36 @@ contrast_helper(
 )
 }
 \arguments{
-\item{state_1}{list of states to}
+\item{state_1}{A vector of column indices or names for the first state in the PEM and PSEM matrices.}
 
-\item{state_2}{list of states compare to state_1}
+\item{state_2}{A vector of column indices or names for the second state in the PEM and PSEM matrices.}
 
-\item{PEM}{estimate matrix for state 1}
+\item{PEM}{A matrix of posterior effect means.}
 
-\item{PSEM}{standard error matrix for state 1}
+\item{PSEM}{A matrix of posterior standard errors of the means.}
 
-\item{PEM_2}{estimate matrix for state 2, defaults to PEM if not specified}
+\item{PEM_2}{An optional second matrix of posterior effect means. Defaults to PEM.}
 
-\item{PSEM_2}{standard error matrix for state 2, defaults to PSEM if not specified}
+\item{PSEM_2}{An optional second matrix of posterior standard errors of the means. Defaults to PSEM.}
 
-\item{ash.control}{parameters to input to ashr}
+\item{prefix}{An optional prefix to add to the column names of the resulting data frame.}
+
+\item{ash.control}{A list of control parameters for the \code{ashr::ash} function, including \code{mixcompdist} and \code{mode}.}
+
+\item{cv_threshold}{A numeric value specifying the coefficient of variation threshold. Defaults to 10.}
+}
+\value{
+A tibble containing the contrast results, including raw and shrunken log fold changes, standard errors, p-values, and other metrics.
 }
 \description{
-function to help run an ashr comparison
+This function calculates the contrast between two states using provided effect matrices and standard error matrices.
+}
+\examples{
+# Example usage:
+contrast_res <- contrast_helper(
+  state_1 = c("state1_col1", "state1_col2"),
+  state_2 = c("state2_col1", "state2_col2"),
+  PEM = pem_matrix,
+  PSEM = psem_matrix
+)
 }

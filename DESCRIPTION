@@ -1,15 +1,15 @@
 Package: platt
 Title: Lineage graph construction from time series and perturbation data
 Version: 0.0.0.9000
-Authors@R: 
+Authors@R: c(
     person(given = "Madeleine",
            family = "Duran",
            role = c("aut", "cre"),
-           email = "duran@uw.edu")
+           email = "duran@uw.edu"),
     person(given = "Cole",
            family = "Trapnell",
            role = c("aut", "cre"),
-           email = "coletrap@uw.edu")
+           email = "coletrap@uw.edu"))
 Description: What the package does (one paragraph).
 License: MIT + file LICENSE
 Encoding: UTF-8

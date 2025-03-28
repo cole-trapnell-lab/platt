@@ -8,4 +8,8 @@
 \description{
 What the package does (one paragraph).
 }
+\author{
+\strong{Maintainer}: Madeleine Duran \email{duran@uw.edu}
+
+}
 \keyword{internal}

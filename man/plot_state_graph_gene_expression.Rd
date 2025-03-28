@@ -2,7 +2,7 @@
 % Please edit documentation in R/plotting.R
 \name{plot_state_graph_gene_expression}
 \alias{plot_state_graph_gene_expression}
-\title{Plot the expression of a single gene on the state transition graph}
+\title{Plot State Graph Gene Expression}
 \usage{
 plot_state_graph_gene_expression(
   ccs,
@@ -36,6 +36,68 @@ plot_state_graph_gene_expression(
   group_outline = FALSE
 )
 }
+\arguments{
+\item{ccs}{Cell cluster data.}
+
+\item{state_graph}{State graph data, either as an igraph object or a data frame.}
+
+\item{genes}{A vector of gene names to plot.}
+
+\item{method}{Method to aggregate gene expression data, default is "min".}
+
+\item{gene_expr}{Gene expression data, default is NULL.}
+
+\item{fract_expr}{Minimum fraction of cells expressing the gene, default is 0.0.}
+
+\item{mean_expr}{Minimum mean expression level, default is 0.0.}
+
+\item{scale_to_range}{Logical, whether to scale expression data to range, default is FALSE.}
+
+\item{color_nodes_by}{Column name to color nodes by, default is NULL.}
+
+\item{label_nodes_by}{Column name to label nodes by, default is NULL.}
+
+\item{group_nodes_by}{Column name to group nodes by, default is NULL.}
+
+\item{label_edges_by}{Column name to label edges by, default is NULL.}
+
+\item{edge_weights}{Column name for edge weights, default is NULL.}
+
+\item{arrow.gap}{Gap size for arrows, default is 0.03.}
+
+\item{arrow_unit}{Unit size for arrows, default is 2.}
+
+\item{bar_unit}{Unit size for bars, default is 0.075.}
+
+\item{min_node_size}{Minimum node size, default is 0.25.}
+
+\item{max_node_size}{Maximum node size, default is 2.}
+
+\item{min_edge_size}{Minimum edge size, default is 0.1.}
+
+\item{max_edge_size}{Maximum edge size, default is 2.}
+
+\item{unlabeled_groups}{Vector of unlabeled groups, default is c("Unknown").}
+
+\item{label_groups}{Logical, whether to label groups, default is TRUE.}
+
+\item{hide_unlinked_nodes}{Logical, whether to hide unlinked nodes, default is TRUE.}
+
+\item{group_label_font_size}{Font size for group labels, default is 6.}
+
+\item{edge_label_font_size}{Font size for edge labels, default is 2.}
+
+\item{label_conn_linetype}{Line type for label connections, default is "dotted".}
+
+\item{legend_position}{Position of the legend, default is "none".}
+
+\item{con_colour}{Color for connections, default is "darkgrey".}
+
+\item{group_outline}{Logical, whether to outline groups, default is FALSE.}
+}
+\value{
+A ggplot object representing the state graph with gene expression data.
+}
 \description{
-Plot the expression of a single gene on the state transition graph
+This function plots a state graph with gene expression data.
 }
