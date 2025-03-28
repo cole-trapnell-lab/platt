@@ -1388,7 +1388,6 @@ assign_cell_states <- function(comb_res) {
 # this cds was clustered/has partitions, but i only want to run assembly on 1
 # partition
 # wrapper function for purrr use cases
-#' @export
 run_assembly <- function(cds,
                          partition_group,
                          interval_col = "timepoint",
@@ -1410,7 +1409,7 @@ run_assembly <- function(cds,
 
 # wrapper function to split it up
 # because i can't hold comb_cds in memory
-#' @export
+
 run_partition_assembly <- function(wt_cds,
                                    mt_cds,
                                    partition,
@@ -1474,7 +1473,7 @@ run_partition_assembly <- function(wt_cds,
   return(comb_res)
 }
 
-#' @export
+
 run_cds_assembly <- function(cds,
                              resolution_fun = NULL,
                              max_num_cells = NULL,
@@ -1594,7 +1593,6 @@ categorize_genetic_requirements <- function(perturb_ccm_tbl, state_graph) {
 #' extract a single ccm from perturb_models_tbl
 #' @param perturb_models_tbl tibble of perturbation results
 #' @param perturb_name which perturbation to select out
-#' @export
 get_perturb_ccm <- function(perturb_models_tbl, perturb_name) {
   perturb_ccm <- perturb_models_tbl %>%
     filter(perturb_name == perturb_name) %>%
