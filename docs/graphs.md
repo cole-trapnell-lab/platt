@@ -113,16 +113,44 @@ returns
 
 ### Constructing a graph
 
-To construct a platt graph: 
+We first construct a graph on clusters... 
 
 ```
-partition_res = assemble_partition(cds, 
+
+cds = cluster_cells(cds, random_seed = 42, res=1e-3)
+colData(cds)$cell_state = monocle3:::clusters(cds)
+
+cluster_res = assemble_partition(cds, 
+                                   partition_name = "pectoral fin",
+                                   sample_group = "embryo",
+                                   cell_group = "cell_state",
+                                   interval_col = "timepoint",
+                                   component_col = "assembly_group",
+                                   perturbation_col = "perturbation",
+                                   ctrl_ids = c("ctrl-inj"),
+                                   num_threads = 6,
+                                   batch_col = "expt")
+
+```
+
+...then contract the graph, and use it as a prior for a graph built on cell types... 
+
+```
+
+contract_graph = platt::contract_state_graph(ccs, cluster_res$mt_graph[[1]], group_nodes_by = "cell_type")
+
+global_wt_graph_edge_allowlist = igraph::as_data_frame(contract_graph)
+global_wt_graph_edge_allowlist = global_wt_graph_edge_allowlist %>% select(from, to) %>% distinct()
+
+
+cell_type_res = assemble_partition(cds, 
                                    partition_name = "pectoral fin",
                                    sample_group = "embryo",
                                    cell_group = "cell_type",
                                    interval_col = "timepoint",
                                    component_col = "assembly_group",
                                    perturbation_col = "perturbation",
+                                   edge_allowlist = global_wt_graph_edge_allowlist, 
                                    ctrl_ids = c("ctrl-inj"),
                                    num_threads = 6,
                                    batch_col = "expt")
@@ -137,13 +165,15 @@ The output is as follows:
 
 
 You can extract the graph from the dataframe to construct a `cell_state_graph`. 
+
 ```
 
 pf_graph = partition_res$mt_graph[[1]]
 pf_ccs = new_cell_count_set(pf_cds, cell_group = "cell_type", sample_group = "embryo")
 pf_csg = new_cell_state_graph(pf_graph, pf_ccs)
 
-plot_annotations(pf_csg, node_size = 4.5)
+plot_annotations(pf_csg)
+
 ```
 
 ![](assets/pec_fin_graph.png){width=75%}
