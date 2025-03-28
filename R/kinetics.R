@@ -320,7 +320,6 @@ plot_cell_type_control_kinetics <- function(control_ccm,
 #' @importFrom tidyr unnest pivot_longer
 #' @importFrom purrr map
 #' @importFrom ggplot2 ggplot aes geom_point geom_line facet_wrap scale_y_log10 xlab ylab
-#' @importFrom ggh4x stat_difference
 #' @importFrom tibble tibble rownames_to_column
 #' @importFrom Matrix t
 #' @importFrom rlang sym

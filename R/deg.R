@@ -455,12 +455,6 @@ estimate_ambient_rna <- function(ccs,
 #' @importFrom Matrix rowSums
 #' @importFrom stringr str_replace_all
 #' @importFrom tibble tibble
-#' @importFrom hooke pseudobulk_ccs_for_states add_covariate
-#' @importFrom fit_models fit_models
-#' @importFrom collect_coefficients_for_shrinkage collect_coefficients_for_shrinkage
-#' @importFrom compare_genes_in_cell_state compare_genes_in_cell_state
-#' @importFrom score_genes_for_expression_pattern score_genes_for_expression_pattern
-#' @importFrom normalized_counts normalized_counts
 #'
 #' @export
 compare_genes_over_graph <- function(ccs,
@@ -1010,7 +1004,6 @@ compare_genes_within_state_graph <- function(ccs,
 #' @importFrom stringr str_replace_all
 #' @importFrom purrr map possibly
 #' @importFrom tidyr unnest nest
-#' @importFrom gc gc
 #' @importFrom utils write.csv
 #' @export
 compare_gene_expression_within_node <- function(cell_group,
@@ -1356,10 +1349,6 @@ update_summary <- function(model_tbl, dispersion_type = c("max", "fitted", "esti
 #'
 #' @return A tibble containing the GSEA results filtered by the specified significance threshold.
 #'
-#' @importFrom fgsea fgsea
-#' @importFrom dplyr %>% as_tibble filter
-#' @importFrom tibble as_tibble
-#'
 #' @examples
 #' \dontrun{
 #' gene_patterns_within_state_graph <- data.frame(
@@ -1394,7 +1383,6 @@ calc_gsea_enrichment_on_state_specific_genes <- function(gene_patterns_within_st
 #' @param ... Additional arguments passed to the `clusterProfiler::enricher` function.
 #'
 #' @return A tibble containing the enrichment results.
-#' @importFrom clusterProfiler enricher
 #' @importFrom dplyr %>%
 #' @export
 calc_pathway_enrichment_on_state_specific_genes <- function(gene_df, msigdbr_t2g, sig_thresh = 0.1, ...) {

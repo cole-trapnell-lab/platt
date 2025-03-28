@@ -10,13 +10,11 @@ Authors@R: c(
            family = "Trapnell",
            role = c("aut"),
            email = "coletrap@uw.edu"))
-Description: What the package does (one paragraph).
+Description: Methods for lineage graph construction from time series and perturbation single-cell RNA-seq data.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.2
-LinkingTo: 
-    Rcpp
 Depends: 
     Biobase, 
     monocle3,

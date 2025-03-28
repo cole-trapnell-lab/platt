@@ -6,10 +6,15 @@
 \alias{platt-package}
 \title{platt: Lineage graph construction from time series and perturbation data}
 \description{
-What the package does (one paragraph).
+Methods for lineage graph construction from time series and perturbation single-cell RNA-seq data.
 }
 \author{
 \strong{Maintainer}: Madeleine Duran \email{duran@uw.edu}
+
+Authors:
+\itemize{
+  \item Cole Trapnell \email{coletrap@uw.edu}
+}
 
 }
 \keyword{internal}

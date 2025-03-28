@@ -44,15 +44,6 @@
 #' )
 #'
 #' @import ggplot2
-#' @importFrom dplyr filter select mutate left_join ungroup group_by summarize
-#' @importFrom igraph as_data_frame graph_from_data_frame E
-#' @importFrom ggnetwork ggnetwork geom_nodes geom_nodelabel theme_blank
-#' @importFrom ggforce geom_mark_rect
-#' @importFrom ggrepel geom_text_repel
-#' @importFrom ggnewscale new_scale_fill
-#' @importFrom stringr str_c
-#' @importFrom tidyr replace_na
-#' @importFrom grid unit
 #' @export 
 plot_state_graph_annotations <- function(ccs,
                                          state_graph,
@@ -1017,9 +1008,6 @@ plot_state_graph_abundance_changes <- function(ccs,
 #' @import ggforce
 #' @import ggnewscale
 #' @import viridis
-#' @importFrom stringr str_c
-#' @importFrom scales percent
-#' @importFrom tidyr replace_na
 plot_state_graph_gene_expression <- function(ccs,
                                              state_graph,
                                              genes,
@@ -1525,9 +1513,6 @@ assign_nodes_to_layers <- function(G, num_layers, node_metadata) {
 #' It uses the `make_ego_graph` function to get the subgraph for each layer and its hidden nodes.
 #' The tail nodes are identified by the prefix "tail_" and the head nodes by the prefix "head_".
 #' The function ensures that each tail node is connected to a subset of head nodes in a round-robin fashion.
-#'
-#' @import igraph layers <- list(c(1, 2, 3), c(4, 5, 6), c(7, 8, 9))
-#' # connected_graph <- connect_hidden_nodes_for_layers(G_with_hidden, layers)
 #'
 connect_hidden_nodes_for_layers <- function(G_with_hidden, layers) {
   connected_G_with_hidden <- G_with_hidden
