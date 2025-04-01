@@ -934,7 +934,7 @@ compare_genes_within_state_graph <- function(ccs,
 
   df <- data.frame(cell_group = cell_groups) %>%
     mutate(genes_within_cell_group = purrr::map(
-      .f = compare_gene_expression_within_node,
+      .f = purrr:::possibly(compare_gene_expression_within_node, NA_character_),
       .x = cell_group,
       pb_cds = pb_cds,
       ccs = ccs,
