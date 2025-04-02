@@ -44,7 +44,6 @@
 #' )
 #'
 #' @import ggplot2
-#' @export 
 plot_state_graph_annotations <- function(ccs,
                                          state_graph,
                                          color_nodes_by = NULL,
