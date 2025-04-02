@@ -10,7 +10,7 @@ Platt runs in the [R statistical computing environment](https://www.r-project.or
 Platt builds on top of the [Hooke package](https://cole-trapnell-lab.github.io/hooke/install/). 
 
 ```r
-devtools::install_github("cole-trapnell-lab/hooke", ref="develop")
+devtools::install_github("cole-trapnell-lab/hooke")
 ```
 
 Hooke builds on top of the [Monocle3 package](https://cole-trapnell-lab.github.io/monocle3/docs/installation/). 
