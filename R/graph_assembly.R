@@ -768,7 +768,8 @@ build_timeseries_transition_graph <- function(ccm,
                                               max_interval = 24,
                                               min_pathfinding_lfc=0,
                                               make_dag=FALSE,
-                                              newdata = tibble()) {
+                                              newdata = tibble(),
+                                              log_abund_detection_thresh = -5) {
   # Temporarily set the number of threads OpenMP & the BLAS library can use to be 1
   #old_omp_num_threads = single_thread_omp()
   #old_blas_num_threads = single_thread_blas()
@@ -792,7 +793,8 @@ build_timeseries_transition_graph <- function(ccm,
                                                         stop_time, 
                                                         interval_col = interval_col, 
                                                         interval_step = interval_step, 
-                                                        newdata = newdata)
+                                                        newdata = newdata,
+                                                        min_log_abund = log_abund_detection_thresh)
 
   #' @noRd
   select_timepoints <- function(timepoint_pred_df, t1, t2, interval_col)  {
@@ -819,7 +821,8 @@ build_timeseries_transition_graph <- function(ccm,
   relevant_comparisons = relevant_comparisons %>%
     mutate(rec_edges = purrr::map(.f = purrr::possibly(hooke:::collect_pln_graph_edges, NULL),
                                   .x = comp_abund,
-                                  ccm = ccm))
+                                  ccm = ccm,
+                                  log_abundance_thresh = log_abund_detection_thresh))
 
   # mutate(rec_edges = furrr::future_map(.f = purrr::possibly(hooke:::collect_pln_graph_edges, NULL),
   #                                      .x = comp_abund,
@@ -1620,7 +1623,8 @@ assemble_timeseries_transitions <- function(ccm,
                                           max_interval,
                                           min_pathfinding_lfc=min_pathfinding_lfc,
                                           make_dag=make_dag,
-                                          newdata = newdata)
+                                          newdata = newdata,
+                                          log_abund_detection_thresh = log_abund_detection_thresh)
 
     # FIXME: Consider moving this step into build_timeseries_transition_graph()?
     if (!is.null(G))
