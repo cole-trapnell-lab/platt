@@ -10,16 +10,14 @@ assess_perturbation_effects(
   q_val = 0.01,
   start_time = NULL,
   stop_time = NULL,
-  perturbation_col = "knockout",
   interval_col = "timepoint",
-  batch_col = "expt",
   interval_step = 2,
   min_interval = 4,
   max_interval = 24,
   log_abund_detection_thresh = -5,
   min_lfc = 0,
   verbose = FALSE,
-  ...
+  newdata = newdata
 )
 }
 \description{

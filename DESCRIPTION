@@ -1,17 +1,34 @@
 Package: platt
-Title: What the Package Does (One Line, Title Case)
+Title: Lineage graph construction from time series and perturbation data
 Version: 0.0.0.9000
-Authors@R: 
-    person("First", "Last", , "first.last@example.com", role = c("aut", "cre"),
-           comment = c(ORCID = "YOUR-ORCID-ID"))
-Description: What the package does (one paragraph).
+Authors@R: c(
+    person(given = "Madeleine",
+           family = "Duran",
+           role = c("cre"),
+           email = "duran@uw.edu"),
+    person(given = "Cole",
+           family = "Trapnell",
+           role = c("aut"),
+           email = "coletrap@uw.edu"))
+Description: Methods for lineage graph construction from time series and perturbation single-cell RNA-seq data.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.2.3
+RoxygenNote: 7.3.2
+Depends: 
+    Biobase, 
+    monocle3,
+    PLNmodels,
+    hooke
 Imports:
     ashr (>= 2.2-63),
-    speedglm (>= 0.3-2),
+    dplyr,
+    magrittr,
+    speedglm,
+    splines
+Remotes: cole-trapnell-lab/speedglm
 Suggests: 
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
+VignetteBuilder: knitr
+Language: en-US

@@ -18,9 +18,9 @@ assemble_timeseries_transitions(
   make_dag = FALSE,
   links_between_components = c("ctp", "none", "strongest-pcor", "strong-pcor"),
   components = "partition",
-  edge_whitelist = NULL,
-  edge_blacklist = NULL,
-  ...
+  edge_allowlist = NULL,
+  edge_denylist = NULL,
+  newdata = tibble()
 )
 }
 \description{

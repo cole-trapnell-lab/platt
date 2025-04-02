@@ -10,9 +10,7 @@ assemble_transition_graph_from_perturbations(
   q_val = 0.01,
   start_time = NULL,
   stop_time = NULL,
-  perturbation_col = "knockout",
   interval_col = "timepoint",
-  batch_col = "expt",
   interval_step = 2,
   min_interval = 4,
   max_interval = 24,
@@ -21,9 +19,9 @@ assemble_transition_graph_from_perturbations(
   links_between_components = c("ctp", "none", "strongest-pcor", "strong-pcor"),
   components = "partition",
   verbose = FALSE,
-  edge_whitelist = NULL,
-  edge_blacklist = NULL,
-  ...
+  edge_allowlist = NULL,
+  edge_denylist = NULL,
+  newdata = tibble()
 )
 }
 \description{

@@ -4,7 +4,7 @@
 \alias{make_contrast}
 \title{wrapper function to easily plot output of fit_genotype_ccm}
 \usage{
-make_contrast(ccm, timepoint, ...)
+make_contrast(ccm, newdata = tibble())
 }
 \arguments{
 \item{ccm}{a cell_count_model object}

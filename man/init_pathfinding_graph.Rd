@@ -10,8 +10,8 @@ init_pathfinding_graph(
   links_between_components = c("ctp", "none", "strongest-pcor", "strong-pcor"),
   components = "partition",
   weigh_by_pcor = F,
-  edge_whitelist = NULL,
-  edge_blacklist = NULL
+  edge_allowlist = NULL,
+  edge_denylist = NULL
 )
 }
 \arguments{

@@ -8,19 +8,17 @@ assemble_mt_graph(
   wt_ccm,
   perturb_models_tbl,
   interval_col = "timepoint",
-  batch_col = "expt",
-  perturbation_col = "knockout",
   start_time = NULL,
   stop_time = NULL,
   interval_step = 2,
   links_between_components = "none",
   log_abund_detection_thresh = -5,
   q_val = 0.1,
-  expt = "GAP16",
+  newdata = tibble(),
   break_cycles = TRUE,
   component_col = "partition",
-  edge_whitelist = NULL,
-  edge_blacklist = NULL,
+  edge_allowlist = NULL,
+  edge_denylist = NULL,
   verbose = FALSE
 )
 }

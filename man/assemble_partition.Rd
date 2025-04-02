@@ -2,7 +2,7 @@
 % Please edit documentation in R/assembly_utils.R
 \name{assemble_partition}
 \alias{assemble_partition}
-\title{a version of subpartition cds where you run assembly on the top}
+\title{Assemble Partition}
 \usage{
 assemble_partition(
   cds,
@@ -18,15 +18,17 @@ assemble_partition(
   mt_ids = NULL,
   sparsity_factor = 0.01,
   perturbation_col = "gene_target",
+  batch_col = "expt",
   max_num_cells = NULL,
   verbose = FALSE,
+  keep_ccs = TRUE,
   num_threads = 1,
   backend = "nlopt",
   q_val = 0.1,
   vhat_method = "bootstrap",
   num_bootstraps = 10,
-  batch_col = "expt",
-  expt = "GAP16",
+  newdata = tibble(),
+  edge_allowlist = NULL,
   min_lfc = 0,
   links_between_components = c("ctp", "none", "strongest-pcor", "strong-pcor"),
   log_abund_detection_thresh = -5,
@@ -36,12 +38,95 @@ assemble_partition(
 )
 }
 \arguments{
-\item{cds}{cell_count_data_set}
+\item{cds}{A cell dataset object.}
 
-\item{perturbation_col}{description}
+\item{sample_group}{A string specifying the sample group column in the CDS.}
 
-\item{batch_col}{}
+\item{cell_group}{A string specifying the cell group column in the CDS.}
+
+\item{partition_name}{A string specifying the name of the partition (default: NULL).}
+
+\item{main_model_formula_str}{A string specifying the main model formula (default: NULL).}
+
+\item{start_time}{Numeric value specifying the start time for the analysis (default: 18).}
+
+\item{stop_time}{Numeric value specifying the stop time for the analysis (default: 72).}
+
+\item{interval_col}{A string specifying the column for time intervals (default: "timepoint").}
+
+\item{nuisance_model_formula_str}{A string specifying the nuisance model formula (default: "~1").}
+
+\item{ctrl_ids}{A vector of control IDs (default: NULL).}
+
+\item{mt_ids}{A vector of mutant IDs (default: NULL).}
+
+\item{sparsity_factor}{Numeric value specifying the sparsity factor (default: 0.01).}
+
+\item{perturbation_col}{A string specifying the perturbation column (default: "gene_target").}
+
+\item{batch_col}{A string specifying the batch column (default: "expt").}
+
+\item{max_num_cells}{Numeric value specifying the maximum number of cells to include (default: NULL).}
+
+\item{verbose}{Logical indicating whether to print verbose messages (default: FALSE).}
+
+\item{keep_ccs}{Logical indicating whether to keep connected components (default: TRUE).}
+
+\item{num_threads}{Numeric value specifying the number of threads to use (default: 1).}
+
+\item{backend}{A string specifying the backend to use for optimization (default: "nlopt").}
+
+\item{q_val}{Numeric value specifying the q-value threshold for perturbation effects (default: 0.1).}
+
+\item{vhat_method}{A string specifying the method for variance estimation (default: "bootstrap").}
+
+\item{num_bootstraps}{Numeric value specifying the number of bootstraps for variance estimation (default: 10).}
+
+\item{newdata}{A tibble containing new data for predictions (default: tibble()).}
+
+\item{edge_allowlist}{A list of edges to allow in the graph (default: NULL).}
+
+\item{min_lfc}{Numeric value specifying the minimum log fold change for perturbation effects (default: 0).}
+
+\item{links_between_components}{A character vector specifying the type of links between components
+(default: c("ctp", "none", "strongest-pcor", "strong-pcor")).}
+
+\item{log_abund_detection_thresh}{Numeric value specifying the log abundance detection threshold (default: -5).}
+
+\item{batches_excluded_from_assembly}{A vector of batch names to exclude from assembly (default: c()).}
+
+\item{component_col}{A string specifying the column for components (default: "partition").}
+
+\item{embryo_size_factors}{A vector of size factors for embryos (default: NULL).}
+}
+\value{
+A tibble containing the results of the partition assembly, including WT and MT graphs,
+perturbation effects, and state graph plots.
 }
 \description{
-a version of subpartition cds where you run assembly on the top
+This function assembles a partition for a given cell dataset (CDS) by fitting wild-type (WT)
+and mutant (MT) models, constructing state transition graphs, and assessing perturbation effects.
+}
+\details{
+The function performs the following steps:
+\itemize{
+\item Prepares the CDS by adding subassembly group and cell state information.
+\item Fits a wild-type model and assembles a WT state transition graph.
+\item Fits mutant models and assembles MT state transition graphs.
+\item Assesses perturbation effects and constructs annotated graphs.
+\item Handles errors gracefully and returns NA for failed steps.
+}
+}
+\examples{
+# Example usage:
+results <- assemble_partition(
+  cds = my_cds,
+  sample_group = "sample",
+  cell_group = "cell_type",
+  partition_name = "partition_1",
+  main_model_formula_str = "~timepoint",
+  start_time = 18,
+  stop_time = 72
+)
+
 }

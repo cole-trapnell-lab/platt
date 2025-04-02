@@ -2,7 +2,7 @@
 % Please edit documentation in R/deg.R
 \name{compare_genes_over_graph}
 \alias{compare_genes_over_graph}
-\title{Classify each gene's pattern of expression in each state in a state transition graph}
+\title{Compare Genes Over Graph}
 \usage{
 compare_genes_over_graph(
   ccs,
@@ -11,24 +11,59 @@ compare_genes_over_graph(
   group_nodes_by = NULL,
   assembly_group = NULL,
   label_nodes_by = "cell_state",
+  states_to_assess = list(),
   nuisance_model_formula_str = "0",
-  ambient_coeffs = NULL,
   log_fc_thresh = 1,
   abs_expr_thresh = 0.001,
   sig_thresh = 0.05,
   min_samples_detected = 2,
   min_cells_per_pseudobulk = 3,
   cores = 1,
+  cv_threshold = 10,
   ...
 )
 }
 \arguments{
-\item{ccs}{a cell_count_set object}
+\item{ccs}{Cell count summary object.}
 
-\item{state_graph}{a graph to run the DEG testing over}
+\item{state_graph}{A graph object representing the state graph.}
 
-\item{cores}{}
+\item{gene_ids}{A vector of gene IDs to be assessed. Default is NULL.}
+
+\item{group_nodes_by}{A column name to group nodes by. Default is NULL.}
+
+\item{assembly_group}{A specific assembly group to assess. Default is NULL.}
+
+\item{label_nodes_by}{A label for nodes. Default is "cell_state".}
+
+\item{states_to_assess}{A list of states to assess. Default is an empty list.}
+
+\item{nuisance_model_formula_str}{A string representing the nuisance model formula. Default is "0".}
+
+\item{log_fc_thresh}{Log fold change threshold. Default is 1.}
+
+\item{abs_expr_thresh}{Absolute expression threshold. Default is 1e-3.}
+
+\item{sig_thresh}{Significance threshold. Default is 0.05.}
+
+\item{min_samples_detected}{Minimum number of samples detected. Default is 2.}
+
+\item{min_cells_per_pseudobulk}{Minimum number of cells per pseudobulk. Default is 3.}
+
+\item{cores}{Number of cores to use for parallel processing. Default is 1.}
+
+\item{cv_threshold}{Coefficient of variation threshold. Default is 10.}
+
+\item{...}{Additional arguments.}
+}
+\value{
+A tibble containing gene class scores for each cell state.
 }
 \description{
-Classify each gene's pattern of expression in each state in a state transition graph
+This function compares gene expression over a given state graph.
+}
+\examples{
+# Example usage:
+# result <- compare_genes_over_graph(ccs, state_graph, gene_ids = c("gene1", "gene2"))
+
 }

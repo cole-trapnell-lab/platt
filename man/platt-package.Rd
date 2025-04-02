@@ -4,12 +4,17 @@
 \name{platt-package}
 \alias{platt}
 \alias{platt-package}
-\title{platt: What the Package Does (One Line, Title Case)}
+\title{platt: Lineage graph construction from time series and perturbation data}
 \description{
-What the package does (one paragraph).
+Methods for lineage graph construction from time series and perturbation single-cell RNA-seq data.
 }
 \author{
-\strong{Maintainer}: First Last \email{first.last@example.com} (\href{https://orcid.org/YOUR-ORCID-ID}{ORCID})
+\strong{Maintainer}: Madeleine Duran \email{duran@uw.edu}
+
+Authors:
+\itemize{
+  \item Cole Trapnell \email{coletrap@uw.edu}
+}
 
 }
 \keyword{internal}

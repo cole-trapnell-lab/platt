@@ -2,69 +2,7 @@
 % Please edit documentation in R/deg.R
 \name{collect_coefficients_for_shrinkage}
 \alias{collect_coefficients_for_shrinkage}
-\title{#' @export
-classify_genes_within_state_graph = function(ccs,
-perturbation_col = "perturbation",
-control_ids = c("Control"),
-cell_groups = NULL,
-assembly_group = NULL,
-state_graph = NULL,
-perturbations = NULL,
-gene_ids = NULL,
-group_nodes_by = NULL,
-log_fc_thresh = 1,
-abs_expr_thresh = 1e-3,
-sig_thresh = 0.05,
-min_samples_detected = 2,
-min_cells_per_pseudobulk = 3,
-cores = 1,
-...) {to do make sure that ccs and state graph matchcheck if all nodes in the state graph exist in the cdsif (is.null(state_graph) == FALSE) {}
-
-expts = unique(colData(ccs)$expt)
-
-pb_cds = hooke:::pseudobulk_ccs_for_states(ccs, cell_agg_fun="sum")
-colData(pb_cds)$Size_Factor = colData(pb_cds)$num_cells_in_group
-
-pb_cds = hooke:::add_covariate(ccs, pb_cds, perturbation_col)
-colData(pb_cds)[\link{"perturbation"}] = colData(pb_cds)[\link{perturbation_col}]to do: if we want to run it by assembly group, must provide a state graph
-
-if (is.null(assembly_group) == FALSE & is.null(state_graph) == FALSE) {
-pb_cds = hooke:::add_covariate(ccs, pb_cds, "assembly_group")
-pb_cds = pb_cds\link{, colData(pb_cds)$assembly_group == assembly_group}
-
-\if{html}{\out{<div class="sourceCode">}}\preformatted{if (is(state_graph, "igraph")) \{
-  state_graph = igraph::as_data_frame(state_graph)
-\}
-state_graph = state_graph \%>\% filter(assembly_group == assembly_group)
-}\if{html}{\out{</div>}}
-
-}ability to subset by perturbation
-
-if (!is.null(perturbations)) {
-pb_cds = pb_cds[, colData(pb_cds)[\link{perturbation_col}] \%in\% c(control_ids, perturbations)]
-}subset to genes that are expressed over a certain min value
-
-expr_over_thresh = normalized_counts(pb_cds, "size_only", pseudocount = 0)
-genes_to_test = which(Matrix::rowSums(expr_over_thresh) >= min_samples_detected)
-pb_cds = pb_cds\link{genes_to_test,}
-
-pseudobulks_to_test = which(colData(pb_cds)$num_cells_in_group >= min_cells_per_pseudobulk)
-pb_cds = pb_cds\link{,pseudobulks_to_test}
-
-if (is.null(cell_groups)) {
-cell_groups = rownames(counts(ccs))
-}
-
-df = data.frame(cell_group = cell_groups) \%>\%
-mutate(genes_within_cell_group = purrr::map(.f = purrr:::possibly(classify_genes_within_node,NA_real_),
-.x = cell_group,
-pb_cds = pb_cds,
-ccs = ccs,
-cores = cores))
-
-return(df)
-
-}}
+\title{Collect Coefficients for Shrinkage}
 \usage{
 collect_coefficients_for_shrinkage(
   cds,
@@ -73,68 +11,40 @@ collect_coefficients_for_shrinkage(
   term_to_keep
 )
 }
+\arguments{
+\item{cds}{A cell data set object.}
+
+\item{model_tbl}{A table containing models and their summaries.}
+
+\item{abs_expr_thresh}{Absolute expression threshold for filtering.}
+
+\item{term_to_keep}{The term to keep in the coefficient table.}
+}
+\value{
+A tibble containing coefficients, standard deviations, sigma, degrees of freedom, trend, estimated dispersion, and fitted dispersion.
+}
 \description{
-#' @export
-classify_genes_within_state_graph = function(ccs,
-perturbation_col = "perturbation",
-control_ids = c("Control"),
-cell_groups = NULL,
-assembly_group = NULL,
-state_graph = NULL,
-perturbations = NULL,
-gene_ids = NULL,
-group_nodes_by = NULL,
-log_fc_thresh = 1,
-abs_expr_thresh = 1e-3,
-sig_thresh = 0.05,
-min_samples_detected = 2,
-min_cells_per_pseudobulk = 3,
-cores = 1,
-...) {to do make sure that ccs and state graph matchcheck if all nodes in the state graph exist in the cdsif (is.null(state_graph) == FALSE) {}
-
-expts = unique(colData(ccs)$expt)
-
-pb_cds = hooke:::pseudobulk_ccs_for_states(ccs, cell_agg_fun="sum")
-colData(pb_cds)$Size_Factor = colData(pb_cds)$num_cells_in_group
-
-pb_cds = hooke:::add_covariate(ccs, pb_cds, perturbation_col)
-colData(pb_cds)[\link{"perturbation"}] = colData(pb_cds)[\link{perturbation_col}]to do: if we want to run it by assembly group, must provide a state graph
-
-if (is.null(assembly_group) == FALSE & is.null(state_graph) == FALSE) {
-pb_cds = hooke:::add_covariate(ccs, pb_cds, "assembly_group")
-pb_cds = pb_cds\link{, colData(pb_cds)$assembly_group == assembly_group}
-
-\if{html}{\out{<div class="sourceCode">}}\preformatted{if (is(state_graph, "igraph")) \{
-  state_graph = igraph::as_data_frame(state_graph)
-\}
-state_graph = state_graph \%>\% filter(assembly_group == assembly_group)
-}\if{html}{\out{</div>}}
-
-}ability to subset by perturbation
-
-if (!is.null(perturbations)) {
-pb_cds = pb_cds[, colData(pb_cds)[\link{perturbation_col}] \%in\% c(control_ids, perturbations)]
-}subset to genes that are expressed over a certain min value
-
-expr_over_thresh = normalized_counts(pb_cds, "size_only", pseudocount = 0)
-genes_to_test = which(Matrix::rowSums(expr_over_thresh) >= min_samples_detected)
-pb_cds = pb_cds\link{genes_to_test,}
-
-pseudobulks_to_test = which(colData(pb_cds)$num_cells_in_group >= min_cells_per_pseudobulk)
-pb_cds = pb_cds\link{,pseudobulks_to_test}
-
-if (is.null(cell_groups)) {
-cell_groups = rownames(counts(ccs))
+This function collects coefficients for shrinkage from a given cell data set (cds) and model table (model_tbl).
+It calculates the dispersion, mean expression, and other statistics for each model in the table.
+}
+\details{
+The function performs the following steps:
+\itemize{
+\item Mutates the model table to include dispersion values.
+\item Calculates mean expression for each model.
+\item Fits a generalized additive model (GAM) to the log of dispersion values.
+\item Updates the model summary with fitted dispersion values.
+\item Extracts raw coefficients and extra model statistics.
+\item Joins the raw coefficient table with extra model statistics.
+\item Filters and mutates the coefficient table based on the term to keep.
+\item Handles failed gene models by setting their estimates and standard errors to NA.
+\item Pivots the coefficient and standard error tables.
+\item Calculates sigma and unscaled standard deviations.
+}
+}
+\examples{
+\dontrun{
+coefs_for_shrinkage <- collect_coefficients_for_shrinkage(cds, model_tbl, abs_expr_thresh, term_to_keep)
 }
 
-df = data.frame(cell_group = cell_groups) \%>\%
-mutate(genes_within_cell_group = purrr::map(.f = purrr:::possibly(classify_genes_within_node,NA_real_),
-.x = cell_group,
-pb_cds = pb_cds,
-ccs = ccs,
-cores = cores))
-
-return(df)
-
-}
 }
