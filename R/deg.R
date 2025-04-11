@@ -2328,3 +2328,201 @@ calculate_dvegs <- function(perturb_degs,
 
   return(sig_dvegs)
 }
+
+
+
+
+#' Calculate Overrepresented Genes in Pathways
+#'
+#' This function identifies overrepresented genes in pathways for a given cell state
+#' based on differential expression analysis. It uses the `fgsea` package to perform
+#' overrepresentation analysis (ORA) and collapses pathways to main pathways for clarity.
+#'
+#' @param degs_for_cell_state A data frame containing differential expression results
+#'   for a specific cell state. It must include columns `interpretation_simple`
+#'   (with values "Up", "Down", or "Maintained") and `gene_short_name`.
+#' @param pathway_type A character string specifying the type of pathway analysis to perform.
+#'   (Currently unused in the function but included for potential future use.)
+#' @param pathway_df A data frame containing pathway information. It must include columns
+#'   `gene_short_name` (gene names) and `gs_name` (pathway names).
+#' @param gene_universe A character vector of all possible genes to consider in the analysis.
+#'   If `NULL`, the universe is derived from the input data (`degs_for_cell_state`).
+#' @param q_val_thresh A numeric value specifying the q-value threshold for significance.
+#'   Default is 0.05.
+#'
+#' @return A data frame containing the results of the overrepresentation analysis (ORA),
+#'   including the pathways and their significance. The results are filtered to include
+#'   only main pathways for "Up" and "Down" genes.
+#'
+#' @details
+#' The function splits the input pathways into gene sets and performs ORA separately
+#' for "Up" and "Down" genes. It uses the `fgsea::fora` function for ORA and
+#' `fgsea::collapsePathwaysORA` to collapse pathways to main pathways. The results
+#' are combined and returned as a single data frame.
+#'
+#' @import dplyr
+#' @import fgsea
+#' @export
+calc_overrep_genes <- function(degs_for_cell_state,
+                               pathway_type,
+                               pathway_df,
+                               gene_universe = NULL,
+                               q_val_thresh = 0.05) {
+  up_genes <- degs_for_cell_state %>%
+    filter(interpretation_simple == "Up") %>%
+    pull(gene_short_name) %>%
+    unique()
+  down_genes <- degs_for_cell_state %>%
+    filter(interpretation_simple == "Down") %>%
+    pull(gene_short_name) %>%
+    unique()
+  maint_genes <- degs_for_cell_state %>%
+    filter(interpretation_simple == "Maintained") %>%
+    pull(gene_short_name) %>%
+    unique()
+  if (is.null(gene_universe)) {
+    gene_universe <- unique(c(up_genes, down_genes, maint_genes))
+  } else {
+    gene_universe <- unique(c(up_genes, down_genes, gene_universe))
+  }
+
+
+  gene_set_list <- split(x = pathway_df$gene_short_name, f = pathway_df$gs_name)
+  up_fora_res <- NULL
+  if (length(up_genes) > 1) {
+    # print (head(gene_set_list))
+    # print (head(up_genes))
+    # print (head(gene_universe))
+    up_fora_res <- fgsea::fora(gene_set_list, genes = up_genes, universe = gene_universe)
+    up_fora_res$interpretation_simple <- "Up"
+    up_fora_res <- up_fora_res[padj < q_val_thresh]
+    if (nrow(up_fora_res) > 0) {
+      up_fora_res_collapsed <- fgsea::collapsePathwaysORA(up_fora_res[order(up_fora_res$pval)],
+        gene_set_list,
+        genes = up_genes,
+        universe = gene_universe
+      )
+      if (length(up_fora_res_collapsed$mainPathways) > 0) {
+        up_fora_res <- up_fora_res[pathway %in% up_fora_res_collapsed$mainPathways]
+      }
+    }
+  }
+
+  down_fora_res <- NULL
+  if (length(down_genes) > 0) {
+    # print (head(gene_set_list))
+    # print (head(down_genes))
+    # print (head(gene_universe))
+    down_fora_res <- fgsea::fora(gene_set_list, genes = down_genes, universe = gene_universe)
+    down_fora_res$interpretation_simple <- "Down"
+    down_fora_res <- down_fora_res[padj < q_val_thresh]
+    if (nrow(down_fora_res) > 0) {
+      down_fora_res_collapsed <- fgsea::collapsePathwaysORA(down_fora_res[order(down_fora_res$pval)],
+        gene_set_list,
+        genes = down_genes,
+        universe = gene_universe
+      )
+      if (length(down_fora_res_collapsed$mainPathways) > 0) {
+        down_fora_res <- down_fora_res[pathway %in% down_fora_res_collapsed$mainPathways]
+      }
+    }
+  }
+
+  fora_res <- bind_rows(up_fora_res, down_fora_res)
+  fora_res <- fora_res %>% relocate(interpretation_simple)
+
+  return(fora_res)
+}
+
+
+#' Calculate Graph Overrepresented Genes
+#'
+#' This function calculates overrepresented pathways for genes in a given dataset,
+#' grouped by cell state. It processes the input data, simplifies gene interpretation,
+#' and computes overrepresented pathways for each cell state.
+#'
+#' @param ref_degs A data frame containing reference differentially expressed genes (DEGs).
+#'   It should include columns such as `cell_state`, `gene_short_name`, `gene_id`,
+#'   and `interpretation`. If the data frame contains a `gene_class_scores` column,
+#'   it will be unnested.
+#' @param pathway_type A character vector specifying the type of pathways to analyze.
+#'   Options are `"GO:BP"` (Biological Process) or `"GO:MF"` (Molecular Function).
+#'   Defaults to `c("GO:BP", "GO:MF")`.
+#' @param species A character string specifying the species for pathway analysis.
+#'   Defaults to `"Danio rerio"`.
+#'
+#' @return A nested data frame where each row corresponds to a cell state, and the
+#'   `overrep_pathways` column contains the overrepresented pathways for that cell state.
+#'
+#' @details The function simplifies the `interpretation` column into categories
+#'   (`"Up"`, `"Down"`, `"Maintained"`, or retains the original value if none match).
+#'   It then groups the data by `cell_state` and calculates overrepresented pathways
+#'   using the `calc_overrep_genes` function.
+#'
+#' @examples
+#' # Example usage:
+#' ref_degs <- data.frame(
+#'   cell_state = c("State1", "State2"),
+#'   gene_short_name = c("GeneA", "GeneB"),
+#'   gene_id = c("ID1", "ID2"),
+#'   interpretation = c("Upregulated", "Downregulated")
+#' )
+#' result <- calc_graph_overrep_genes(ref_degs, pathway_type = "GO:BP", species = "Danio rerio")
+#'
+#' @import dplyr
+#' @import tidyr
+#' @import purrr
+#'
+#' @export
+calc_graph_overrep_genes <- function(ref_degs,
+                                     pathway_type = c("GO:BP", "GO:MF"),
+                                     species = "Danio rerio") {
+  pathway_type <- match.arg(pathway_type)
+
+
+  if ("gene_class_scores" %in% colnames(ref_degs)) {
+    ref_degs <- ref_degs %>% tidyr::unnest(gene_class_scores)
+  }
+
+  deg_nested_df <- ref_degs %>%
+    select(cell_state, gene_short_name, gene_id, interpretation) %>%
+    mutate(interpretation_simple = case_when(
+      NA ~ NA,
+      interpretation %in% c(
+        "Upregulated",
+        "Activated",
+        "Selectively upregulated",
+        "Specifically upregulated",
+        "Increasingly upregulated",
+        "Transiently upregulated",
+        "Precursor-depleted"
+      ) ~ "Up",
+      interpretation %in% c(
+        "Downregulated",
+        "Deactivated",
+        "Selectively downregulated",
+        "Specifically downregulated",
+        "Decreasingly downregulated",
+        "Transiently downregulated",
+        "Precursor-specific"
+      ) ~ "Down",
+      interpretation %in% c(
+        "Maintained",
+        "Specifically maintained",
+        "Selectively maintained"
+      ) ~ "Maintained",
+      TRUE ~ interpretation
+    )) %>%
+    group_by(cell_state) %>%
+    tidyr::nest()
+
+  graph_degs_overrep_pathways <- deg_nested_df %>%
+    mutate(overrep_pathways = purrr::map(
+      .f = calc_overrep_genes,
+      .x = data,
+      pathway_type = pathway_type,
+      pathway_df = gene_set_df
+    ))
+
+  return(graph_degs_overrep_pathways)
+}
