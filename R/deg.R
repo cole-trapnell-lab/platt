@@ -2302,6 +2302,7 @@ calculate_dvegs <- function(perturb_degs,
     select(
       cell_state,
       term,
+      gene_id,
       gene_short_name,
       interpretation,
       interpretation_simple,
