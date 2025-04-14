@@ -378,13 +378,13 @@ assemble_partition <- function(cds,
   # selected_colData = selected_colData %>% mutate(cell_state = paste0(partition_name, cell_state))
   selected_colData <- colData(cds) %>%
     as_tibble() %>%
-    dplyr::select(cell, embryo, cluster, cell_state, subassembly_group)
+    dplyr::select(cell, !!sym(sample_group), cluster, !!sym(cell_group), subassembly_group)
 
   selected_colData$cds_row_id <- colData(cds) %>%
     as.data.frame() %>%
     row.names()
 
-  partition_results <- selected_colData %>% tidyr::nest(data = c(cds_row_id, cell, embryo, cluster, cell_state, subassembly_group))
+  partition_results <- selected_colData %>% tidyr::nest(data = c(cds_row_id, cell, !!sym(sample_group), cluster, !!sym(cell_group), subassembly_group))
 
   # partition_results$cell_plot_state = list(plot_cells(cds, color_cells_by="cell_state"))
   # partition_results$cell_plot_time = list(plot_cells(cds, color_cells_by=interval_col))
