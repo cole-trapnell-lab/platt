@@ -11,13 +11,13 @@ _See an explanation of gene patterns [here](https://cole-trapnell-lab.github.io/
 The function `compare_genes_within_state_graph()`:
 
 * `ccs`- a Hooke `cell_count_set` object
-* `graph` - a Platt `cell_state_graph` object
+* `graph` - an `igraph` object
 * `gene_ids` - a list of genes to subset the analysis to 
 * `cores` - number of cores 
 
 ```
 pf_graph_degs = compare_genes_over_graph(pf_ccs,
-                                         pf_cell_state_graph, 
+                                         pf_cell_state_graph@graph, 
                                          cores = 4)
 ```
 
