@@ -2396,7 +2396,7 @@ calc_overrep_genes <- function(degs_for_cell_state,
     # print (head(gene_universe))
     up_fora_res <- fgsea::fora(gene_set_list, genes = up_genes, universe = gene_universe)
     up_fora_res$interpretation_simple <- "Up"
-    up_fora_res <- up_fora_res[padj < q_val_thresh]
+    up_fora_res <- up_fora_res[up_fora_res$padj < q_val_thresh]
     if (nrow(up_fora_res) > 0) {
       up_fora_res_collapsed <- fgsea::collapsePathwaysORA(up_fora_res[order(up_fora_res$pval)],
         gene_set_list,
@@ -2416,7 +2416,7 @@ calc_overrep_genes <- function(degs_for_cell_state,
     # print (head(gene_universe))
     down_fora_res <- fgsea::fora(gene_set_list, genes = down_genes, universe = gene_universe)
     down_fora_res$interpretation_simple <- "Down"
-    down_fora_res <- down_fora_res[padj < q_val_thresh]
+    down_fora_res <- down_fora_res[down_fora_res$padj < q_val_thresh]
     if (nrow(down_fora_res) > 0) {
       down_fora_res_collapsed <- fgsea::collapsePathwaysORA(down_fora_res[order(down_fora_res$pval)],
         gene_set_list,
@@ -2479,7 +2479,10 @@ calc_graph_overrep_genes <- function(ref_degs,
                                      pathway_type = c("GO:BP", "GO:MF"),
                                      species = "Danio rerio") {
   pathway_type <- match.arg(pathway_type)
-
+  
+  gene_set =  msigdbr::msigdbr(species = species, subcategory = pathway_type)
+  gene_set_df = gene_set %>% dplyr::distinct(gs_name, gene_short_name=gene_symbol) %>% as.data.frame()
+  
 
   if ("gene_class_scores" %in% colnames(ref_degs)) {
     ref_degs <- ref_degs %>% tidyr::unnest(gene_class_scores)
