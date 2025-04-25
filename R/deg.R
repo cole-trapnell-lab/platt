@@ -850,7 +850,7 @@ compare_genes_within_state_graph <- function(ccs,
                                              gene_ids = NULL,
                                              group_nodes_by = NULL,
                                              log_fc_thresh = 1,
-                                             abs_expr_thresh = 1e-10,
+                                             abs_expr_thresh = 1e-3,
                                              sig_thresh = 0.05,
                                              min_samples_detected = 2,
                                              min_cells_per_pseudobulk = NULL,
@@ -1023,7 +1023,8 @@ compare_gene_expression_within_node <- function(cell_group,
                                                 expected_effect_mode_interval = c(-10, 10),
                                                 write_dir = NULL,
                                                 cores = 1,
-                                                max_simultaneous_genes = NULL) {
+                                                max_simultaneous_genes = NULL,
+                                                cv_threshold = NULL) {
   # now fit models per cell group
 
   cg_pb_cds <- pb_cds[, colData(pb_cds)[[state_term]] == cell_group]
@@ -1172,7 +1173,8 @@ compare_gene_expression_within_node <- function(cell_group,
                                            stderr_matrix,
                                            ambient_estimate_matrix,
                                            ambient_stderr_matrix,
-                                           sig_thresh) {
+                                           sig_thresh, 
+                                           cv_threshold) {
       ids <- intersect(rownames(estimate_matrix), rownames(ambient_estimate_matrix))
 
       ambient_estimate_matrix <- as.matrix(ambient_estimate_matrix[ids, ])
@@ -1186,7 +1188,8 @@ compare_gene_expression_within_node <- function(cell_group,
         PSEM = stderr_matrix,
         PEM_2 = ambient_estimate_matrix,
         PSEM_2 = ambient_stderr_matrix,
-        prefix = "perturb_to_ambient"
+        prefix = "perturb_to_ambient", 
+        cv_threshold = cv_threshold
       )
 
       perturb_to_ambient
@@ -1199,7 +1202,8 @@ compare_gene_expression_within_node <- function(cell_group,
       PSEM = pb_coeffs$stdev.unscaled,
       PEM_2 = ambient_estimate_matrix[row.names(pb_coeffs$coefficients), , drop = F],
       PSEM_2 = ambient_stderr_matrix[row.names(pb_coeffs$coefficients), , drop = F],
-      prefix = "ctrl_to_ambient"
+      prefix = "ctrl_to_ambient", 
+      cv_threshold = cv_threshold
     )
 
     cell_perturbations <- cell_perturbations %>%
@@ -1236,7 +1240,8 @@ compare_gene_expression_within_node <- function(cell_group,
       PEM = pb_coeffs$coefficients,
       PSEM = pb_coeffs$stdev.unscaled,
       prefix = "perturb_to_ctrl",
-      ash.control = list(mode = expected_effect_mode_interval)
+      ash.control = list(mode = expected_effect_mode_interval), 
+      cv_threshold = cv_threshold
     ))
 
   gene_map <- rowData(cg_pb_cds) %>%
@@ -1478,7 +1483,7 @@ contrast_helper <- function(state_1,
                             PSEM_2 = PSEM,
                             prefix = NULL,
                             ash.control = NULL,
-                            cv_threshold = 10) {
+                            cv_threshold = NULL) {
   ash.mixcompdist <- "uniform"
   coefficient_mode <- 0
 
@@ -1510,10 +1515,14 @@ contrast_helper <- function(state_1,
   cv_max <- pmax(abs(cv_state_1), abs(cv_state_2))
 
   # if the CV is big, take the smaller standard error
-  se_est <- ifelse(cv_max > cv_threshold,
-    min(state_1_effects_se[ids], state_2_effects_se[ids]),
-    sqrt(state_1_effects_se[ids]^2 + state_2_effects_se[ids]^2)
-  )
+  if (is.null(cv_threshold) == FALSE) {
+    se_est <- ifelse(cv_max > cv_threshold,
+                     min(state_1_effects_se[ids], state_2_effects_se[ids]),
+                     sqrt(state_1_effects_se[ids]^2 + state_2_effects_se[ids]^2)
+    )
+  } else {
+    se_est <- sqrt(state_1_effects_se[ids]^2 + state_2_effects_se[ids]^2)
+  }
 
   up_down_large_effect_skew <- NA
   effect_skewness_classic <- NA
