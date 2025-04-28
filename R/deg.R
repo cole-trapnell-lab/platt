@@ -847,7 +847,6 @@ compare_genes_within_state_graph <- function(ccs,
                                              assembly_group = NULL,
                                              state_graph = NULL,
                                              perturbations = NULL,
-                                             gene_ids = NULL,
                                              group_nodes_by = NULL,
                                              log_fc_thresh = 1,
                                              abs_expr_thresh = 1e-3,
@@ -857,6 +856,7 @@ compare_genes_within_state_graph <- function(ccs,
                                              cores = 1,
                                              write_dir = NULL,
                                              max_simultaneous_genes = NULL,
+                                             cv_threshold = 50,
                                              ...) {
   # to do make sure that ccs and state graph match
   # check if all nodes in the state graph exist in the cds
@@ -946,7 +946,8 @@ compare_genes_within_state_graph <- function(ccs,
       max_simultaneous_genes = max_simultaneous_genes,
       nuisance_model_formula_str = nuisance_model_formula_str,
       min_cells_per_pseudobulk = min_cells_per_pseudobulk,
-      write_dir = write_dir
+      write_dir = write_dir, 
+      cv_threshold = cv_threshold
     ))
 
 
@@ -1024,7 +1025,7 @@ compare_gene_expression_within_node <- function(cell_group,
                                                 write_dir = NULL,
                                                 cores = 1,
                                                 max_simultaneous_genes = NULL,
-                                                cv_threshold = NULL) {
+                                                cv_threshold = 50) {
   # now fit models per cell group
 
   cg_pb_cds <- pb_cds[, colData(pb_cds)[[state_term]] == cell_group]
@@ -1215,7 +1216,8 @@ compare_gene_expression_within_node <- function(cell_group,
         PSEM = pb_coeffs$stdev.unscaled,
         PEM_2 = ambient_estimate_matrix[row.names(pb_coeffs$coefficients), , drop = F],
         PSEM_2 = ambient_stderr_matrix[row.names(pb_coeffs$coefficients), , drop = F],
-        prefix = "perturb_to_ambient"
+        prefix = "perturb_to_ambient",
+        cv_threshold = cv_threshold
       ))
 
     cell_perturbations <- cell_perturbations %>%
@@ -1484,6 +1486,9 @@ contrast_helper <- function(state_1,
                             prefix = NULL,
                             ash.control = NULL,
                             cv_threshold = NULL) {
+  
+  print(cv_threshold)
+  
   ash.mixcompdist <- "uniform"
   coefficient_mode <- 0
 
@@ -1516,10 +1521,10 @@ contrast_helper <- function(state_1,
 
   # if the CV is big, take the smaller standard error
   if (is.null(cv_threshold) == FALSE) {
+    
     se_est <- ifelse(cv_max > cv_threshold,
-                     min(state_1_effects_se[ids], state_2_effects_se[ids]),
-                     sqrt(state_1_effects_se[ids]^2 + state_2_effects_se[ids]^2)
-    )
+                     pmin(state_1_effects_se[ids], state_2_effects_se[ids]),
+                     sqrt(state_1_effects_se[ids]^2 + state_2_effects_se[ids]^2))
   } else {
     se_est <- sqrt(state_1_effects_se[ids]^2 + state_2_effects_se[ids]^2)
   }
