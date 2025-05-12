@@ -323,7 +323,7 @@ unnest_degs <- function(ccs,
 #' This function estimates the ambient RNA in a given dataset.
 #'
 #' @param ccs A cell count matrix or similar object.
-#' @param abs_expr_thresh Absolute expression threshold. Default is 1e-10.
+#' @param abs_expr_thresh Absolute expression threshold. Default is 1e-3.
 #' @param min_samples_detected Minimum number of samples in which a gene must be detected. Default is 2.
 #' @param min_cells_per_pseudobulk Minimum number of cells per pseudobulk. Default is 3.
 #' @param cores Number of cores to use for parallel processing. Default is 1.
@@ -472,7 +472,7 @@ compare_genes_over_graph <- function(ccs,
                                      min_samples_detected = 2,
                                      min_cells_per_pseudobulk = 3,
                                      cores = 1,
-                                     cv_threshold = 10,
+                                     cv_threshold = NULL,
                                      ...) {
   if (is.null(group_nodes_by)) {
     pb_cds <- hooke:::pseudobulk_ccs_for_states(ccs, cell_agg_fun = "sum")
@@ -536,7 +536,7 @@ compare_genes_over_graph <- function(ccs,
 
   message("      collecting coefficients")
 
-
+  n <- dim(pb_cds)[2]
   pb_coeffs <- collect_coefficients_for_shrinkage(pb_cds, pb_group_models, abs_expr_thresh, term_to_keep = "cell_group")
 
   if (length(states_to_assess) == 0) {
@@ -564,6 +564,7 @@ compare_genes_over_graph <- function(ccs,
       log_fc_thresh = log_fc_thresh,
       abs_expr_thresh = abs_expr_thresh,
       cv_threshold = cv_threshold,
+      n = n,
       sig_thresh = sig_thresh,
       cores = cores
     ))
@@ -822,7 +823,7 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
 #' @param gene_ids A vector of gene IDs to be analyzed. Default is NULL.
 #' @param group_nodes_by A parameter to group nodes by. Default is NULL.
 #' @param log_fc_thresh Log fold change threshold. Default is 1.
-#' @param abs_expr_thresh Absolute expression threshold. Default is 1e-10.
+#' @param abs_expr_thresh Absolute expression threshold. Default is 1e-3.
 #' @param sig_thresh Significance threshold. Default is 0.05.
 #' @param min_samples_detected Minimum number of samples detected. Default is 2.
 #' @param min_cells_per_pseudobulk Minimum number of cells per pseudobulk. Default is NULL.
@@ -856,7 +857,7 @@ compare_genes_within_state_graph <- function(ccs,
                                              cores = 1,
                                              write_dir = NULL,
                                              max_simultaneous_genes = NULL,
-                                             cv_threshold = 50,
+                                             cv_threshold = NULL,
                                              ...) {
   # to do make sure that ccs and state graph match
   # check if all nodes in the state graph exist in the cds
@@ -947,14 +948,9 @@ compare_genes_within_state_graph <- function(ccs,
       nuisance_model_formula_str = nuisance_model_formula_str,
       min_cells_per_pseudobulk = min_cells_per_pseudobulk,
       write_dir = write_dir, 
-      cv_threshold = cv_threshold
+      cv_threshold = cv_threshold, 
+      abs_expr_thresh = abs_expr_thresh
     ))
-
-
-  # df %>%
-  #   tidyr::unnest(genes_within_cell_group) %>% tidyr::unnest(perturb_effects) %>%
-  #   left_join(rowData(pb_cds) %>% as.data.frame %>%  select(id, gene_short_name), by = c("id" = "id")) #%>%
-  #   group_by(cell_state) %>% tidyr::nest() %>% dplyr::rename(gene_class_scores = data)
 
   return(df)
 }
@@ -1017,7 +1013,7 @@ compare_gene_expression_within_node <- function(cell_group,
                                                 nuisance_model_formula_str = "0",
                                                 state_term = "cell_group",
                                                 log_fc_thresh = 1,
-                                                abs_expr_thresh = 1e-10,
+                                                abs_expr_thresh = 1e-3,
                                                 sig_thresh = 0.05,
                                                 min_cells_per_pseudobulk = NULL,
                                                 exclude_results_below_ambient = TRUE,
@@ -1025,7 +1021,7 @@ compare_gene_expression_within_node <- function(cell_group,
                                                 write_dir = NULL,
                                                 cores = 1,
                                                 max_simultaneous_genes = NULL,
-                                                cv_threshold = 50) {
+                                                cv_threshold = NULL) {
   # now fit models per cell group
 
   cg_pb_cds <- pb_cds[, colData(pb_cds)[[state_term]] == cell_group]
@@ -1121,7 +1117,7 @@ compare_gene_expression_within_node <- function(cell_group,
       model_formula_str = full_model_str,
       cores = cores
     ) %>% dplyr::select(gene_short_name, id, model, model_summary, status)
-
+    
     # pb_coeffs = collect_coefficients_for_limma(cg_pb_cds, pb_group_models, abs_expr_thresh) #coefficient_table(pb_group_models) %>%
 
     message("\tcollecting coefficients")
@@ -1166,71 +1162,6 @@ compare_gene_expression_within_node <- function(cell_group,
   # perturbation_ids = setdiff(colnames(estimate_matrix))
   cell_perturbations <- tidyr::tibble(term = unique(perturbation_ids))
 
-
-  if (is.null(ambient_estimate_matrix) == FALSE) {
-    message("\tcomparing to ambient")
-    compare_perturb_to_ambient <- function(perturb_name,
-                                           estimate_matrix,
-                                           stderr_matrix,
-                                           ambient_estimate_matrix,
-                                           ambient_stderr_matrix,
-                                           sig_thresh, 
-                                           cv_threshold) {
-      ids <- intersect(rownames(estimate_matrix), rownames(ambient_estimate_matrix))
-
-      ambient_estimate_matrix <- as.matrix(ambient_estimate_matrix[ids, ])
-      colnames(ambient_estimate_matrix) <- "Intercept"
-
-      ambient_stderr_matrix <- as.matrix(ambient_stderr_matrix[ids, ])
-      colnames(ambient_stderr_matrix) <- "Intercept"
-
-      perturb_to_ambient <- contrast_helper(perturb_name, "Intercept",
-        PEM = estimate_matrix,
-        PSEM = stderr_matrix,
-        PEM_2 = ambient_estimate_matrix,
-        PSEM_2 = ambient_stderr_matrix,
-        prefix = "perturb_to_ambient", 
-        cv_threshold = cv_threshold
-      )
-
-      perturb_to_ambient
-    }
-
-    # add ctrl comparison
-    ctrl_to_ambient <- contrast_helper("Control",
-      "Intercept",
-      PEM = pb_coeffs$coefficients,
-      PSEM = pb_coeffs$stdev.unscaled,
-      PEM_2 = ambient_estimate_matrix[row.names(pb_coeffs$coefficients), , drop = F],
-      PSEM_2 = ambient_stderr_matrix[row.names(pb_coeffs$coefficients), , drop = F],
-      prefix = "ctrl_to_ambient", 
-      cv_threshold = cv_threshold
-    )
-
-    cell_perturbations <- cell_perturbations %>%
-      mutate(perturb_to_ambient = purrr:::map(
-        .f = contrast_helper,
-        .x = term,
-        state_2 = "Intercept",
-        PEM = pb_coeffs$coefficients,
-        PSEM = pb_coeffs$stdev.unscaled,
-        PEM_2 = ambient_estimate_matrix[row.names(pb_coeffs$coefficients), , drop = F],
-        PSEM_2 = ambient_stderr_matrix[row.names(pb_coeffs$coefficients), , drop = F],
-        prefix = "perturb_to_ambient",
-        cv_threshold = cv_threshold
-      ))
-
-    cell_perturbations <- cell_perturbations %>%
-      tidyr::unnest(perturb_to_ambient) %>%
-      dplyr::left_join(ctrl_to_ambient, by = "id") %>%
-      dplyr::left_join(rowData(pb_cds) %>% as.data.frame() %>% dplyr::select(id, gene_short_name), by = c("id" = "id")) %>%
-      dplyr::group_by(term) %>%
-      tidyr::nest() %>%
-      dplyr::rename("ambient_effects" = data)
-  }
-
-
-
   cell_perturbations <- left_join(cell_perturbations, perturb_sf_summary, by = c("term" = "perturbation"))
 
   message(paste("\tcomputing contrasts for", unique(perturbation_ids)))
@@ -1241,6 +1172,7 @@ compare_gene_expression_within_node <- function(cell_group,
       state_2 = control_ids,
       PEM = pb_coeffs$coefficients,
       PSEM = pb_coeffs$stdev.unscaled,
+      n = dim(cg_pb_cds)[2], 
       prefix = "perturb_to_ctrl",
       ash.control = list(mode = expected_effect_mode_interval), 
       cv_threshold = cv_threshold
@@ -1310,6 +1242,7 @@ compare_gene_expression_within_node <- function(cell_group,
     )
     return(NULL)
   } else {
+    
     return(cell_perturbations)
   }
 }
@@ -1484,10 +1417,10 @@ contrast_helper <- function(state_1,
                             PEM_2 = PEM,
                             PSEM_2 = PSEM,
                             prefix = NULL,
+                            n = NULL, 
                             ash.control = NULL,
-                            cv_threshold = NULL) {
-  
-  print(cv_threshold)
+                            cv_threshold = NULL, 
+                            abs_expr_thresh = 1e-1) {
   
   ash.mixcompdist <- "uniform"
   coefficient_mode <- 0
@@ -1512,9 +1445,37 @@ contrast_helper <- function(state_1,
   log_mean_expression <- log(exp(state_1_effects[ids]) + exp(state_2_effects[ids]))
 
   effect_est <- state_1_effects[ids] - state_2_effects[ids]
-
-  cv_state_1 <- state_1_effects_se[ids] / state_1_effects[ids]
-  cv_state_2 <- state_2_effects_se[ids] / state_2_effects[ids]
+  
+  cv_state_1 <- state_1_effects_se[ids] * sqrt(n) / state_1_effects[ids]
+  cv_state_2 <- state_2_effects_se[ids] * sqrt(n) / state_2_effects[ids]
+  
+  z <- qnorm(0.975)
+  
+  # return TRUE if CI contains zero 
+  calc_CI <- function(beta, z, se) {
+    lower <- beta - z * se
+    upper <- beta + z * se
+    return(lower < 0 & upper > 0)
+  
+  }
+  
+  CI_1 = calc_CI(beta = state_1_effects[ids], z = z, se = state_1_effects_se[ids])
+  CI_2 = calc_CI(beta = state_2_effects[ids], z = z, se = state_2_effects_se[ids])
+  CI = CI_1 + CI_2
+  # if the CI contains 0, there are not enough counts 
+  
+  # state_1_expr = pnorm(state_1_effects[ids] - log(abs_expr_thresh),
+  #                      sd = state_1_effects_se[ids], lower.tail = FALSE)
+  # state_1_expr = (state_1_expr < 0.05)
+  # 
+  # state_2_expr = pnorm(state_2_effects[ids] - log(abs_expr_thresh),
+  #                      sd = state_2_effects_se[ids], lower.tail = FALSE)
+  # state_2_expr = (state_2_expr < 0.05)
+  # 
+  # expr = (state_1_expr + state_2_expr )
+  
+  # pnorm(estimate_matrix[, cell_state] - log(abs_expr_thresh),
+  #       sd = stderr_matrix[, cell_state], lower.tail = FALSE
 
   # get the max of each id
   cv_max <- pmax(abs(cv_state_1), abs(cv_state_2))
@@ -1522,7 +1483,7 @@ contrast_helper <- function(state_1,
   # if the CV is big, take the smaller standard error
   if (is.null(cv_threshold) == FALSE) {
     
-    se_est <- ifelse(cv_max > cv_threshold,
+    se_est <- ifelse(cv_max > cv_threshold & CI == 1,
                      pmin(state_1_effects_se[ids], state_2_effects_se[ids]),
                      sqrt(state_1_effects_se[ids]^2 + state_2_effects_se[ids]^2))
   } else {
@@ -1552,7 +1513,7 @@ contrast_helper <- function(state_1,
     effect_est <- effect_est - coefficient_mode
   }
 
-  shrunkren_res <- tryCatch(
+  shrunken_res <- tryCatch(
     {
       ashr::ash(effect_est, se_est, method = "fdr", mixcompdist = ash.mixcompdist, mode = 0)
     },
@@ -1569,15 +1530,14 @@ contrast_helper <- function(state_1,
     }
   )
 
-
-  contrast_res <- tidyr::tibble(
+ contrast_res <- tidyr::tibble(
     id = ids, # row.names(PEM),
     raw_lfc = effect_est,
     raw_lfc_se = se_est,
     raw_p_value = pnorm(abs(effect_est), sd = se_est, lower.tail = FALSE),
-    shrunken_lfc = shrunkren_res$result$PosteriorMean,
-    shrunken_lfc_se = shrunkren_res$result$PosteriorSD,
-    p_value = shrunkren_res$result$lfsr,
+    shrunken_lfc = shrunken_res$result$PosteriorMean,
+    shrunken_lfc_se = shrunken_res$result$PosteriorSD,
+    p_value = shrunken_res$result$lfsr,
     # ash_mixcompdist=ash.mixcompdist,
     effect_skew = up_down_large_effect_skew,
     log_mean_expression,
@@ -1637,15 +1597,14 @@ compare_genes_in_cell_state <- function(cell_state,
                                         state_graph,
                                         estimate_matrix,
                                         stderr_matrix,
-                                        # ambient_estimate_matrix = NULL,
-                                        # ambient_stderr_matrix = NULL,
+                                        n,
                                         state_term = "cell_group",
                                         log_fc_thresh = 1,
                                         abs_expr_thresh = 1e-3,
                                         sig_thresh = 0.05,
                                         cores = 1,
                                         expected_effect_mode_interval = c(-10, 10),
-                                        cv_threshold = 10) {
+                                        cv_threshold = NULL) {
   parents <- get_parents(state_graph, cell_state) # igraph::neighbors(state_graph, cell_state, mode="in")
   parents <- intersect(parents, colnames(estimate_matrix))
 
@@ -1674,32 +1633,6 @@ compare_genes_in_cell_state <- function(cell_state,
   expr_df$expr_self <- p.adjust(expr_df$expr_self, method = "BH") < sig_thresh
   genes_to_test <- expr_df$gene_id
 
-
-  # cell_state_to_ambient = contrast_helper(cell_state, "Intercept",
-  #                                         PEM = estimate_matrix,
-  #                                         PSEM = stderr_matrix,
-  #                                         prefix = "cell_state")
-
-
-  # expr_df = left_join(expr_df, cell_state_to_ambient, by = c("gene_id" = "id"))
-
-  # }
-
-  # else {
-  # cell_state_to_ambient = contrast_helper(cell_state, "Intercept",
-  #                                         PEM = estimate_matrix,
-  #                                         PSEM = stderr_matrix,
-  #                                         PEM_2 = ambient_estimate_matrix,
-  #                                         PSEM_2 = ambient_stderr_matrix,
-  #                                         prefix = "cell_state")
-  #
-  #   expr_df = left_join(expr_df, cell_state_to_ambient, by = c("gene_id" = "id"))
-  #   expr_df$expr_self = p.adjust(expr_df$cell_state_raw_p_value) < sig_thresh &
-  #                       expr_df$cell_state_raw_lfc > log_fc_thresh
-  #   cell_state_genes = cell_state_to_ambient %>% filter(cell_state_raw_lfc > abs_expr_thresh) %>% pull(id)
-  #
-  # }
-  #
   expr_df$expressed_in_parents <- NA
   expr_df$expressed_in_siblings <- NA
   expr_df$higher_than_parents <- NA
@@ -1724,31 +1657,13 @@ compare_genes_in_cell_state <- function(cell_state,
     expressed_in_parents_mat <- expressed_in_parents_mat < sig_thresh
     expr_df$expressed_in_parents <- Matrix::rowSums(expressed_in_parents_mat) > 0
 
-    # }
-
-    # else {
-    #   parents_to_ambient = contrast_helper(parents, "Intercept",
-    #                                        PEM = estimate_matrix,
-    #                                        PSEM = stderr_matrix,
-    #                                        PEM_2 = ambient_estimate_matrix,
-    #                                        PSEM_2 = ambient_stderr_matrix,
-    #                                        prefix = "parents")
-    #
-    #   expr_df = left_join(expr_df, parents_to_ambient, by = c("gene_id" = "id"))
-    #   expr_df$expressed_in_parents = p.adjust(expr_df$parents_raw_p_value, method="BH") < sig_thresh &
-    #                                  expr_df$parents_raw_lfc > log_fc_thresh
-    #
-    #   parent_genes = parents_to_ambient %>% filter(parents_raw_lfc > abs_expr_thresh) %>% pull(id)
-    #   genes_to_test = intersect(cell_state_genes, parent_genes)
-    # }
-    #
-
     cell_state_to_parents <- contrast_helper(cell_state, parents,
       PEM = estimate_matrix[genes_to_test, ],
       PSEM = stderr_matrix[genes_to_test, ],
       prefix = "cell_state_to_parents",
       ash.control = list(mode = expected_effect_mode_interval),
-      cv_threshold = cv_threshold
+      cv_threshold = cv_threshold, 
+      n = n
     )
 
 
@@ -1757,7 +1672,8 @@ compare_genes_in_cell_state <- function(cell_state,
       PSEM = stderr_matrix[genes_to_test, ],
       prefix = "parents_to_cell_state",
       ash.control = list(mode = expected_effect_mode_interval),
-      cv_threshold = cv_threshold
+      cv_threshold = cv_threshold, 
+      n = n
     )
 
     expr_df <- left_join(expr_df, cell_state_to_parents, by = c("gene_id" = "id"))
@@ -1798,44 +1714,14 @@ compare_genes_in_cell_state <- function(cell_state,
     expressed_in_siblings_mat <- expressed_in_siblings_mat < sig_thresh
     expr_df$expressed_in_siblings <- Matrix::rowSums(expressed_in_siblings_mat) > 0
 
-    # } else {
-    #   siblings_to_ambient = contrast_helper(siblings, "Intercept",
-    #                                         PEM = estimate_matrix,
-    #                                         PSEM = stderr_matrix,
-    #                                         PEM_2 = ambient_estimate_matrix,
-    #                                         PSEM_2 = ambient_stderr_matrix,
-    #                                         prefix = "siblings")
-    #
-    #   expr_df = left_join(expr_df, siblings_to_ambient, by = c("gene_id" = "id"))
-    #   expr_df$expressed_in_siblings = p.adjust(expr_df$siblings_raw_p_value, method="BH") < sig_thresh &
-    #                                   expr_df$siblings_raw_lfc > log_fc_thresh
-    #
-    #   sibling_genes = siblings_to_ambient %>% filter(siblings_raw_lfc > abs_expr_thresh) %>% pull(id)
-    #   genes_to_test = intersect(cell_state_genes, sibling_genes)
-    # }
-
-    # cell_state_to_siblings = contrast_helper(cell_state, siblings,
-    #                                          PEM = estimate_matrix[genes_to_test,],
-    #                                          PSEM = stderr_matrix[genes_to_test,],
-    #                                          prefix = "cell_state_to_siblings")
-    #
-    #
-    # siblings_to_cell_state = contrast_helper(siblings, cell_state,
-    #                                          PEM = estimate_matrix[genes_to_test,],
-    #                                          PSEM = stderr_matrix[genes_to_test,],
-    #                                          prefix = "siblings_to_cell_state")
-    #
-    # expr_df = left_join(expr_df, cell_state_to_siblings, by = c("gene_id" = "id"))
-    # expr_df = left_join(expr_df, siblings_to_cell_state, by = c("gene_id" = "id"))
-
-
     higher_than_siblings_mat <- lapply(siblings, function(sibling) {
       cell_state_to_sibling <- contrast_helper(cell_state, sibling,
         PEM = estimate_matrix[genes_to_test, ],
         PSEM = stderr_matrix[genes_to_test, ],
         prefix = "cell_state_to_sibling",
         ash.control = list(mode = expected_effect_mode_interval),
-        cv_threshold = cv_threshold
+        cv_threshold = cv_threshold, 
+        n = n
       )
 
       p.adjust(cell_state_to_sibling$cell_state_to_sibling_p_value) < sig_thresh &
@@ -1851,7 +1737,8 @@ compare_genes_in_cell_state <- function(cell_state,
         PSEM = stderr_matrix[genes_to_test, ],
         prefix = "sibling_to_cell_state",
         ash.control = list(mode = expected_effect_mode_interval),
-        cv_threshold = cv_threshold
+        cv_threshold = cv_threshold, 
+        n = n
       )
 
       p.adjust(sibling_to_cell_state$sibling_to_cell_state_p_value) < sig_thresh &
@@ -1902,42 +1789,14 @@ compare_genes_in_cell_state <- function(cell_state,
     expressed_in_children_mat <- expressed_in_children_mat < sig_thresh
     expr_df$expressed_in_children <- Matrix::rowSums(expressed_in_children_mat) > 0
 
-    # } else {
-    #  children_to_ambient = contrast_helper(children, "Intercept",
-    #                                        PEM = estimate_matrix,
-    #                                        PSEM = stderr_matrix,
-    #                                        PEM_2 = ambient_estimate_matrix,
-    #                                        PSEM_2 = ambient_stderr_matrix,
-    #                                        prefix = "children")
-    #  expr_df = left_join(expr_df, children_to_ambient, by = c("gene_id" = "id"))
-    #  expr_df$expressed_in_children = p.adjust(expr_df$children_raw_p_value, method="BH") < sig_thresh &
-    #                                  expr_df$children_raw_lfc > log_fc_thresh
-    #
-    #  children_genes = children_to_ambient %>% filter(children_raw_lfc > abs_expr_thresh) %>% pull(id)
-    #  genes_to_test = intersect(cell_state_genes, children_genes)
-    # }
-    #
-    # cell_state_to_children = contrast_helper(cell_state, children,
-    #                                          PEM = estimate_matrix[genes_to_test,],
-    #                                          PSEM = stderr_matrix[genes_to_test,],
-    #                                          prefix = "cell_state_to_children")
-    #
-    #
-    # children_to_cell_state = contrast_helper(children, cell_state,
-    #                                         PEM = estimate_matrix[genes_to_test,],
-    #                                         PSEM = stderr_matrix[genes_to_test,],
-    #                                         prefix = "children_to_cell_state")
-    #
-    # expr_df = left_join(expr_df, cell_state_to_children, by = c("gene_id" = "id"))
-    # expr_df = left_join(expr_df, children_to_cell_state, by = c("gene_id" = "id"))
-
     higher_than_children_mat <- lapply(children, function(child) {
       cell_state_to_child <- contrast_helper(cell_state, child,
         PEM = estimate_matrix[genes_to_test, ],
         PSEM = stderr_matrix[genes_to_test, ],
         prefix = "cell_state_to_child",
         ash.control = list(mode = expected_effect_mode_interval),
-        cv_threshold = cv_threshold
+        cv_threshold = cv_threshold, 
+        n = n
       )
 
       p.adjust(cell_state_to_child$cell_state_to_child_p_value) < sig_thresh &
@@ -1953,7 +1812,8 @@ compare_genes_in_cell_state <- function(cell_state,
         PSEM = stderr_matrix[genes_to_test, ],
         prefix = "child_to_cell_state",
         ash.control = list(mode = expected_effect_mode_interval),
-        cv_threshold = cv_threshold
+        cv_threshold = cv_threshold, 
+        n = n
       )
 
       p.adjust(child_to_cell_state$child_to_cell_state_p_value) < sig_thresh &
