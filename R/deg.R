@@ -472,7 +472,7 @@ compare_genes_over_graph <- function(ccs,
                                      min_samples_detected = 2,
                                      min_cells_per_pseudobulk = 3,
                                      cores = 1,
-                                     cv_threshold = NULL,
+                                     cv_threshold = 100,
                                      ...) {
   if (is.null(group_nodes_by)) {
     pb_cds <- hooke:::pseudobulk_ccs_for_states(ccs, cell_agg_fun = "sum")
@@ -857,7 +857,7 @@ compare_genes_within_state_graph <- function(ccs,
                                              cores = 1,
                                              write_dir = NULL,
                                              max_simultaneous_genes = NULL,
-                                             cv_threshold = NULL,
+                                             cv_threshold = 100,
                                              ...) {
   # to do make sure that ccs and state graph match
   # check if all nodes in the state graph exist in the cds
@@ -1446,46 +1446,38 @@ contrast_helper <- function(state_1,
 
   effect_est <- state_1_effects[ids] - state_2_effects[ids]
   
-  cv_state_1 <- state_1_effects_se[ids] * sqrt(n) / state_1_effects[ids]
-  cv_state_2 <- state_2_effects_se[ids] * sqrt(n) / state_2_effects[ids]
-  
-  z <- qnorm(0.975)
-  
-  # return TRUE if CI contains zero 
-  calc_CI <- function(beta, z, se) {
-    lower <- beta - z * se
-    upper <- beta + z * se
-    return(lower < 0 & upper > 0)
-  
-  }
-  
-  CI_1 = calc_CI(beta = state_1_effects[ids], z = z, se = state_1_effects_se[ids])
-  CI_2 = calc_CI(beta = state_2_effects[ids], z = z, se = state_2_effects_se[ids])
-  CI = CI_1 + CI_2
-  # if the CI contains 0, there are not enough counts 
-  
-  # state_1_expr = pnorm(state_1_effects[ids] - log(abs_expr_thresh),
-  #                      sd = state_1_effects_se[ids], lower.tail = FALSE)
-  # state_1_expr = (state_1_expr < 0.05)
-  # 
-  # state_2_expr = pnorm(state_2_effects[ids] - log(abs_expr_thresh),
-  #                      sd = state_2_effects_se[ids], lower.tail = FALSE)
-  # state_2_expr = (state_2_expr < 0.05)
-  # 
-  # expr = (state_1_expr + state_2_expr )
-  
-  # pnorm(estimate_matrix[, cell_state] - log(abs_expr_thresh),
-  #       sd = stderr_matrix[, cell_state], lower.tail = FALSE
-
-  # get the max of each id
-  cv_max <- pmax(abs(cv_state_1), abs(cv_state_2))
-
   # if the CV is big, take the smaller standard error
   if (is.null(cv_threshold) == FALSE) {
     
-    se_est <- ifelse(cv_max > cv_threshold & CI == 1,
+    cv_state_1 <- state_1_effects_se[ids] * sqrt(n) / state_1_effects[ids]
+    cv_state_2 <- state_2_effects_se[ids] * sqrt(n) / state_2_effects[ids]
+    
+    # get the max of each id
+    cv_max <- pmax(abs(cv_state_1), abs(cv_state_2))
+    
+    reliable_state_1_effects = abs(cv_state_1) < cv_threshold
+    reliable_state_2_effects = abs(cv_state_2) < cv_threshold
+    
+    # what is the smallest nonzero expression value in each condition
+    min_state_1_effect = min(state_1_effects[reliable_state_1_effects])
+    min_state_1_effect_se = mean(state_1_effects_se[which(state_1_effects == min_state_1_effect)])
+    
+    min_state_2_effect = min(state_2_effects[reliable_state_2_effects])
+    min_state_2_effect_se = mean(state_2_effects_se[which(state_2_effects == min_state_2_effect)])
+    
+    # set any gene that has a lower value to that determined threshold value
+    state_1_effects_thresholded = pmax(state_1_effects, min_state_1_effect)
+    state_2_effects_thresholded = pmax(state_2_effects, min_state_2_effect)
+    
+    effect_est = state_1_effects_thresholded[ids] - state_2_effects_thresholded[ids]
+    
+    # does it make sense to use 
+    # things that have been cv thresholded have been capped, take the smaller std error
+    se_est <- ifelse(cv_max > cv_threshold,
                      pmin(state_1_effects_se[ids], state_2_effects_se[ids]),
                      sqrt(state_1_effects_se[ids]^2 + state_2_effects_se[ids]^2))
+    
+    
   } else {
     se_est <- sqrt(state_1_effects_se[ids]^2 + state_2_effects_se[ids]^2)
   }
