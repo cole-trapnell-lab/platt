@@ -2141,7 +2141,7 @@ calculate_dvegs <- function(perturb_degs,
         "Specifically upregulated",
         "Increasingly upregulated",
         "Transiently upregulated",
-        "Precursor-specific"
+        "Precursor-depleted"
       ) ~ "Up",
       interpretation %in% c(
         "Downregulated",
@@ -2150,7 +2150,7 @@ calculate_dvegs <- function(perturb_degs,
         "Specifically downregulated",
         "Decreasingly downregulated",
         "Transiently downregulated",
-        "Precursor-depleted"
+        "Precursor-specific"
       ) ~ "Down",
       interpretation %in% c(
         "Maintained",
