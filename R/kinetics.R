@@ -57,6 +57,7 @@ plot_cell_type_control_kinetics <- function(control_ccm,
                                             color_points_by = NULL,
                                             size = 0.5,
                                             alpha = 0.5,
+                                            linewidth= 1,
                                             raw_counts = FALSE) {
   assertthat::assert_that(nrow(newdata) == 1)
 
@@ -237,7 +238,8 @@ plot_cell_type_control_kinetics <- function(control_ccm,
     geom_point(
       data = sel_ccs_counts_long,
       aes(x = !!sym(interval_col), y = num_cells + exp(log_abund_detection_thresh), color = expt, alpha = alpha),
-      position = "jitter", size = size
+      position = "jitter", 
+      size = size
     ) +
     facet_wrap(~cell_group, scales = "free_y", nrow = nrow) +
     monocle3:::monocle_theme_opts()
@@ -253,8 +255,10 @@ plot_cell_type_control_kinetics <- function(control_ccm,
       monocle3:::monocle_theme_opts()
     kinetic_plot <- kinetic_plot +
       # scale_color_manual(values = my_colors) +
-      geom_line(aes(y = exp(log_abund) + exp(log_abund_detection_thresh)), linewidth = 1)
+      geom_line(aes(y = exp(log_abund) + exp(log_abund_detection_thresh)), linewidth = linewidth)
   } else {
+    
+    sel_ccs_counts_long[[color_points_by]] <- as.character(sel_ccs_counts_long[[color_points_by]])
     kinetic_plot <- ggplot(wt_timepoint_pred_df, aes(x = !!sym(interval_col))) +
       geom_point(
         data = sel_ccs_counts_long,
@@ -264,9 +268,17 @@ plot_cell_type_control_kinetics <- function(control_ccm,
       ) +
       facet_wrap(~cell_group, scales = "free_y", nrow = nrow) +
       monocle3:::monocle_theme_opts()
-    kinetic_plot <- kinetic_plot +
-      scale_color_manual(values = my_colors) +
-      geom_line(aes(y = exp(log_abund) + exp(log_abund_detection_thresh), color = !!sym(color_points_by)), linewidth = 1)
+    
+    if (is.null(wt_timepoint_pred_df[[color_points_by]])) {
+      kinetic_plot <- kinetic_plot +
+        scale_color_manual(values = my_colors) +
+        geom_line(aes(y = exp(log_abund) + exp(log_abund_detection_thresh)), linewidth = linewidth)
+    } else {
+      kinetic_plot <- kinetic_plot +
+        scale_color_manual(values = my_colors) +
+        geom_line(aes(y = exp(log_abund) + exp(log_abund_detection_thresh), color = !!sym(color_points_by)), linewidth = linewidth)
+    }
+   
   }
 
   # kinetic_plot = ggplot(wt_timepoint_pred_df, aes(x = !!sym(interval_col))) +
@@ -405,6 +417,7 @@ plot_cell_type_perturb_kinetics <- function(perturbation_ccm,
   extant_wt_tbl <- get_extant_cell_types(perturbation_ccm,
     start_time,
     stop_time,
+    interval_col = interval_col,
     log_abund_detection_thresh = log_abund_detection_thresh,
     newdata = newdata_wt
   )
@@ -413,7 +426,7 @@ plot_cell_type_perturb_kinetics <- function(perturbation_ccm,
     dplyr::group_by(cell_group) %>%
     dplyr::slice_max(percent_max_abund, n = 1) %>%
     dplyr::group_by(cell_group) %>%
-    dplyr::slice_min(timepoint, n = 1) %>%
+    dplyr::slice_min(!!sym(interval_col), n = 1) %>%
     dplyr::pull(cell_group)
 
   sel_ccs_counts <- monocle3::normalized_counts(perturbation_ccm@ccs, norm_method = "size_only", pseudocount = 0)
@@ -472,7 +485,7 @@ plot_cell_type_perturb_kinetics <- function(perturbation_ccm,
   # INSERT TIME by peak abundances
   perturb_vs_wt_nodes <- dplyr::left_join(perturb_vs_wt_nodes,
     extant_wt_tbl %>% dplyr::select(cell_group, !!sym(interval_col), present_above_thresh),
-    by = c("cell_group" = "cell_group", "t1" = "timepoint")
+    by = c("cell_group" = "cell_group", "t1" = interval_col)
   )
 
   # if (is.null(cell_groups)){
@@ -488,7 +501,7 @@ plot_cell_type_perturb_kinetics <- function(perturbation_ccm,
 
 
   perturb_vs_wt_nodes$t1 <- as.numeric(perturb_vs_wt_nodes$t1)
-  sel_ccs_counts_long$timepoint <- as.numeric(sel_ccs_counts_long$timepoint)
+  sel_ccs_counts_long[[interval_col]] <- as.numeric(sel_ccs_counts_long[[interval_col]])
 
   kinetic_plot <- ggplot(perturb_vs_wt_nodes, aes(x = !!sym(paste(interval_col, "_x", sep = "")))) +
     geom_point(
@@ -529,7 +542,7 @@ plot_cell_type_perturb_kinetics <- function(perturbation_ccm,
     facet_wrap(~cell_group, scales = "free_y", nrow = nrow) +
     monocle3:::monocle_theme_opts() +
     geom_hline(yintercept = exp(log_abund_detection_thresh), color = "lightgrey") +
-    xlab("timepoint")
+    xlab(interval_col)
 
   # kinetic_plot = ggplot(perturb_vs_wt_nodes, aes(x = !!sym(paste(interval_col, "_x", sep="")))) +
   #   geom_line(aes(y = exp(log_abund_x) +exp(log_abund_detection_thresh), linetype = "Wild-type")) +
