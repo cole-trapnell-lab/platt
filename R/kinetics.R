@@ -143,6 +143,7 @@ plot_cell_type_control_kinetics <- function(control_ccm,
     start_time,
     stop_time,
     log_abund_detection_thresh = log_abund_detection_thresh,
+    interval_col = interval_col, 
     newdata = newdata
   )
 
@@ -150,7 +151,7 @@ plot_cell_type_control_kinetics <- function(control_ccm,
     dplyr::group_by(cell_group) %>%
     dplyr::slice_max(percent_max_abund, n = 1) %>%
     dplyr::group_by(cell_group) %>%
-    dplyr::slice_min(timepoint, n = 1) %>%
+    dplyr::slice_min(!!sym(interval_col), n = 1) %>%
     dplyr::pull(cell_group)
 
   sel_ccs_counts <- monocle3::normalized_counts(control_ccm@ccs, norm_method = "size_only", pseudocount = 0)
@@ -226,26 +227,26 @@ plot_cell_type_control_kinetics <- function(control_ccm,
     sel_ccs_counts_long <- sel_ccs_counts_long %>% dplyr::filter(cell_group %in% cell_groups)
   }
 
-  wt_timepoint_pred_df$timepoint <- as.numeric(wt_timepoint_pred_df$timepoint)
-  sel_ccs_counts_long$timepoint <- as.numeric(sel_ccs_counts_long$timepoint)
+  wt_timepoint_pred_df[[interval_col]] <- as.numeric(wt_timepoint_pred_df[[interval_col]])
+  sel_ccs_counts_long[[interval_col]] <- as.numeric(sel_ccs_counts_long[[interval_col]])
 
-  sel_ccs_counts_long <- sel_ccs_counts_long %>% dplyr::filter(timepoint >= start_time, timepoint <= stop_time)
+  sel_ccs_counts_long <- sel_ccs_counts_long %>% dplyr::filter(!!sym(interval_col) >= start_time, !!sym(interval_col) <= stop_time)
 
   kinetic_plot <-
-    ggplot(wt_timepoint_pred_df, aes(x = timepoint)) +
+    ggplot(wt_timepoint_pred_df, aes(x = !!sym(interval_col))) +
     geom_point(
       data = sel_ccs_counts_long,
-      aes(x = timepoint, y = num_cells + exp(log_abund_detection_thresh), color = expt, alpha = alpha),
+      aes(x = !!sym(interval_col), y = num_cells + exp(log_abund_detection_thresh), color = expt, alpha = alpha),
       position = "jitter", size = size
     ) +
     facet_wrap(~cell_group, scales = "free_y", nrow = nrow) +
     monocle3:::monocle_theme_opts()
 
   if (is.null(color_points_by)) {
-    kinetic_plot <- ggplot(wt_timepoint_pred_df, aes(x = timepoint)) +
+    kinetic_plot <- ggplot(wt_timepoint_pred_df, aes(x = !!sym(interval_col))) +
       geom_point(
         data = sel_ccs_counts_long,
-        aes(x = timepoint, y = num_cells + exp(log_abund_detection_thresh)), alpha = alpha,
+        aes(x = !!sym(interval_col), y = num_cells + exp(log_abund_detection_thresh)), alpha = alpha,
         position = "jitter", size = size
       ) +
       facet_wrap(~cell_group, scales = "free_y", nrow = nrow) +
@@ -254,10 +255,10 @@ plot_cell_type_control_kinetics <- function(control_ccm,
       # scale_color_manual(values = my_colors) +
       geom_line(aes(y = exp(log_abund) + exp(log_abund_detection_thresh)), linewidth = 1)
   } else {
-    kinetic_plot <- ggplot(wt_timepoint_pred_df, aes(x = timepoint)) +
+    kinetic_plot <- ggplot(wt_timepoint_pred_df, aes(x = !!sym(interval_col))) +
       geom_point(
         data = sel_ccs_counts_long,
-        aes(x = timepoint, y = num_cells + exp(log_abund_detection_thresh), color = !!sym(color_points_by)),
+        aes(x = !!sym(interval_col), y = num_cells + exp(log_abund_detection_thresh), color = !!sym(color_points_by)),
         alpha = alpha,
         position = "jitter", size = size
       ) +
