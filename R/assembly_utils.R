@@ -729,6 +729,7 @@ fit_wt_model <- function(cds,
                          penalize_by_distance = TRUE,
                          embryo_size_factors = NULL,
                          batches_excluded_from_assembly = c(),
+                         include_time_in_nuisance = FALSE, 
                          ...) {
   if (is.null(ctrl_ids)) {
     ctrl_ids <- unique(colData(cds)[[perturbation_col]])
@@ -736,8 +737,11 @@ fit_wt_model <- function(cds,
   }
 
   wt_cds <- cds[, colData(cds)[[perturbation_col]] %in% ctrl_ids]
-  wt_cds <- wt_cds[, colData(wt_cds)[[batch_col]] %in% batches_excluded_from_assembly == FALSE]
-
+  
+  if (is.null(batch_col) == FALSE) {
+    wt_cds <- wt_cds[, colData(wt_cds)[[batch_col]] %in% batches_excluded_from_assembly == FALSE]
+  }
+  
 
   if (ncol(wt_cds) == 0) {
     message("No control cells. Skipping...")
@@ -771,14 +775,15 @@ fit_wt_model <- function(cds,
     stop("Only a single cell group. Skipping...")
   }
 
-
-  # # make this any column
-  if (length(unique(colData(wt_ccs)[[batch_col]])) > 1) {
-    # main_model_formula_str = paste(main_model_formula_str, "+expt")
-    nuisance_model_formula_str <- paste(nuisance_model_formula_str, "+", batch_col)
-    colData(wt_ccs)[[batch_col]] <- as.factor(colData(wt_ccs)[[batch_col]])
+  # make this any column
+  if (is.null(batch_col) == FALSE) {
+    if (length(unique(colData(wt_ccs)[[batch_col]])) > 1) {
+      # main_model_formula_str = paste(main_model_formula_str, "+ expt")
+      nuisance_model_formula_str <- paste(nuisance_model_formula_str, "+", batch_col)
+      colData(wt_ccs)[[batch_col]] <- as.factor(colData(wt_ccs)[[batch_col]])
+    }
   }
-
+  
   if (is.null(main_model_formula_str)) {
     main_model_formula_str <- build_interval_formula(wt_ccs,
       interval_var = interval_col,
@@ -791,7 +796,11 @@ fit_wt_model <- function(cds,
     nuisance_model_formula_str_xxx <- stringr::str_replace_all(nuisance_model_formula_str, "~", "")
     full_model_formula_str <- paste("~", nuisance_model_formula_str_xxx, "+", main_model_formula_str_xxx)
 
-
+    # make these formulas the same 
+    if (include_time_in_nuisance) {
+      nuisance_model_formula_str = full_model_formula_str
+    }
+    
     message(paste("Fitting wild type model with main effects:", full_model_formula_str))
     message(paste("Nuisance effects:", nuisance_model_formula_str))
   }
