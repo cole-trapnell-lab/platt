@@ -8,7 +8,7 @@ get_time_window <- function(genotype, ccs, interval_col, perturbation_col = gene
 }
 
 #' @export
-get_perturbation_effects <- function(ccm, interval_col = "timepoint", newdata = tibble()) {
+get_perturbation_effects <- function(ccm, interval_col = "timepoint", newdata = tibble(), adjust_q_values = FALSE) {
   timepoints <- colData(ccm@ccs)[[interval_col]] %>% unique()
   df <- data.frame(timepoint = timepoints)
 
@@ -22,7 +22,8 @@ get_perturbation_effects <- function(ccm, interval_col = "timepoint", newdata = 
     mutate(genotype_eff = purrr::map(
       .f = make_contrast,
       .x = data,
-      ccm = ccm
+      ccm = ccm, 
+      adjust_q_values = adjust_q_values
     )) %>%
     unnest(c(data, genotype_eff))
   return(df)
@@ -267,7 +268,7 @@ fit_genotype_ccm <- function(genotype,
 #' wrapper function to easily plot output of fit_genotype_ccm
 #' @param ccm a cell_count_model object
 #' @export
-make_contrast <- function(ccm, newdata = tibble()) {
+make_contrast <- function(ccm, newdata = tibble(), adjust_q_values = FALSE) {
   if (nrow(newdata) > 0) {
     newdata_wt <- cross_join(tibble(knockout = FALSE), newdata)
     newdata_mt <- cross_join(tibble(knockout = TRUE), newdata)
@@ -278,7 +279,7 @@ make_contrast <- function(ccm, newdata = tibble()) {
 
   wt_cond <- estimate_abundances(ccm, newdata = newdata_wt)
   mt_cond <- estimate_abundances(ccm, newdata = newdata_mt)
-  tbl <- compare_abundances(ccm, wt_cond, mt_cond)
+  tbl <- compare_abundances(ccm, wt_cond, mt_cond, adjust_q_values = adjust_q_values)
   return(tbl)
 }
 
