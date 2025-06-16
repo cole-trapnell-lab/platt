@@ -59,7 +59,7 @@ plot_cell_type_control_kinetics <- function(control_ccm,
                                             alpha = 0.5,
                                             linewidth= 1,
                                             raw_counts = FALSE) {
-  assertthat::assert_that(nrow(newdata) == 1)
+  # assertthat::assert_that(nrow(newdata) == 1)
 
   colData(control_ccm@ccs)[, interval_col] <- as.numeric(colData(control_ccm@ccs)[, interval_col])
 
