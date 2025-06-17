@@ -1420,7 +1420,7 @@ contrast_helper <- function(state_1,
                             n = NULL, 
                             ash.control = NULL,
                             cv_threshold = NULL, 
-                            abs_expr_thresh = 1e-1) {
+                            abs_expr_thresh = 1e-3) {
   
   ash.mixcompdist <- "uniform"
   coefficient_mode <- 0
