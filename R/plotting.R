@@ -1247,7 +1247,7 @@ plot_state_graph_gene_expression <- function(ccs,
 
 #' Collect PSG Node Metadata
 #'
-#' This function collects metadata for nodes in a cell clustering structure (CCS).
+#' This function collects metadata for nodes in a cell count set (CCS).
 #'
 #' @param ccs A cell clustering structure object containing metadata and column data.
 #' @param color_nodes_by A string specifying the metadata column to color nodes by.
