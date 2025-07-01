@@ -23,10 +23,13 @@ Depends:
 Imports:
     ashr (>= 2.2-63),
     dplyr,
+    fgsea,
     magrittr,
     speedglm,
     splines
-Remotes: cole-trapnell-lab/speedglm
+Remotes:
+    cole-trapnell-lab/speedglm,
+    bioc::fgsea
 Suggests: 
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
