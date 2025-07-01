@@ -28,7 +28,7 @@ Imports:
     speedglm,
     splines
 Remotes:
-    cole-trapnell-lab/speedglm
+    cole-trapnell-lab/speedglm,
     bioc::fgsea
 Suggests: 
     testthat (>= 3.0.0)
