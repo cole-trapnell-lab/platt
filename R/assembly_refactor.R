@@ -1,5 +1,6 @@
 
-
+#' 
+#' @export
 wt_assembly <- function(cds,
                               sample_group,
                               cell_group,
