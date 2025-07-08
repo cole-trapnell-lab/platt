@@ -421,8 +421,10 @@ get_perturbation_paths <- function(perturbation_ccm,
     
     
 
-    lost_cell_groups = perturb_summary_tbl %>% filter(loss_when_present < -delta_log_abund_loss_thresh) %>% pull(cell_group) %>% unique
-    gained_cell_groups = perturb_summary_tbl %>% filter(gain_when_present > delta_log_abund_loss_thresh) %>% pull(cell_group) %>% unique
+    lost_cell_groups = perturb_summary_tbl %>% filter(loss_when_present < -delta_log_abund_loss_thresh) %>% 
+      filter(cell_group %in% igraph::V(pathfinding_graph)$name) %>% pull(cell_group) %>% unique
+    gained_cell_groups = perturb_summary_tbl %>% filter(gain_when_present > delta_log_abund_loss_thresh) %>% 
+      filter(cell_group %in% igraph::V(pathfinding_graph)$name) %>% pull(cell_group) %>% unique
 
     # lost_cell_groups = perturb_summary_tbl %>% filter(is_lost_when_present) %>% pull(cell_group) %>% unique
     # gained_cell_groups = perturb_summary_tbl %>% filter(is_gained_when_present) %>% pull(cell_group) %>% unique
@@ -440,6 +442,7 @@ get_perturbation_paths <- function(perturbation_ccm,
     perturb_pathfinding_graph = loss_neighborhood_graph
 
     if (length(gained_cell_groups) > 0){
+  
       gain_neighborhood_graph = do.call(igraph::union,igraph::make_ego_graph(pathfinding_graph, order = 1,
                                                                              nodes = gained_cell_groups,
                                                                              mode = "out"))
@@ -1588,7 +1591,7 @@ assemble_timeseries_transitions <- function(ccm,
                                             edge_allowlist = NULL,
                                             edge_denylist = NULL,
                                             newdata = tibble()){
-
+  
   message("Determining extant cell types")
   extant_cell_type_df = get_extant_cell_types(ccm,
                                               start_time,
@@ -1638,8 +1641,6 @@ assemble_timeseries_transitions <- function(ccm,
 #' @noRd
 collect_perturb_effects = function(perturbation_ccm,
                                    time_window,
-                                   control_ccm,
-                                   control_time_window,
                                    interval_col,
                                    q_val=0.01,
                                    interval_step = 2,
@@ -1652,20 +1653,11 @@ collect_perturb_effects = function(perturbation_ccm,
   start_time = min(as.numeric(time_window$start_time))
   stop_time = min(as.numeric(time_window$stop_time))
 
-  control_start_time = min(as.numeric(control_time_window$start_time))
-  control_stop_time = min(as.numeric(control_time_window$stop_time))
-
-  #print (start_time)
-  #print (stop_time)
-  #message ("\tEstimating loss timing")
   perturb_effect_summary = estimate_loss_timing(perturbation_ccm,
                                                         start_time=start_time,
                                                         stop_time=stop_time,
                                                         interval_step = interval_step,
                                                         interval_col=interval_col,
-                                                        control_ccm=control_ccm,
-                                                        control_start_time=control_start_time,
-                                                        control_stop_time=control_stop_time,
                                                         log_abund_detection_thresh=log_abund_detection_thresh,
                                                         q_val = q_val,
                                                         delta_log_abund_loss_thresh=min_lfc,
@@ -1679,8 +1671,7 @@ collect_perturb_effects = function(perturbation_ccm,
 #' the cell types into a depencency graph
 #'
 #' @export
-assess_perturbation_effects = function(control_timeseries_ccm,
-                                       perturbation_ccm_tbl,
+assess_perturbation_effects = function(perturbation_ccm_tbl,
                                        q_val=0.01,
                                        start_time = NULL,
                                        stop_time = NULL,
@@ -1699,9 +1690,6 @@ assess_perturbation_effects = function(control_timeseries_ccm,
       collect_perturb_effects, NA_real_),
       .x = perturb_ccm,
       .y = perturb_time_window,
-      # pathfinding_graph,
-      control_ccm=control_timeseries_ccm,
-      control_time_window=tibble(start_time=start_time, stop_time=stop_time),
       interval_col=interval_col,
       interval_step = interval_step,
       q_val=q_val,
@@ -1744,7 +1732,17 @@ assess_perturbation_effects = function(control_timeseries_ccm,
 #'
 #' The function returns a state graph with edges annotated by the level of support from the perturbations.
 #' @export
-assemble_transition_graph_from_perturbations <- function(control_timeseries_ccm,
+#' Assemble a state transition graph from a set of perturbations
+#'
+#' This function takes as input a control timeseries Hooke model, and a set of timeseries perturbation models.
+#' Each perturbation model describes a separate experimental perturbation that may eliminate one or more
+#' cell states in the experiment. The tibble must have columns "perturb_name" and "perturb_ccm", and each row
+#' must have a perturbation model with a unique name.
+#'
+#' The function returns a state graph with edges annotated by the level of support from the perturbations.
+#' @export
+assemble_transition_graph_from_perturbations <- function(ref_ccs, 
+                                                         timeseries_graph, 
                                                          perturbation_ccm_tbl,
                                                          q_val=0.01,
                                                          start_time = NULL,
@@ -1763,13 +1761,13 @@ assemble_transition_graph_from_perturbations <- function(control_timeseries_ccm,
                                                          edge_denylist=NULL,
                                                          newdata = tibble())
 {
-
+  
   # Temporarily set the number of threads OpenMP & the BLAS library can use to be 1
   #old_omp_num_threads = single_thread_omp()
   #old_blas_num_threads = single_thread_blas()
-
+  
   tryCatch({
-
+    
     # Get a table of the cell types that are in the control
     # FIXME: "knockout" is hard coded and should be a user-defined term in the model
     
@@ -1779,50 +1777,8 @@ assemble_transition_graph_from_perturbations <- function(control_timeseries_ccm,
       newdata_wt = tibble(knockout=FALSE) 
     }
     
-    extant_cell_type_df = get_extant_cell_types(control_timeseries_ccm,
-                                                start_time,
-                                                stop_time,
-                                                interval_col=interval_col,
-                                                log_abund_detection_thresh=log_abund_detection_thresh,
-                                                newdata = newdata_wt)
-
-    if (verbose)
-      message ("Setting up pathfinding graph")
-    # Now let's set up a directed graph that links the states between which cells *could* directly
-    # transition. If we don't know the direction of flow, add edges in both directions. The idea is
-    # that we will find shortest paths over this graph between destination states and their plausible
-    # origin states, then choose the best origins for each destination.
-    pathfinding_graph = init_pathfinding_graph(control_timeseries_ccm,
-                                               extant_cell_type_df,
-                                               links_between_components=links_between_components,
-                                               components = components,
-                                               edge_allowlist=edge_allowlist,
-                                               edge_denylist=edge_denylist)
-
-    timeseries_graph = assemble_timeseries_transitions(control_timeseries_ccm,
-                                                       q_val=q_val,
-                                                       start_time = start_time,
-                                                       stop_time = stop_time,
-                                                       interval_col=interval_col,
-                                                       interval_step = interval_step,
-                                                       min_interval = min_interval,
-                                                       max_interval = max_interval,
-                                                       log_abund_detection_thresh=log_abund_detection_thresh,
-                                                       min_pathfinding_lfc=min_pathfinding_lfc,
-                                                       links_between_components=links_between_components,
-                                                       edge_allowlist=edge_allowlist,
-                                                       edge_denylist=edge_denylist,
-                                                       components = components,
-                                                       newdata = newdata)
-
-    # if (is.null(timeseries_graph) || is.na(timeseries_graph)){
-    if (is.null(timeseries_graph)){
-      stop("Error: timeseries graph assembly failed. Aborting.")
-    }
-
     if (is.null(perturbation_ccm_tbl$perturb_summary_tbl)){
-      perturbation_ccm_tbl = assess_perturbation_effects(control_timeseries_ccm,
-                                                         perturbation_ccm_tbl,
+      perturbation_ccm_tbl = assess_perturbation_effects(perturbation_ccm_tbl,
                                                          q_val = q_val,
                                                          start_time = start_time,
                                                          stop_time = stop_time,
@@ -1835,12 +1791,13 @@ assemble_transition_graph_from_perturbations <- function(control_timeseries_ccm,
                                                          verbose = verbose,
                                                          newdata = newdata)
     }
-
-    pathfinding_graph = igraph::intersection(pathfinding_graph, timeseries_graph)
-
+    
+    # pathfinding_graph = igraph::intersection(pathfinding_graph, timeseries_graph)
+    pathfinding_graph = timeseries_graph
+    
     if (verbose)
       message ("Computing paths between cell state losses")
-
+    
     # Now let's find paths between nodes that are lost following each perturbation. This step
     # returns a tibble of paths, each of which links lost nodes in the pathfinding graph.
     # Paths are also consistent with the flow of time in the control, at least over the window
@@ -1852,11 +1809,11 @@ assemble_transition_graph_from_perturbations <- function(control_timeseries_ccm,
         .x = perturb_ccm,
         .y = perturb_summary_tbl,
         pathfinding_graph))
-
+    
     path_tbl = path_tbl %>%
       filter(!is.na(paths_between_concordant_loss_nodes)) %>%
       select(-perturb_summary_tbl) 
-
+    
     
     if (nrow(path_tbl) == 0){
       stop("No loss paths")
@@ -1867,51 +1824,51 @@ assemble_transition_graph_from_perturbations <- function(control_timeseries_ccm,
       message (paste("Found ", nrow(path_tbl), " loss paths"))
       
     }
-
-
-    cells_along_path_df = normalized_counts(control_timeseries_ccm@ccs, "size_only", pseudocount = 0) %>%
+    
+    
+    cells_along_path_df = normalized_counts(ref_ccs, "size_only", pseudocount = 0) %>%
       as.matrix() %>%
       Matrix::t() %>%
       as.data.frame() %>%
       tibble::rownames_to_column() %>%
       tidyr::pivot_longer(!matches("rowname")) %>%
       rename(sample=rowname, cell_group=name, num_cells=value)
-
+    
     if (verbose)
       message (paste("Assessing time flows across", nrow(path_tbl), " loss paths"))
-
+    
     # Measure the flow of time along each perturbation loss path
     path_tbl = path_tbl %>%
       mutate(time_vs_distance_model_stats = furrr::future_map(.f = purrr::possibly(measure_time_delta_along_path, NA_character_),
-                                                       .x = path,
-                                                       ccs=control_timeseries_ccm@ccs,
-                                                       cells_along_path_df=cells_along_path_df,
-                                                       interval_col=interval_col,
-                                                       .options=furrr::furrr_options(stdout=FALSE,conditions = character()),
-                                                       .progress=TRUE)) %>%
+                                                              .x = path,
+                                                              ccs=ref_ccs,
+                                                              cells_along_path_df=cells_along_path_df,
+                                                              interval_col=interval_col,
+                                                              .options=furrr::furrr_options(stdout=FALSE,conditions = character()),
+                                                              .progress=TRUE)) %>%
       tidyr::unnest(time_vs_distance_model_stats)
-
+    
     # Compute some scores that summarize the level of support for each path by the various perturbations.
     path_tbl = path_tbl %>% mutate(time_dist_effect_qval = p.adjust(time_dist_effect_pval, method="BH"))
     path_tbl = path_tbl %>% mutate(timeseries_model_path_score = ifelse(time_dist_effect > 0 & time_dist_effect_qval < q_val, time_dist_model_adj_rsq, 0))
     path_tbl = path_tbl %>% mutate(perturb_model_path_score = ifelse(perturb_dist_effect < 0 & perturb_dist_effect_qval < q_val, abs(perturb_dist_effect), 0))
     path_tbl = path_tbl %>% mutate(path_score = ifelse(timeseries_model_path_score > 0 & perturb_model_path_score > 0, perturb_model_path_score * timeseries_model_path_score, 0))
-
+    
     #path_tbl = path_tbl %>% mutate(path_score = ifelse(timeseries_model_path_score > 0, timeseries_model_path_score, 0))
-
+    
     # Exclude paths that have no support from perturbations or go against the flow of time
     path_tbl =  path_tbl %>% filter (path_score > 0)
-
+    
     message (paste("Found ", nrow(path_tbl), "significant loss paths with forward time-flow"))
-
+    
     if (nrow(path_tbl) == 0){
       stop("No significant loss paths")
     }
-
-
+    
+    
     if (verbose)
       message ("Constructing transition graph")
-
+    
     # Now let's start to build up a state transition graph from the paths by taking their union across all
     # perturbations, provided they survived the above filtering steps.
     selected_paths = path_tbl %>%
@@ -1919,13 +1876,12 @@ assemble_transition_graph_from_perturbations <- function(control_timeseries_ccm,
       ungroup() %>% arrange(desc(path_score)) %>%
       dplyr::rename(path_contrast=perturb_name)
     G = select_paths_from_pathfinding_graph(pathfinding_graph, selected_paths, allow_cycles = TRUE)
-
+    
     # Now go back and score each edge in the state graph for support from perturbations, as well as support
     # the full control timeseries
     if (verbose)
       message ("Assessing perturbation support for transition graph")
-    G = assess_support_for_transition_graph(control_timeseries_ccm,
-                                            perturbation_ccm_tbl,
+    G = assess_support_for_transition_graph(perturbation_ccm_tbl,
                                             path_tbl,
                                             G,
                                             q_val,
@@ -1937,42 +1893,42 @@ assemble_transition_graph_from_perturbations <- function(control_timeseries_ccm,
                                             min_interval,
                                             max_interval,
                                             log_abund_detection_thresh)
-
-
+    
+    
     # FIXME: this is gross and there is probably a cleaner way, but what we're doing here
     # is annotating that these edges from the timeseries are not supported by the perturbations
     G_num_perturbs_supporting = igraph::edge_attr(G, "num_perturbs_supporting")
     G_num_perturbs_supporting[is.na(G_num_perturbs_supporting)] = 0
     igraph::edge_attr(G, "num_perturbs_supporting") = G_num_perturbs_supporting
-
+    
     G_max_timeseries_path_score_supporting = igraph::edge_attr(G, "max_timeseries_path_score_supporting")
     G_max_timeseries_path_score_supporting[is.na(G_max_timeseries_path_score_supporting)] = 0
     igraph::edge_attr(G, "max_timeseries_path_score_supporting") = G_max_timeseries_path_score_supporting
-
+    
     G_total_timeseries_path_score_supporting = igraph::edge_attr(G, "total_timeseries_path_score_supporting")
     G_total_timeseries_path_score_supporting[is.na(G_total_timeseries_path_score_supporting)] = 0
     igraph::edge_attr(G, "total_timeseries_path_score_supporting") = G_total_timeseries_path_score_supporting
-
+    
     G_max_perturb_path_score_supporting = igraph::edge_attr(G, "max_perturb_path_score_supporting")
     G_max_perturb_path_score_supporting[is.na(G_max_perturb_path_score_supporting)] = 0
     igraph::edge_attr(G, "max_perturb_path_score_supporting") = G_max_perturb_path_score_supporting
-
+    
     G_total_perturb_path_score_supporting = igraph::edge_attr(G, "total_perturb_path_score_supporting")
     G_total_perturb_path_score_supporting[is.na(G_total_perturb_path_score_supporting)] = 0
     igraph::edge_attr(G, "total_perturb_path_score_supporting") = G_total_perturb_path_score_supporting
-
+    
     G_max_path_score_supporting = igraph::edge_attr(G, "max_path_score_supporting")
     G_max_path_score_supporting[is.na(G_max_path_score_supporting)] = 0
     igraph::edge_attr(G, "max_path_score_supporting") = G_max_path_score_supporting
-
+    
     G_total_path_score_supporting = igraph::edge_attr(G, "total_path_score_supporting")
     G_total_path_score_supporting[is.na(G_total_path_score_supporting)] = 0
     igraph::edge_attr(G, "total_path_score_supporting") = G_total_path_score_supporting
-
+    
     G_label = igraph::edge_attr(G, "support_label")
     G_label[is.na(G_label)] = ""
     igraph::edge_attr(G, "support_label") = G_label
-
+    
     return (G)
   }, error = function(e){
     print (e)
@@ -1982,14 +1938,13 @@ assemble_transition_graph_from_perturbations <- function(control_timeseries_ccm,
     #RhpcBLASctl::blas_set_num_threads(old_blas_num_threads)
   }
   )
-
+  
   return (NA)
 }
 
 #' Assess support for a graph built via perturbations
 #' @export
-assess_support_for_transition_graph <- function(control_timeseries_ccm,
-                                                perturbation_ccm_tbl,
+assess_support_for_transition_graph <- function(perturbation_ccm_tbl,
                                                 perturbation_path_tbl,
                                                 state_transition_graph,
                                                 q_val=0.01,
