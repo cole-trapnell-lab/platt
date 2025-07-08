@@ -1,5 +1,5 @@
 #' @export
-get_time_window <- function(genotype, ccs, interval_col, perturbation_col = gene_target) {
+get_time_window <- function(genotype, ccs, interval_col, perturbation_col = "perturbation") {
   subset_ccs <- ccs[, replace_na(colData(ccs)[[perturbation_col]] %in% genotype, F)]
   colData(subset_ccs)$knockout <- colData(subset_ccs)[[perturbation_col]] %in% genotype
   knockout_time_start <- min(colData(subset_ccs)[[interval_col]][colData(subset_ccs)$knockout])
@@ -43,7 +43,7 @@ get_perturbation_effects <- function(ccm, interval_col = "timepoint", newdata = 
 #' @param interval_col Character. The column name in `ccs` that represents the
 #'   time intervals. Default is "timepoint".
 #' @param perturbation_col Character. The column name in `ccs` that represents
-#'   the perturbation (e.g., gene target). Default is "gene_target".
+#'   the perturbation (e.g., perturbation). Default is "perturbation".
 #' @param batch_col Character. The column name in `ccs` that represents the
 #'   batch information. Default is "expt".
 #' @param ctrl_ids Character vector. A list of control IDs to include in the
@@ -103,7 +103,7 @@ fit_genotype_ccm <- function(genotype,
                              ccs,
                              prior_state_transition_graph = NULL,
                              interval_col = "timepoint",
-                             perturbation_col = "gene_target",
+                             perturbation_col = "perturbation",
                              batch_col = "expt",
                              ctrl_ids = c("ctrl-uninj", "ctrl-inj", "ctrl-noto", "ctrl-mafba", "ctrl-hgfa", "ctrl-tbx16", "ctrl-met"),
                              contrast_time_start = NULL,
@@ -356,7 +356,7 @@ assemble_partition <- function(cds,
                                ctrl_ids = NULL,
                                mt_ids = NULL,
                                sparsity_factor = 0.01,
-                               perturbation_col = "gene_target",
+                               perturbation_col = "perturbation",
                                batch_col = "expt",
                                max_num_cells = NULL,
                                verbose = FALSE,
@@ -452,6 +452,7 @@ assemble_partition <- function(cds,
         stop_time = stop_time,
         interval_col = interval_col,
         newdata = newdata,
+        num_time_breaks = num_time_breaks,
         # nuisance_model_formula_str = "~expt",
         links_between_components = links_between_components,
         ctrl_ids = ctrl_ids,
@@ -518,8 +519,7 @@ assemble_partition <- function(cds,
         # stop("Error: fit_mt_models() failed")
       }
 
-      perturb_models_tbl <- assess_perturbation_effects(wt_ccm,
-        perturb_models_tbl,
+      perturb_models_tbl <- assess_perturbation_effects(perturb_models_tbl,
         q_val = q_val,
         start_time = start_time,
         stop_time = stop_time,
@@ -716,10 +716,8 @@ fit_wt_model <- function(cds,
                          batch_col = "expt",
                          start_time = NULL,
                          stop_time = NULL,
-                         interval_step = 2,
                          log_abund_detection_thresh = -5,
                          keep_ccs = TRUE,
-                         q_val = 0.1,
                          edge_allowlist = NULL,
                          edge_denylist = NULL,
                          base_penalty = 1,
@@ -810,7 +808,6 @@ fit_wt_model <- function(cds,
   wt_ccm <- new_cell_count_model(wt_ccs,
     main_model_formula_str = full_model_formula_str,
     nuisance_model_formula_str = nuisance_model_formula_str,
-    # allowlist = initial_pcor_graph(wt_ccs),
     vhat_method = vhat_method,
     allowlist = edge_allowlist,
     denylist = edge_denylist,
@@ -843,7 +840,7 @@ fit_wt_model <- function(cds,
 #' @param cell_group A grouping variable for cells (not used directly in this function).
 #' @param newdata A tibble containing new data for predictions (default: empty tibble).
 #' @param main_model_formula_str A string specifying the main model formula (default: NULL).
-#' @param num_breaks Number of breaks for discretizing continuous variables (default: 4).
+#' @param num_time_breaks Number of breaks for discretizing continuous variables (default: 4).
 #' @param nuisance_model_formula_str A string specifying the nuisance model formula (default: "~1").
 #' @param ctrl_ids A vector of control IDs (default: NULL, automatically inferred).
 #' @param mt_ids A vector of mitochondrial IDs (default: NULL).
@@ -884,7 +881,6 @@ assemble_wt_graph <- function(cds,
                               cell_group,
                               newdata = tibble(),
                               main_model_formula_str = NULL,
-                              num_breaks = 4,
                               nuisance_model_formula_str = "~1",
                               ctrl_ids = NULL,
                               mt_ids = NULL,
@@ -898,11 +894,15 @@ assemble_wt_graph <- function(cds,
                               links_between_components = c("ctp", "none", "strongest-pcor", "strong-pcor"),
                               log_abund_detection_thresh = -5,
                               q_val = 0.1,
+                              min_interval = 4,
+                              max_interval = 24,
+                              min_pathfinding_lfc = 0,
                               break_cycles = TRUE,
                               edge_allowlist = NULL,
                               edge_denylist = NULL,
                               component_col = "partition",
                               verbose = FALSE) {
+  
   if (is.null(ctrl_ids)) {
     ctrl_ids <- unique(colData(cds)[[perturbation_col]])
     ctrl_ids <- ctrl_ids[grepl("wt|ctrl", ctrl_ids)]
@@ -934,6 +934,9 @@ assemble_wt_graph <- function(cds,
     stop_time = stop_time,
     interval_col = interval_col,
     interval_step = interval_step,
+    min_interval = min_interval,
+    max_interval = max_interval,
+    min_pathfinding_lfc = min_pathfinding_lfc,
     log_abund_detection_thresh = log_abund_detection_thresh,
     q_val = q_val,
     links_between_components = links_between_components,
@@ -1113,7 +1116,8 @@ fit_mt_models <- function(cds,
 
 #' assembles a graph using the perturbation data
 #' @export
-assemble_mt_graph <- function(wt_ccm,
+assemble_mt_graph <- function(ref_ccs, 
+                              wt_graph,
                               perturb_models_tbl,
                               interval_col = "timepoint",
                               # perturbation_col = "knockout",
@@ -1129,11 +1133,11 @@ assemble_mt_graph <- function(wt_ccm,
                               edge_allowlist = NULL,
                               edge_denylist = NULL,
                               verbose = FALSE) {
-  if (is.null(wt_ccm) || is.na(wt_ccm)) {
-    stop("No control timeseries cell count model. Skipping.")
-  }
+  # if (is.null(wt_ccm) || is.na(wt_ccm)) {
+  #   stop("No control timeseries cell count model. Skipping.")
+  # }
 
-  wt_cds <- wt_ccm@ccs@cds
+  wt_cds <- ref_ccs@cds
 
   timepoints <- unique(colData(wt_cds)[[interval_col]])
   timepoints <- timepoints[!is.na(timepoints)]
@@ -1145,7 +1149,7 @@ assemble_mt_graph <- function(wt_ccm,
     stop_time <- max(timepoints)
   }
 
-  if (nrow(wt_ccm@ccs) <= 1) {
+  if (nrow(ref_ccs) <= 1) {
     stop("Control timeseries model has only a single cell type. Skipping.")
   }
 
@@ -1156,7 +1160,9 @@ assemble_mt_graph <- function(wt_ccm,
     stop("No valid perturbation models.")
   }
 
-  mutant_supergraph <- assemble_transition_graph_from_perturbations(wt_ccm,
+  mutant_supergraph <- assemble_transition_graph_from_perturbations(
+    ref_ccs, 
+    wt_graph,
     perturb_models_tbl,
     start_time = start_time,
     stop_time = stop_time,
@@ -1172,7 +1178,7 @@ assemble_mt_graph <- function(wt_ccm,
     components = component_col,
     verbose = verbose
   )
-  if (break_cycles) {
+  if (break_cycles & is.null(mutant_supergraph)==FALSE) {
     print("breaking cycles in perturbation graph...")
     mutant_supergraph <- platt:::break_cycles_in_state_transition_graph(mutant_supergraph, "total_perturb_path_score_supporting")
   }

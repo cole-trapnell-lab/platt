@@ -25,6 +25,12 @@ wt_assembly <- function(cds,
                               links_between_components = c("ctp", "none", "strongest-pcor", "strong-pcor"),
                               component_col = "partition",
                               embryo_size_factors = NULL,
+                              log_abund_detection_thresh = -5,
+                              interval_step = 2,
+                              min_interval = 4,
+                              max_interval = 24,
+                              min_pathfinding_lfc = 0,
+                              num_time_breaks = 4,
                               batches_excluded_from_assembly = c()) {
   
     colData(cds)$subassembly_group <- stringr::str_c(partition_name, colData(cds)[, cell_group], sep = "-")
@@ -32,14 +38,14 @@ wt_assembly <- function(cds,
     
     selected_colData <- colData(cds) %>%
         tibble::as_tibble() %>%
-        dplyr::select(cell, !!sym(sample_group), cluster, !!sym(cell_group), subassembly_group, cell_state)
+        dplyr::select(cell, !!sym(sample_group), !!sym(cell_group), subassembly_group, cell_state)
 
     selected_colData$cds_row_id <- colData(cds) %>%
         as.data.frame() %>%
         row.names()
 
     partition_results <- selected_colData %>% 
-      tidyr::nest(data = c(cds_row_id, cell, !!sym(sample_group), cluster, !!sym(cell_group), subassembly_group))
+      tidyr::nest(data = c(cds_row_id, cell, !!sym(sample_group), !!sym(cell_group), subassembly_group))
     
     # if there is only one cell state, return NA 
     if (length(unique(selected_colData[["cell_state"]])) <= 1) {
@@ -71,7 +77,8 @@ wt_assembly <- function(cds,
                 vhat_method = vhat_method,
                 edge_allowlist = edge_allowlist,
                 num_bootstraps = num_bootstraps,
-                embryo_size_factors = embryo_size_factors
+                embryo_size_factors = embryo_size_factors, 
+                num_time_breaks = num_time_breaks
             ))
 
             if (is.null(wt_ccm) || is.na(wt_ccm)) {
@@ -92,14 +99,20 @@ wt_assembly <- function(cds,
                 start_time = start_time,
                 stop_time = stop_time,
                 interval_col = interval_col,
+                interval_step = interval_step,
+                min_interval = min_interval,
+                max_interval = max_interval,
+                min_pathfinding_lfc = min_pathfinding_lfc,
                 newdata = newdata,
+                log_abund_detection_thresh = log_abund_detection_thresh,
                 links_between_components = links_between_components,
                 ctrl_ids = ctrl_ids,
                 edge_allowlist = edge_allowlist,
                 sparsity_factor = sparsity_factor,
                 perturbation_col = perturbation_col,
                 component_col = component_col,
-                verbose = verbose
+                verbose = verbose, 
+                q_val = q_val, 
             )
 
             if (is.null(wt_graph) == FALSE) {
@@ -114,8 +127,10 @@ wt_assembly <- function(cds,
                 } 
                 igraph::E(wt_graph)$assembly_group <- partition_name
                 wt_graph <- list(wt_graph)
+                return(wt_graph[[1]])
             } else {
                 wt_graph <- list(NA)
+                return(wt_graph)
             }
         },
         error = function(e) {
@@ -125,7 +140,7 @@ wt_assembly <- function(cds,
         }
     )
 
-    return(wt_graph[[1]])
+    
 }
 
 
@@ -143,7 +158,7 @@ mt_assembly <- function(cds,
                               ctrl_ids = NULL,
                               mt_ids = NULL,
                               sparsity_factor = 0.01,
-                              perturbation_col = "gene_target",
+                              perturbation_col = "perturbation",
                               batch_col = "expt",
                               max_num_cells = NULL,
                               verbose = FALSE,
@@ -151,6 +166,7 @@ mt_assembly <- function(cds,
                               num_threads = 1,
                               backend = "nlopt",
                               q_val = 0.1,
+                              interval_step = 2,
                               vhat_method = "bootstrap",
                               num_bootstraps = 10,
                               newdata = tibble(),
@@ -198,8 +214,7 @@ mt_assembly <- function(cds,
         # stop("Error: fit_mt_models() failed")
     }
 
-    perturb_models_tbl <- assess_perturbation_effects(wt_ccm,
-        perturb_models_tbl,
+    perturb_models_tbl <- assess_perturbation_effects(perturb_models_tbl,
         q_val = q_val,
         start_time = start_time,
         stop_time = stop_time,
@@ -221,20 +236,29 @@ mt_assembly <- function(cds,
             newdata = newdata
         ))
 
-
+    ccs = new_cell_count_set(cds, sample_group = sample_group, cell_group = cell_group)
     message("Assembling mutant graphs...")
-    mt_graph <- assemble_mt_graph(wt_ccm,
+    mt_graph <- assemble_mt_graph(ccs,
+                                  wt_graph,
         perturb_models_tbl,
         newdata = newdata,
         start_time = start_time,
         stop_time = stop_time,
         interval_col = interval_col,
+        interval_step = interval_step,
+        q_val = q_val,
+        log_abund_detection_thresh = log_abund_detection_thresh,
         links_between_components = links_between_components,
-        # perturbation_col = perturbation_col,
-        # edge_allowlist = edge_allowlist,
         component_col = component_col,
         verbose = verbose
     )
 
     return(mt_graph)
 }
+
+
+
+
+
+
+

@@ -11,6 +11,7 @@ compute_glm <- function(ccs,
                         nuisance_model_formula_str = "0",
                         abs_expr_thresh = 0.1,
                         cores = 1) {
+  
   if (is.null(group_nodes_by)) {
     pb_cds <- hooke:::pseudobulk_ccs_for_states(ccs, cell_agg_fun = "sum")
     state_term <- "cell_group"
