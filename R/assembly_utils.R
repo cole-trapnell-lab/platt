@@ -122,7 +122,13 @@ fit_genotype_ccm <- function(genotype,
                              ftol_rel = 1e-06) {
   message(paste("Fitting knockout model for", genotype))
   # subset_ccs = ccs[,colData(ccs)$gene_target == genotype | colData(ccs)$gene_target %in% ctrl_ids]
-
+  
+  if (is.null(batch_col)) {
+    colData(ccs)[["batch"]] = "DUMMY"
+    batch_col = "batch"
+  }
+  
+  
   if (!is.null(ccs@cds@metadata$umap_space)) {
     print(paste0("You are running this in ", ccs@cds@metadata$umap_space))
   }
@@ -149,6 +155,7 @@ fit_genotype_ccm <- function(genotype,
   message(paste("\ttime range:", knockout_time_start, "to", knockout_time_stop))
   # subset_ccs = ccs[,( replace_na(colData(ccs)[[perturbation_col]] == genotype, F) | colData(ccs)[[perturbation_col]] %in% ctrl_ids) & colData(ccs)[[batch_col]] %in% expts]
   subset_ccs <- ccs[, (replace_na(colData(ccs)[[perturbation_col]] == genotype, F) | colData(ccs)[[perturbation_col]] %in% ctrl_ids)]
+  
   expts <- unique(colData(subset_ccs)[[batch_col]])
 
   colData(subset_ccs)$knockout <- colData(subset_ccs)[[perturbation_col]] == genotype
