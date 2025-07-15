@@ -1175,7 +1175,8 @@ compare_gene_expression_within_node <- function(cell_group,
       n = dim(cg_pb_cds)[2], 
       prefix = "perturb_to_ctrl",
       ash.control = list(mode = expected_effect_mode_interval), 
-      cv_threshold = cv_threshold
+      cv_threshold = cv_threshold, 
+      abs_expr_thresh = abs_expr_thresh
     ))
 
   gene_map <- rowData(cg_pb_cds) %>%
@@ -1420,7 +1421,7 @@ contrast_helper <- function(state_1,
                             n = NULL, 
                             ash.control = NULL,
                             cv_threshold = NULL, 
-                            abs_expr_thresh = 1e-1) {
+                            abs_expr_thresh = 1e-3) {
   
   ash.mixcompdist <- "uniform"
   coefficient_mode <- 0
@@ -1655,7 +1656,8 @@ compare_genes_in_cell_state <- function(cell_state,
       prefix = "cell_state_to_parents",
       ash.control = list(mode = expected_effect_mode_interval),
       cv_threshold = cv_threshold, 
-      n = n
+      n = n, 
+      abs_expr_thresh = abs_expr_thresh
     )
 
 
@@ -1665,7 +1667,8 @@ compare_genes_in_cell_state <- function(cell_state,
       prefix = "parents_to_cell_state",
       ash.control = list(mode = expected_effect_mode_interval),
       cv_threshold = cv_threshold, 
-      n = n
+      n = n, 
+      abs_expr_thresh = abs_expr_thresh
     )
 
     expr_df <- left_join(expr_df, cell_state_to_parents, by = c("gene_id" = "id"))
@@ -1713,7 +1716,8 @@ compare_genes_in_cell_state <- function(cell_state,
         prefix = "cell_state_to_sibling",
         ash.control = list(mode = expected_effect_mode_interval),
         cv_threshold = cv_threshold, 
-        n = n
+        n = n, 
+        abs_expr_thresh = abs_expr_thresh
       )
 
       p.adjust(cell_state_to_sibling$cell_state_to_sibling_p_value) < sig_thresh &
@@ -1730,7 +1734,8 @@ compare_genes_in_cell_state <- function(cell_state,
         prefix = "sibling_to_cell_state",
         ash.control = list(mode = expected_effect_mode_interval),
         cv_threshold = cv_threshold, 
-        n = n
+        n = n, 
+        abs_expr_thresh = abs_expr_thresh
       )
 
       p.adjust(sibling_to_cell_state$sibling_to_cell_state_p_value) < sig_thresh &
@@ -1788,7 +1793,8 @@ compare_genes_in_cell_state <- function(cell_state,
         prefix = "cell_state_to_child",
         ash.control = list(mode = expected_effect_mode_interval),
         cv_threshold = cv_threshold, 
-        n = n
+        n = n, 
+        abs_expr_thresh = abs_expr_thresh
       )
 
       p.adjust(cell_state_to_child$cell_state_to_child_p_value) < sig_thresh &
@@ -1805,7 +1811,8 @@ compare_genes_in_cell_state <- function(cell_state,
         prefix = "child_to_cell_state",
         ash.control = list(mode = expected_effect_mode_interval),
         cv_threshold = cv_threshold, 
-        n = n
+        n = n, 
+        abs_expr_thresh = abs_expr_thresh
       )
 
       p.adjust(child_to_cell_state$child_to_cell_state_p_value) < sig_thresh &
@@ -2262,15 +2269,15 @@ calc_overrep_genes <- function(degs_for_cell_state,
     # print (head(gene_universe))
     up_fora_res <- fgsea::fora(gene_set_list, genes = up_genes, universe = gene_universe)
     up_fora_res$interpretation_simple <- "Up"
-    up_fora_res <- up_fora_res[up_fora_res$padj < q_val_thresh]
+    up_fora_res <- up_fora_res[up_fora_res$padj < q_val_thresh,]
     if (nrow(up_fora_res) > 0) {
-      up_fora_res_collapsed <- fgsea::collapsePathwaysORA(up_fora_res[order(up_fora_res$pval)],
+      up_fora_res_collapsed <- fgsea::collapsePathwaysORA(up_fora_res[order(up_fora_res$pval),],
         gene_set_list,
         genes = up_genes,
         universe = gene_universe
       )
       if (length(up_fora_res_collapsed$mainPathways) > 0) {
-        up_fora_res <- up_fora_res[pathway %in% up_fora_res_collapsed$mainPathways]
+        up_fora_res <- up_fora_res[pathway %in% up_fora_res_collapsed$mainPathways,]
       }
     }
   }
@@ -2282,15 +2289,15 @@ calc_overrep_genes <- function(degs_for_cell_state,
     # print (head(gene_universe))
     down_fora_res <- fgsea::fora(gene_set_list, genes = down_genes, universe = gene_universe)
     down_fora_res$interpretation_simple <- "Down"
-    down_fora_res <- down_fora_res[down_fora_res$padj < q_val_thresh]
+    down_fora_res <- down_fora_res[down_fora_res$padj < q_val_thresh,]
     if (nrow(down_fora_res) > 0) {
-      down_fora_res_collapsed <- fgsea::collapsePathwaysORA(down_fora_res[order(down_fora_res$pval)],
+      down_fora_res_collapsed <- fgsea::collapsePathwaysORA(down_fora_res[order(down_fora_res$pval),],
         gene_set_list,
         genes = down_genes,
         universe = gene_universe
       )
       if (length(down_fora_res_collapsed$mainPathways) > 0) {
-        down_fora_res <- down_fora_res[pathway %in% down_fora_res_collapsed$mainPathways]
+        down_fora_res <- down_fora_res[pathway %in% down_fora_res_collapsed$mainPathways,]
       }
     }
   }

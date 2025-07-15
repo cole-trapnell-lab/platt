@@ -22,7 +22,7 @@ get_perturbation_effects <- function(ccm, interval_col = "timepoint", newdata = 
     mutate(genotype_eff = purrr::map(
       .f = make_contrast,
       .x = data,
-      ccm = ccm, 
+      ccm = ccm,
       adjust_q_values = adjust_q_values
     )) %>%
     unnest(c(data, genotype_eff))
@@ -104,7 +104,7 @@ fit_genotype_ccm <- function(genotype,
                              prior_state_transition_graph = NULL,
                              interval_col = "timepoint",
                              perturbation_col = "perturbation",
-                             batch_col = "expt",
+                             batch_col = NULL,
                              ctrl_ids = c("ctrl-uninj", "ctrl-inj", "ctrl-noto", "ctrl-mafba", "ctrl-hgfa", "ctrl-tbx16", "ctrl-met"),
                              contrast_time_start = NULL,
                              contrast_time_stop = NULL,
@@ -122,6 +122,11 @@ fit_genotype_ccm <- function(genotype,
                              ftol_rel = 1e-06) {
   message(paste("Fitting knockout model for", genotype))
   # subset_ccs = ccs[,colData(ccs)$gene_target == genotype | colData(ccs)$gene_target %in% ctrl_ids]
+
+  if (is.null(batch_col)) {
+    colData(ccs)[["batch"]] <- "DUMMY"
+    batch_col <- "batch"
+  }
 
   if (!is.null(ccs@cds@metadata$umap_space)) {
     print(paste0("You are running this in ", ccs@cds@metadata$umap_space))
@@ -728,7 +733,7 @@ fit_wt_model <- function(cds,
                          penalize_by_distance = TRUE,
                          embryo_size_factors = NULL,
                          batches_excluded_from_assembly = c(),
-                         include_time_in_nuisance = FALSE, 
+                         include_time_in_nuisance = FALSE,
                          ...) {
   if (is.null(ctrl_ids)) {
     ctrl_ids <- unique(colData(cds)[[perturbation_col]])
@@ -736,11 +741,11 @@ fit_wt_model <- function(cds,
   }
 
   wt_cds <- cds[, colData(cds)[[perturbation_col]] %in% ctrl_ids]
-  
+
   if (is.null(batch_col) == FALSE) {
     wt_cds <- wt_cds[, colData(wt_cds)[[batch_col]] %in% batches_excluded_from_assembly == FALSE]
   }
-  
+
 
   if (ncol(wt_cds) == 0) {
     message("No control cells. Skipping...")
@@ -782,7 +787,7 @@ fit_wt_model <- function(cds,
       colData(wt_ccs)[[batch_col]] <- as.factor(colData(wt_ccs)[[batch_col]])
     }
   }
-  
+
   if (is.null(main_model_formula_str)) {
     main_model_formula_str <- build_interval_formula(wt_ccs,
       interval_var = interval_col,
@@ -795,11 +800,11 @@ fit_wt_model <- function(cds,
     nuisance_model_formula_str_xxx <- stringr::str_replace_all(nuisance_model_formula_str, "~", "")
     full_model_formula_str <- paste("~", nuisance_model_formula_str_xxx, "+", main_model_formula_str_xxx)
 
-    # make these formulas the same 
+    # make these formulas the same
     if (include_time_in_nuisance) {
-      nuisance_model_formula_str = full_model_formula_str
+      nuisance_model_formula_str <- full_model_formula_str
     }
-    
+
     message(paste("Fitting wild type model with main effects:", full_model_formula_str))
     message(paste("Nuisance effects:", nuisance_model_formula_str))
   }
@@ -902,7 +907,6 @@ assemble_wt_graph <- function(cds,
                               edge_denylist = NULL,
                               component_col = "partition",
                               verbose = FALSE) {
-  
   if (is.null(ctrl_ids)) {
     ctrl_ids <- unique(colData(cds)[[perturbation_col]])
     ctrl_ids <- ctrl_ids[grepl("wt|ctrl", ctrl_ids)]
@@ -1116,7 +1120,7 @@ fit_mt_models <- function(cds,
 
 #' assembles a graph using the perturbation data
 #' @export
-assemble_mt_graph <- function(ref_ccs, 
+assemble_mt_graph <- function(ref_ccs,
                               wt_graph,
                               perturb_models_tbl,
                               interval_col = "timepoint",
@@ -1161,7 +1165,7 @@ assemble_mt_graph <- function(ref_ccs,
   }
 
   mutant_supergraph <- assemble_transition_graph_from_perturbations(
-    ref_ccs, 
+    ref_ccs,
     wt_graph,
     perturb_models_tbl,
     start_time = start_time,
@@ -1178,7 +1182,7 @@ assemble_mt_graph <- function(ref_ccs,
     components = component_col,
     verbose = verbose
   )
-  if (break_cycles & is.null(mutant_supergraph)==FALSE) {
+  if (break_cycles & is.null(mutant_supergraph) == FALSE) {
     print("breaking cycles in perturbation graph...")
     mutant_supergraph <- platt:::break_cycles_in_state_transition_graph(mutant_supergraph, "total_perturb_path_score_supporting")
   }
