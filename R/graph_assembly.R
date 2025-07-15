@@ -102,7 +102,7 @@ add_cross_component_pathfinding_links = function(ccm,
                                                  surprise_thresh=2,
                                                  components="partition"){
   
-  assertthat::assert_that(
+  assertthat::assert_that( components == "partition" || 
     tryCatch(expr = components %in% colnames(colData(ccm@ccs@cds)),
              error = function(e) FALSE),
     msg = paste0(components, "not found in colData"))
