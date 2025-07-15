@@ -2269,15 +2269,15 @@ calc_overrep_genes <- function(degs_for_cell_state,
     # print (head(gene_universe))
     up_fora_res <- fgsea::fora(gene_set_list, genes = up_genes, universe = gene_universe)
     up_fora_res$interpretation_simple <- "Up"
-    up_fora_res <- up_fora_res[up_fora_res$padj < q_val_thresh]
+    up_fora_res <- up_fora_res[up_fora_res$padj < q_val_thresh,]
     if (nrow(up_fora_res) > 0) {
-      up_fora_res_collapsed <- fgsea::collapsePathwaysORA(up_fora_res[order(up_fora_res$pval)],
+      up_fora_res_collapsed <- fgsea::collapsePathwaysORA(up_fora_res[order(up_fora_res$pval),],
         gene_set_list,
         genes = up_genes,
         universe = gene_universe
       )
       if (length(up_fora_res_collapsed$mainPathways) > 0) {
-        up_fora_res <- up_fora_res[pathway %in% up_fora_res_collapsed$mainPathways]
+        up_fora_res <- up_fora_res[pathway %in% up_fora_res_collapsed$mainPathways,]
       }
     }
   }
@@ -2289,15 +2289,15 @@ calc_overrep_genes <- function(degs_for_cell_state,
     # print (head(gene_universe))
     down_fora_res <- fgsea::fora(gene_set_list, genes = down_genes, universe = gene_universe)
     down_fora_res$interpretation_simple <- "Down"
-    down_fora_res <- down_fora_res[down_fora_res$padj < q_val_thresh]
+    down_fora_res <- down_fora_res[down_fora_res$padj < q_val_thresh,]
     if (nrow(down_fora_res) > 0) {
-      down_fora_res_collapsed <- fgsea::collapsePathwaysORA(down_fora_res[order(down_fora_res$pval)],
+      down_fora_res_collapsed <- fgsea::collapsePathwaysORA(down_fora_res[order(down_fora_res$pval),],
         gene_set_list,
         genes = down_genes,
         universe = gene_universe
       )
       if (length(down_fora_res_collapsed$mainPathways) > 0) {
-        down_fora_res <- down_fora_res[pathway %in% down_fora_res_collapsed$mainPathways]
+        down_fora_res <- down_fora_res[pathway %in% down_fora_res_collapsed$mainPathways,]
       }
     }
   }
