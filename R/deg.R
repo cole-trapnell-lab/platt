@@ -2395,7 +2395,7 @@ calc_graph_overrep_genes <- function(ref_degs,
 
   graph_degs_overrep_pathways <- deg_nested_df %>%
     mutate(overrep_pathways = purrr::map(
-      .f = calc_overrep_genes,
+      .f = purrr:::possibly(calc_overrep_genes, NA_character_),
       .x = data,
       pathway_type = pathway_type,
       pathway_df = gene_set_df
