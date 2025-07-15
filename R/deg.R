@@ -2277,7 +2277,7 @@ calc_overrep_genes <- function(degs_for_cell_state,
         universe = gene_universe
       )
       if (length(up_fora_res_collapsed$mainPathways) > 0) {
-        up_fora_res <- up_fora_res[pathway %in% up_fora_res_collapsed$mainPathways,]
+        up_fora_res <- up_fora_res[up_fora_res$pathway %in% up_fora_res_collapsed$mainPathways,]
       }
     }
   }
@@ -2297,7 +2297,7 @@ calc_overrep_genes <- function(degs_for_cell_state,
         universe = gene_universe
       )
       if (length(down_fora_res_collapsed$mainPathways) > 0) {
-        down_fora_res <- down_fora_res[pathway %in% down_fora_res_collapsed$mainPathways,]
+        down_fora_res <- down_fora_res[down_fora_res$pathway %in% down_fora_res_collapsed$mainPathways,]
       }
     }
   }
