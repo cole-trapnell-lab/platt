@@ -256,7 +256,11 @@ mt_assembly <- function(cds,
         component_col = component_col,
         verbose = verbose
     )
-
+    
+    if (is.na(mt_graph)) {
+      print("returning wt_graph")
+      return(wt_graph)
+    }
     return(mt_graph)
 }
 
