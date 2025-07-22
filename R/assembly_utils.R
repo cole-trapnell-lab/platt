@@ -548,7 +548,8 @@ assemble_partition <- function(cds,
 
 
       message("Assembling mutant graphs...")
-      mt_graph <- assemble_mt_graph(wt_ccm,
+      mt_graph <- assemble_mt_graph(ref_ccs,
+                                    wt_graph, 
         perturb_models_tbl,
         newdata = newdata,
         start_time = start_time,
@@ -1182,7 +1183,7 @@ assemble_mt_graph <- function(ref_ccs,
     components = component_col,
     verbose = verbose
   )
-  if (break_cycles & is.null(mutant_supergraph) == FALSE) {
+  if (break_cycles & inherits(mutant_supergraph, "igraph")) {
     print("breaking cycles in perturbation graph...")
     mutant_supergraph <- platt:::break_cycles_in_state_transition_graph(mutant_supergraph, "total_perturb_path_score_supporting")
   }

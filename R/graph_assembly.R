@@ -1083,7 +1083,7 @@ get_timeseries_paths <- function(ccm,
                                  q_val = 0.01,
                                  min_pathfinding_lfc=0,
                                  verbose=FALSE,
-                                 newdata = newdata)
+                                 newdata = tibble())
 {
   # First, let's figure out when each cell type is present and
   # which ones emerge over the course of the caller's time interval
@@ -1648,7 +1648,7 @@ collect_perturb_effects = function(perturbation_ccm,
                                    max_interval = 24,
                                    log_abund_detection_thresh=-5,
                                    min_lfc=0,
-                                   newdata = newdata) {
+                                   newdata = tibble()) {
   
   start_time = min(as.numeric(time_window$start_time))
   stop_time = min(as.numeric(time_window$stop_time))
@@ -1682,7 +1682,7 @@ assess_perturbation_effects = function(perturbation_ccm_tbl,
                                        log_abund_detection_thresh = -5,
                                        min_lfc = 0,
                                        verbose = FALSE,
-                                       newdata = newdata)
+                                       newdata = tibble())
 {
 
   perturbation_ccm_tbl = perturbation_ccm_tbl %>%
@@ -1832,7 +1832,7 @@ assemble_transition_graph_from_perturbations <- function(ref_ccs,
       as.data.frame() %>%
       tibble::rownames_to_column() %>%
       tidyr::pivot_longer(!matches("rowname")) %>%
-      rename(sample=rowname, cell_group=name, num_cells=value)
+      dplyr::rename(sample=rowname, cell_group=name, num_cells=value)
     
     if (verbose)
       message (paste("Assessing time flows across", nrow(path_tbl), " loss paths"))
@@ -1959,7 +1959,7 @@ assess_support_for_transition_graph <- function(perturbation_ccm_tbl,
 {
   # Flatten all the paths that the perturbation assembler used to link up the
   # cell states
-  path_score_tbl = perturbation_path_tbl %>% rename(origin=from, destination=to) %>% tidyr::unnest(path)
+  path_score_tbl = perturbation_path_tbl %>% dplyr::rename(origin=from, destination=to) %>% tidyr::unnest(path)
 
   #print (path_score_tbl)
 
