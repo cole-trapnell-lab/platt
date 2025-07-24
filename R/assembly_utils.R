@@ -1596,12 +1596,12 @@ categorize_genetic_requirements <- function(perturb_ccm_tbl, state_graph) {
   direct_requirements <- lost_cell_groups %>%
     select(directly_lost_cell_groups, perturb_name) %>%
     tidyr::unnest(directly_lost_cell_groups) %>%
-    rename(id = directly_lost_cell_groups) %>%
+    dplyr::rename(id = directly_lost_cell_groups) %>%
     mutate(perturb_effect = "direct")
   indirect_requirements <- lost_cell_groups %>%
     select(indirectly_lost_cell_groups, perturb_name) %>%
     tidyr::unnest(indirectly_lost_cell_groups) %>%
-    rename(id = indirectly_lost_cell_groups) %>%
+    dplyr::rename(id = indirectly_lost_cell_groups) %>%
     mutate(perturb_effect = "indirect")
 
   requirements <- bind_rows(direct_requirements, indirect_requirements) %>% arrange(id)
