@@ -738,7 +738,7 @@ fit_wt_model <- function(cds,
                          ...) {
   if (is.null(ctrl_ids)) {
     ctrl_ids <- unique(colData(cds)[[perturbation_col]])
-    ctrl_ids <- ctrl_ids[grepl("wt|ctrl", ctrl_ids)]
+    ctrl_ids <- ctrl_ids[grepl("wt|ctrl|reference", ctrl_ids)]
   }
 
   wt_cds <- cds[, colData(cds)[[perturbation_col]] %in% ctrl_ids]
