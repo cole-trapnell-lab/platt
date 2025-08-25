@@ -892,7 +892,7 @@ compare_genes_within_state_graph <- function(ccs,
   # If the user provided a set of perturbations, subset the pseudobulk CDS to include just them and the controls
   if (!is.null(perturbations)) {
     perturbations <- setdiff(perturbations, "Control")
-    pb_cds <- pb_cds[, colData(pb_cds)[[perturbation_col]] %in% c("Control", perturbations)]
+    pb_cds <- pb_cds[, colData(pb_cds)[["perturbation"]] %in% c("Control", perturbations)]
   } else { # otherwise, grab the perturbation ids from the CDS and process them all
     perturbations <- unique(colData(pb_cds)[["perturbation"]])
     print(paste("pre-filter controls:", "Control"))
