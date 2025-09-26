@@ -14,21 +14,21 @@ compare_genes_within_state_graph(
   assembly_group = NULL,
   state_graph = NULL,
   perturbations = NULL,
-  gene_ids = NULL,
   group_nodes_by = NULL,
   log_fc_thresh = 1,
-  abs_expr_thresh = 1e-10,
+  abs_expr_thresh = 0.001,
   sig_thresh = 0.05,
   min_samples_detected = 2,
   min_cells_per_pseudobulk = NULL,
   cores = 1,
   write_dir = NULL,
   max_simultaneous_genes = NULL,
+  cv_threshold = 100,
   ...
 )
 }
 \arguments{
-\item{ccs}{A cell cluster set object.}
+\item{ccs}{A cell count set object.}
 
 \item{perturbation_col}{The column name in the cell data set that contains perturbation information. Default is "perturbation".}
 
@@ -46,13 +46,11 @@ compare_genes_within_state_graph(
 
 \item{perturbations}{A vector of perturbations to be analyzed. Default is NULL.}
 
-\item{gene_ids}{A vector of gene IDs to be analyzed. Default is NULL.}
-
 \item{group_nodes_by}{A parameter to group nodes by. Default is NULL.}
 
 \item{log_fc_thresh}{Log fold change threshold. Default is 1.}
 
-\item{abs_expr_thresh}{Absolute expression threshold. Default is 1e-10.}
+\item{abs_expr_thresh}{Absolute expression threshold. Default is 1e-3.}
 
 \item{sig_thresh}{Significance threshold. Default is 0.05.}
 
@@ -67,12 +65,14 @@ compare_genes_within_state_graph(
 \item{max_simultaneous_genes}{Maximum number of genes to analyze simultaneously. Default is NULL.}
 
 \item{...}{Additional arguments.}
+
+\item{gene_ids}{A vector of gene IDs to be analyzed. Default is NULL.}
 }
 \value{
 A data frame containing the comparison results.
 }
 \description{
-This function compares gene expression within a state graph for a given cell cluster set (ccs).
+This function compares gene expression within a state graph for a given cell count set (ccs).
 }
 \examples{
 # Example usage:

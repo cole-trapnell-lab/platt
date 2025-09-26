@@ -9,13 +9,14 @@ compare_genes_in_cell_state(
   state_graph,
   estimate_matrix,
   stderr_matrix,
+  n,
   state_term = "cell_group",
   log_fc_thresh = 1,
   abs_expr_thresh = 0.001,
   sig_thresh = 0.05,
   cores = 1,
   expected_effect_mode_interval = c(-10, 10),
-  cv_threshold = 10
+  cv_threshold = NULL
 )
 }
 \arguments{

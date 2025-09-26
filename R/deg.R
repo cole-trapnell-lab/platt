@@ -809,9 +809,9 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
 
 #' Compare Gene Expression Within State Graph
 #'
-#' This function compares gene expression within a state graph for a given cell cluster set (ccs).
+#' This function compares gene expression within a state graph for a given cell count set (ccs).
 #'
-#' @param ccs A cell cluster set object.
+#' @param ccs A cell count set object.
 #' @param perturbation_col The column name in the cell data set that contains perturbation information. Default is "perturbation".
 #' @param control_ids A vector of control IDs. Default is c("Control").
 #' @param nuisance_model_formula_str A string representing the nuisance model formula. Default is "0".

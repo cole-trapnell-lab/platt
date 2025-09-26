@@ -33,6 +33,7 @@ fit_wt_model(
   penalize_by_distance = TRUE,
   embryo_size_factors = NULL,
   batches_excluded_from_assembly = c(),
+  include_time_in_nuisance = FALSE,
   ...
 )
 }
