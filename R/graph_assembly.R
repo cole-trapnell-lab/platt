@@ -267,7 +267,7 @@ init_pathfinding_graph <- function(ccm,
     weighted_edges = hooke:::weigh_edges_by_umap_dist(ccm, cov_graph_edges)
 
     if (is.null(edge_allowlist) == FALSE) {
-      weighted_edges_allow = hooke:::weigh_edges_by_umap_dist(ccm, edge_allowlist)
+      weighted_edges_allow = hooke:::weigh_edges_by_umap_dist(ccm, edge_allowlist) %>% mutate(pcor = 1)
       weighted_edges = rbind(weighted_edges, weighted_edges_allow) %>% select(from, to, weight) %>% distinct()
     }
 
