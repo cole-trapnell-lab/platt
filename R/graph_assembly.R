@@ -248,7 +248,8 @@ init_pathfinding_graph <- function(ccm,
   cell_groups = ccm@ccs@metadata[["cell_group_assignments"]] %>% pull(cell_group) %>% unique()
   node_metadata = data.frame(id=cell_groups)
 
-  if (is.null(edge_allowlist)){
+
+  # if (is.null(edge_allowlist)){
     message("Initializing pathfinding graph from partially correlated pairs linked in PAGA")
     paga_graph = initial_pcor_graph(ccm@ccs) %>% igraph::graph_from_data_frame(directed = FALSE, vertices=node_metadata) %>% igraph::as.directed()
     cov_graph = hooke:::return_igraph(model(ccm, "reduced"))
@@ -265,6 +266,11 @@ init_pathfinding_graph <- function(ccm,
 
     weighted_edges = hooke:::weigh_edges_by_umap_dist(ccm, cov_graph_edges)
 
+    if (is.null(edge_allowlist) == FALSE) {
+      weighted_edges_allow = hooke:::weigh_edges_by_umap_dist(ccm, edge_allowlist)
+      weighted_edges = rbind(weighted_edges, weighted_edges_allow) %>% select(from, to, weight) %>% distinct()
+    }
+
     paga_components = igraph::components(paga_graph)
     same_partition_mat = outer(paga_components$membership, paga_components$membership, FUN="==")
     weighted_edges = weighted_edges %>% group_by(from, to) %>%
@@ -276,11 +282,11 @@ init_pathfinding_graph <- function(ccm,
       igraph::graph_from_data_frame(directed=FALSE, vertices=node_metadata) %>%
       igraph::as.directed()
 
-  }else{
-    weighted_edges = hooke:::weigh_edges_by_umap_dist(ccm, edge_allowlist)
-    pathfinding_graph = weighted_edges %>% select(from, to, weight) %>%
-      igraph::graph_from_data_frame(directed=TRUE, vertices=node_metadata)
-  }
+  # }else{
+  #   weighted_edges = hooke:::weigh_edges_by_umap_dist(ccm, edge_allowlist)
+  #   pathfinding_graph = weighted_edges %>% select(from, to, weight) %>%
+  #     igraph::graph_from_data_frame(directed=TRUE, vertices=node_metadata)
+  # }
 
 
 
