@@ -252,6 +252,7 @@ init_pathfinding_graph <- function(ccm,
   # if (is.null(edge_allowlist)){
     message("Initializing pathfinding graph from partially correlated pairs linked in PAGA")
     paga_graph = initial_pcor_graph(ccm@ccs) %>% igraph::graph_from_data_frame(directed = FALSE, vertices=node_metadata) %>% igraph::as.directed()
+
     cov_graph = hooke:::return_igraph(model(ccm, "reduced"))
     cov_graph_edges = igraph::as_data_frame(cov_graph, what="edges")
 
@@ -277,7 +278,13 @@ init_pathfinding_graph <- function(ccm,
       mutate(adjacent_in_paga = igraph::are_adjacent(paga_graph, from, to),
              same_partition = same_partition_mat[from, to]) %>% ungroup()
 
-    weighted_edges = weighted_edges %>% filter(adjacent_in_paga)
+    if (is.null(edge_allowlist) == FALSE) {
+      # if in the allowlist, we want to keep the edge even if it's not adjacent in paga
+      weighted_edges = weighted_edges %>% filter(adjacent_in_paga | (from %in% edge_allowlist$from & to %in% edge_allowlist$to))
+    } else {
+      weighted_edges = weighted_edges %>% filter(adjacent_in_paga)
+    }
+    
     pathfinding_graph = weighted_edges %>% select(from, to, weight) %>%
       igraph::graph_from_data_frame(directed=FALSE, vertices=node_metadata) %>%
       igraph::as.directed()
