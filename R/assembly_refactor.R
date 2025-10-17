@@ -33,7 +33,8 @@ wt_assembly <- function(cds,
                               max_interval = 24,
                               min_pathfinding_lfc = 0,
                               num_time_breaks = 4,
-                              batches_excluded_from_assembly = c()) {
+                              batches_excluded_from_assembly = c(), 
+                              force_allowlist = FALSE) {
   
     colData(cds)$subassembly_group <- stringr::str_c(partition_name, colData(cds)[, cell_group], sep = "-")
     colData(cds)[["cell_state"]] <- as.character(colData(cds)[[cell_group]])
@@ -117,6 +118,7 @@ wt_assembly <- function(cds,
                 component_col = component_col,
                 verbose = verbose, 
                 q_val = q_val, 
+                force_allowlist = force_allowlist
             )
 
             if (is.null(wt_graph) == FALSE) {

@@ -237,7 +237,8 @@ init_pathfinding_graph <- function(ccm,
                                    components="partition",
                                    weigh_by_pcor=F,
                                    edge_allowlist=NULL,
-                                   edge_denylist=NULL){
+                                   edge_denylist=NULL, 
+                                   force_allowlist=FALSE){
 
   # There are a number of different ways we could set up this "pathfinding graph" but for now
   # Let's just use the PAGA (weighed by distance in UMAP space), subtracting edges between which
@@ -249,7 +250,7 @@ init_pathfinding_graph <- function(ccm,
   node_metadata = data.frame(id=cell_groups)
 
 
-  # if (is.null(edge_allowlist)){
+  if (force_allowlist == FALSE) {
     message("Initializing pathfinding graph from partially correlated pairs linked in PAGA")
     paga_graph = initial_pcor_graph(ccm@ccs) %>% igraph::graph_from_data_frame(directed = FALSE, vertices=node_metadata) %>% igraph::as.directed()
 
@@ -289,13 +290,11 @@ init_pathfinding_graph <- function(ccm,
       igraph::graph_from_data_frame(directed=FALSE, vertices=node_metadata) %>%
       igraph::as.directed()
 
-  # }else{
-  #   weighted_edges = hooke:::weigh_edges_by_umap_dist(ccm, edge_allowlist)
-  #   pathfinding_graph = weighted_edges %>% select(from, to, weight) %>%
-  #     igraph::graph_from_data_frame(directed=TRUE, vertices=node_metadata)
-  # }
-
-
+  } else{
+    weighted_edges = hooke:::weigh_edges_by_umap_dist(ccm, edge_allowlist)
+    pathfinding_graph = weighted_edges %>% select(from, to, weight) %>%
+      igraph::graph_from_data_frame(directed=TRUE, vertices=node_metadata)
+  }
 
   if (links_between_components != "none"){
     pathfinding_graph = add_cross_component_pathfinding_links(ccm,
@@ -1603,6 +1602,7 @@ assemble_timeseries_transitions <- function(ccm,
                                             components = "partition",
                                             edge_allowlist = NULL,
                                             edge_denylist = NULL,
+                                            force_allowlist = FALSE,
                                             newdata = tibble()){
   
   message("Determining extant cell types")
@@ -1624,7 +1624,8 @@ assemble_timeseries_transitions <- function(ccm,
                                              links_between_components = links_between_components,
                                              components = components,
                                              edge_allowlist = edge_allowlist,
-                                             edge_denylist = edge_denylist)
+                                             edge_denylist = edge_denylist,
+                                             force_allowlist = force_allowlist)
 
 
   G = build_timeseries_transition_graph(ccm,

@@ -378,7 +378,8 @@ assemble_partition <- function(cds,
                                log_abund_detection_thresh = -5,
                                batches_excluded_from_assembly = c(),
                                component_col = "partition",
-                               embryo_size_factors = NULL) {
+                               embryo_size_factors = NULL, 
+                               force_allowlist = FALSE) {
   colData(cds)$subassembly_group <- stringr::str_c(partition_name, colData(cds)[, cell_group], sep = "-")
   colData(cds)[["cell_state"]] <- as.character(colData(cds)[[cell_group]])
   # selected_colData = selected_colData %>% mutate(cell_state = paste0(partition_name, cell_state))
@@ -465,7 +466,8 @@ assemble_partition <- function(cds,
         sparsity_factor = sparsity_factor,
         perturbation_col = perturbation_col,
         component_col = component_col,
-        verbose = verbose
+        verbose = verbose, 
+        force_allowlist = force_allowlist
       )
 
       if (is.null(wt_graph) == FALSE) {
@@ -907,6 +909,7 @@ assemble_wt_graph <- function(cds,
                               edge_allowlist = NULL,
                               edge_denylist = NULL,
                               component_col = "partition",
+                              force_allowlist = FALSE,
                               verbose = FALSE) {
   if (is.null(ctrl_ids)) {
     ctrl_ids <- unique(colData(cds)[[perturbation_col]])
@@ -948,7 +951,8 @@ assemble_wt_graph <- function(cds,
     edge_allowlist = edge_allowlist,
     edge_denylist = edge_denylist,
     components = component_col,
-    newdata = newdata
+    newdata = newdata,
+    force_allowlist = force_allowlist
   )
   if (break_cycles) {
     print("breaking cycles in control timeseries graph...")
