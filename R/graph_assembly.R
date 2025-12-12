@@ -312,7 +312,16 @@ init_pathfinding_graph <- function(ccm,
     denylist_graph = igraph::graph_from_data_frame(edge_denylist, directed=TRUE, vertices=node_metadata)
     pathfinding_graph = pathfinding_graph - denylist_graph
   }
-
+  
+  if (is.null(edge_allowlist) == FALSE) {
+    
+    # subtract the opposite approvelist 
+    edge_allowlist_opp <- edge_allowlist %>% select(from=to, to=from)
+    edge_allowlist_opp_graph <- igraph::graph_from_data_frame(edge_allowlist_opp, directed=TRUE, vertices=node_metadata)
+    pathfinding_graph = pathfinding_graph - edge_allowlist_opp_graph
+  }
+  
+  
   # if (is.null(edge_allowlist) == FALSE){
   #   # Ensuring allowlisted edges remain in pathfinding graph
   #   edge_allowlist = edge_allowlist[,c(1,2)] %>% as_tibble()
