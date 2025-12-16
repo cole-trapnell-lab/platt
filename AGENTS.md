@@ -15,10 +15,16 @@ Platt is an R package used in the Trapnell Lab stack for statistical modeling an
   - add or update unit tests
   - update NEWS.md if present
 - Avoid breaking changes unless explicitly requested.
+- Use `make fast` for quick validation during development and `make test` before opening a PR.
+
+## Fast-test conventions
+- `make fast` runs the same `testthat::test_local()` invocation as `make test` but exports `PLATT_FAST=1` so tests can detect the fast tier.
+- Guard expensive test blocks with `if (identical(Sys.getenv("PLATT_FAST"), "1")) testthat::skip("slow")` (or similar) so `make fast` remains cheap and deterministic.
+- If `tests/testthat` is missing or contains no `test*.R` files, `make fast`/`make test` quietly skip so empty packages do not fail.
 
 ## Validation tiers
 ### FAST (default)
-- `make fast`
+- `make fast` (sets `PLATT_FAST=1`)
 - Runs cheap, deterministic unit tests only
 - Should finish in minutes or less
 
