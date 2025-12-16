@@ -330,11 +330,19 @@ init_pathfinding_graph <- function(ccm,
     } else {
       weighted_edges <- weighted_edges %>% dplyr::filter(adjacent_in_paga)
     }
-
+    
     pathfinding_graph <- weighted_edges %>%
-      select(from, to, weight) %>%
+      transmute(
+        from = pmin(from, to),
+        to   = pmax(from, to),
+        weight
+      ) %>%
+      group_by(from, to) %>%
+      summarise(weight = mean(weight), .groups = "drop") %>%  # or first/max/min
+      filter(from != to) %>% 
       igraph::graph_from_data_frame(directed = FALSE, vertices = node_metadata) %>%
       igraph::as.directed()
+    
   } else {
     weighted_edges <- hooke:::weigh_edges_by_umap_dist(ccm, edge_allowlist)
     pathfinding_graph <- weighted_edges %>%
@@ -377,6 +385,7 @@ init_pathfinding_graph <- function(ccm,
   #   pathfinding_graph = pathfinding_graph %>% bind_rows(edge_allowlist) %>% distinct()
   #   pathfinding_graph = hooke:::weigh_edges_by_umap_dist(ccm, pathfinding_graph)
   # }
+  
 
   return(pathfinding_graph)
 }
