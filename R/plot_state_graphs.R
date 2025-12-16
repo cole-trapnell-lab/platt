@@ -40,6 +40,7 @@ plot_annotations <- function(cell_state_graph,
                              max_edge_size = 2,
                              edge_weights = NULL,
                              plot_labels = TRUE,
+                             label_size = 3,
                              group_label_font_size = 1,
                              node_label_width = 50) {
   if (is.null(color_nodes_by)) {
@@ -108,7 +109,7 @@ plot_annotations <- function(cell_state_graph,
   if (plot_labels) {
     p <- p + ggrepel::geom_text_repel(
       data = g %>% select(x, y, name) %>% distinct(),
-      aes(x, y, label = name),
+      aes(x, y, label = name, size=label_size),
       color = I("black"),
       box.padding = 0.5
     )
