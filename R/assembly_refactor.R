@@ -1,44 +1,42 @@
-
-#' 
+#'
 #' @export
 wt_assembly <- function(cds,
-                              sample_group,
-                              cell_group,
-                              partition_name = NULL,
-                              main_model_formula_str = NULL,
-                              start_time = 18,
-                              stop_time = 72,
-                              interval_col = "timepoint",
-                              nuisance_model_formula_str = "~1",
-                              ctrl_ids = NULL,
-                              sparsity_factor = 0.01,
-                              perturbation_col = "perturbation",
-                              batch_col = "expt",
-                              verbose = FALSE,
-                              keep_ccs = TRUE,
-                              num_threads = 1,
-                              backend = "nlopt",
-                              q_val = 0.1,
-                              vhat_method = "bootstrap",
-                              num_bootstraps = 10,
-                              newdata = tibble(),
-                              edge_allowlist = NULL,
-                              edge_denylist = NULL,
-                              links_between_components = c("ctp", "none", "strongest-pcor", "strong-pcor"),
-                              component_col = "partition",
-                              embryo_size_factors = NULL,
-                              log_abund_detection_thresh = -5,
-                              interval_step = 2,
-                              min_interval = 4,
-                              max_interval = 24,
-                              min_pathfinding_lfc = 0,
-                              num_time_breaks = 4,
-                              batches_excluded_from_assembly = c(), 
-                              force_allowlist = FALSE) {
-  
+                        sample_group,
+                        cell_group,
+                        partition_name = NULL,
+                        main_model_formula_str = NULL,
+                        start_time = 18,
+                        stop_time = 72,
+                        interval_col = "timepoint",
+                        nuisance_model_formula_str = "~1",
+                        ctrl_ids = NULL,
+                        sparsity_factor = 0.01,
+                        perturbation_col = "perturbation",
+                        batch_col = "expt",
+                        verbose = FALSE,
+                        keep_ccs = TRUE,
+                        num_threads = 1,
+                        backend = "nlopt",
+                        q_val = 0.1,
+                        vhat_method = "bootstrap",
+                        num_bootstraps = 10,
+                        newdata = tibble(),
+                        edge_allowlist = NULL,
+                        edge_denylist = NULL,
+                        links_between_components = c("none", "ctp", "strongest-pcor", "strong-pcor"),
+                        component_col = "partition",
+                        embryo_size_factors = NULL,
+                        log_abund_detection_thresh = -5,
+                        interval_step = 2,
+                        min_interval = 4,
+                        max_interval = 24,
+                        min_pathfinding_lfc = 0,
+                        num_time_breaks = 4,
+                        batches_excluded_from_assembly = c(),
+                        force_allowlist = FALSE) {
     colData(cds)$subassembly_group <- stringr::str_c(partition_name, colData(cds)[, cell_group], sep = "-")
     colData(cds)[["cell_state"]] <- as.character(colData(cds)[[cell_group]])
-    
+
     selected_colData <- colData(cds) %>%
         tibble::as_tibble() %>%
         dplyr::select(cell, !!sym(sample_group), !!sym(cell_group), subassembly_group, cell_state)
@@ -47,10 +45,10 @@ wt_assembly <- function(cds,
         as.data.frame() %>%
         row.names()
 
-    partition_results <- selected_colData %>% 
-      tidyr::nest(data = c(cds_row_id, cell, !!sym(sample_group), !!sym(cell_group), subassembly_group))
-    
-    # if there is only one cell state, return NA 
+    partition_results <- selected_colData %>%
+        tidyr::nest(data = c(cds_row_id, cell, !!sym(sample_group), !!sym(cell_group), subassembly_group))
+
+    # if there is only one cell state, return NA
     if (length(unique(selected_colData[["cell_state"]])) <= 1) {
         wt_graph <- list(NA)
         return(wt_graph)
@@ -81,7 +79,7 @@ wt_assembly <- function(cds,
                 edge_allowlist = edge_allowlist,
                 edge_denylist = edge_denylist,
                 num_bootstraps = num_bootstraps,
-                embryo_size_factors = embryo_size_factors, 
+                embryo_size_factors = embryo_size_factors,
                 num_time_breaks = num_time_breaks
             ))
 
@@ -116,21 +114,20 @@ wt_assembly <- function(cds,
                 sparsity_factor = sparsity_factor,
                 perturbation_col = perturbation_col,
                 component_col = component_col,
-                verbose = verbose, 
-                q_val = q_val, 
+                verbose = verbose,
+                q_val = q_val,
                 force_allowlist = force_allowlist
             )
 
             if (is.null(wt_graph) == FALSE) {
-                
                 if (cell_group == "cell_state") {
                     igraph::V(wt_graph)$name <- stringr::str_c(partition_name, igraph::V(wt_graph)$name, sep = "-")
                 } else {
                     igraph::V(wt_graph)$name <- igraph::V(wt_graph)$name
                 }
                 if (is.null(partition_name)) {
-                  partition_name <- ""
-                } 
+                    partition_name <- ""
+                }
                 igraph::E(wt_graph)$assembly_group <- partition_name
                 wt_graph <- list(wt_graph)
                 return(wt_graph[[1]])
@@ -145,45 +142,42 @@ wt_assembly <- function(cds,
             return(wt_graph)
         }
     )
-
-    
 }
 
 
 
 mt_assembly <- function(cds,
-                              sample_group,
-                              cell_group,
-                              wt_graph, 
-                              partition_name = NULL,
-                              main_model_formula_str = NULL,
-                              start_time = 18,
-                              stop_time = 72,
-                              interval_col = "timepoint",
-                              nuisance_model_formula_str = "~1",
-                              ctrl_ids = NULL,
-                              mt_ids = NULL,
-                              sparsity_factor = 0.01,
-                              perturbation_col = "perturbation",
-                              batch_col = "expt",
-                              max_num_cells = NULL,
-                              verbose = FALSE,
-                              keep_ccs = TRUE,
-                              num_threads = 1,
-                              backend = "nlopt",
-                              q_val = 0.1,
-                              interval_step = 2,
-                              vhat_method = "bootstrap",
-                              num_bootstraps = 10,
-                              newdata = tibble(),
-                              edge_allowlist = NULL,
-                              min_lfc = 0,
-                              links_between_components = c("ctp", "none", "strongest-pcor", "strong-pcor"),
-                              log_abund_detection_thresh = -5,
-                              batches_excluded_from_assembly = c(),
-                              component_col = "partition",
-                              embryo_size_factors = NULL) {
-  
+                        sample_group,
+                        cell_group,
+                        wt_graph,
+                        partition_name = NULL,
+                        main_model_formula_str = NULL,
+                        start_time = 18,
+                        stop_time = 72,
+                        interval_col = "timepoint",
+                        nuisance_model_formula_str = "~1",
+                        ctrl_ids = NULL,
+                        mt_ids = NULL,
+                        sparsity_factor = 0.01,
+                        perturbation_col = "perturbation",
+                        batch_col = "expt",
+                        max_num_cells = NULL,
+                        verbose = FALSE,
+                        keep_ccs = TRUE,
+                        num_threads = 1,
+                        backend = "nlopt",
+                        q_val = 0.1,
+                        interval_step = 2,
+                        vhat_method = "bootstrap",
+                        num_bootstraps = 10,
+                        newdata = tibble(),
+                        edge_allowlist = NULL,
+                        min_lfc = 0,
+                        links_between_components = c("none", "ctp", "strongest-pcor", "strong-pcor"),
+                        log_abund_detection_thresh = -5,
+                        batches_excluded_from_assembly = c(),
+                        component_col = "partition",
+                        embryo_size_factors = NULL) {
     message("Starting mutant fits...")
     perturb_models_tbl <- suppressWarnings(fit_mt_models(cds,
         sample_group = sample_group,
@@ -242,10 +236,10 @@ mt_assembly <- function(cds,
             newdata = newdata
         ))
 
-    ccs = new_cell_count_set(cds, sample_group = sample_group, cell_group = cell_group)
+    ccs <- new_cell_count_set(cds, sample_group = sample_group, cell_group = cell_group)
     message("Assembling mutant graphs...")
     mt_graph <- assemble_mt_graph(ccs,
-                                  wt_graph,
+        wt_graph,
         perturb_models_tbl,
         newdata = newdata,
         start_time = start_time,
@@ -258,17 +252,10 @@ mt_assembly <- function(cds,
         component_col = component_col,
         verbose = verbose
     )
-    
+
     if (is.na(mt_graph)) {
-      print("returning wt_graph")
-      return(wt_graph)
+        print("returning wt_graph")
+        return(wt_graph)
     }
     return(mt_graph)
 }
-
-
-
-
-
-
-
