@@ -324,13 +324,13 @@ init_pathfinding_graph <- function(ccm,
       # if in the allowlist, we want to keep the edge even if it's not adjacent in paga
       edge_allowlist$in_allowlist <- TRUE
       weighted_edges <- left_join(weighted_edges, edge_allowlist, by = c("from", "to"))
-      weighted_edges$in_allowlist <- ifelse(is.na(weighted_edges$in_allowlist ), F, weighted_edges$in_allowlist )
-      
+      weighted_edges$in_allowlist <- ifelse(is.na(weighted_edges$in_allowlist), F, weighted_edges$in_allowlist)
+
       weighted_edges <- weighted_edges %>% dplyr::filter(adjacent_in_paga | in_allowlist)
     } else {
       weighted_edges <- weighted_edges %>% dplyr::filter(adjacent_in_paga)
     }
-    
+
     pathfinding_graph <- weighted_edges %>%
       transmute(
         from = pmin(from, to),
@@ -338,11 +338,10 @@ init_pathfinding_graph <- function(ccm,
         weight
       ) %>%
       group_by(from, to) %>%
-      summarise(weight = mean(weight), .groups = "drop") %>%  # or first/max/min
-      filter(from != to) %>% 
+      summarise(weight = mean(weight), .groups = "drop") %>% # or first/max/min
+      filter(from != to) %>%
       igraph::graph_from_data_frame(directed = FALSE, vertices = node_metadata) %>%
       igraph::as.directed()
-    
   } else {
     weighted_edges <- hooke:::weigh_edges_by_umap_dist(ccm, edge_allowlist)
     pathfinding_graph <- weighted_edges %>%
@@ -385,7 +384,7 @@ init_pathfinding_graph <- function(ccm,
   #   pathfinding_graph = pathfinding_graph %>% bind_rows(edge_allowlist) %>% distinct()
   #   pathfinding_graph = hooke:::weigh_edges_by_umap_dist(ccm, pathfinding_graph)
   # }
-  
+
 
   return(pathfinding_graph)
 }
@@ -881,7 +880,9 @@ build_timeseries_transition_graph <- function(ccm,
                                               min_pathfinding_lfc = 0,
                                               make_dag = FALSE,
                                               newdata = tibble(),
-                                              log_abund_detection_thresh = -5) {
+                                              log_abund_detection_thresh = -5,
+                                              edge_allowlist = NULL,
+                                              edge_denylist = NULL) {
   # Temporarily set the number of threads OpenMP & the BLAS library can use to be 1
   # old_omp_num_threads = single_thread_omp()
   # old_blas_num_threads = single_thread_blas()
@@ -939,7 +940,9 @@ build_timeseries_transition_graph <- function(ccm,
       .f = purrr::possibly(hooke:::collect_pln_graph_edges, NULL),
       .x = comp_abund,
       ccm = ccm,
-      log_abundance_thresh = log_abund_detection_thresh
+      log_abundance_thresh = log_abund_detection_thresh,
+      edge_allowlist = edge_allowlist,
+      edge_denylist = edge_denylist
     ))
 
   # mutate(rec_edges = furrr::future_map(.f = purrr::possibly(hooke:::collect_pln_graph_edges, NULL),
@@ -964,13 +967,24 @@ build_timeseries_transition_graph <- function(ccm,
     select(from, to) %>%
     distinct()
 
+  if (!is.null(edge_allowlist)) {
+    edge_union <- edge_union %>%
+      rbind(edge_allowlist) %>%
+      select(from, to) %>%
+      distinct()
+  }
+  if (!is.null(edge_denylist)) {
+    edge_union <- edge_union %>%
+      dplyr::anti_join(edge_denylist, by = c("from", "to"))
+  }
+
   print(paste("finding shortest paths between ", nrow(edge_union), "pairs of nodes"))
   # print(head(relevant_comparisons))
   paths_for_relevant_edges <- edge_union %>%
     mutate(path = furrr::future_map2(
       .f = purrr::possibly(hooke:::get_shortest_path, NA_character_),
       .x = from, .y = to,
-      pathfinding_graph,
+      traversal_graph = pathfinding_graph,
       .options = furrr::furrr_options(stdout = FALSE, conditions = character()),
       .progress = TRUE
     ))
@@ -1029,6 +1043,57 @@ build_timeseries_transition_graph <- function(ccm,
   # selected_paths %>% select(origin=from, destination=to, path, path_score) %>% tidyr::unnest(path) %>% arrange(origin, destination) %>% filter(from %in% c("20", "38") & to %in% c("20", "38"))  %>% print(n=1000)
 
   # G = select_paths_from_pathfinding_graph(pathfinding_graph, selected_paths, allow_cycles = FALSE)
+
+  # Add allowlisted edges if they aren't already present in selected_paths
+  if (!is.null(edge_allowlist)) {
+    # Get all edges from selected_paths
+    selected_edges <- selected_paths %>%
+      dplyr::select(from, to) %>%
+      distinct()
+    # Find allowlist edges not in selected_paths
+    missing_allowlist_edges <- edge_allowlist %>%
+      anti_join(selected_edges, by = c("from", "to"))
+    if (nrow(missing_allowlist_edges) > 0) {
+      # Add missing allowlist edges as new paths (single-edge paths)
+      allowlist_paths <- missing_allowlist_edges %>%
+        mutate(
+          path = purrr::map2(from, to, ~ tibble(from = .x, to = .y, weight = NA, distance_from_root = 0)),
+          path_contrast = "allowlist",
+          path_score = 0,
+          time_dist_model_score = 0,
+          time_dist_effect = NA,
+          time_dist_effect_pval = NA,
+          time_dist_model_adj_rsq = NA,
+          time_dist_model_ncells = NA,
+          time_dist_effect_qval = NA
+        )
+      selected_paths <- bind_rows(selected_paths, allowlist_paths)
+    }
+  }
+
+  if (!is.null(edge_denylist)) {
+    # Remove any paths that contain an edge in the denylist
+    deny_edges <- edge_denylist %>%
+      select(from, to) %>%
+      distinct()
+    selected_paths <- selected_paths %>%
+      mutate(
+        has_deny_edge = purrr::map_lgl(
+          path,
+          function(p) {
+            any(
+              dplyr::semi_join(
+                p %>% select(from, to),
+                deny_edges,
+                by = c("from", "to")
+              ) %>% nrow() > 0
+            )
+          }
+        )
+      ) %>%
+      filter(!has_deny_edge) %>%
+      select(-has_deny_edge)
+  }
 
   print("combining paths...")
   G <- select_paths_from_pathfinding_graph(pathfinding_graph, selected_paths, allow_cycles = TRUE)
@@ -1829,8 +1894,11 @@ assemble_timeseries_transitions <- function(ccm,
     min_pathfinding_lfc = min_pathfinding_lfc,
     make_dag = make_dag,
     newdata = newdata,
-    log_abund_detection_thresh = log_abund_detection_thresh
+    log_abund_detection_thresh = log_abund_detection_thresh,
+    edge_allowlist = edge_allowlist,
+    edge_denylist = edge_denylist
   )
+
 
   # FIXME: Consider moving this step into build_timeseries_transition_graph()?
   if (!is.null(G)) {
@@ -1961,7 +2029,7 @@ assemble_transition_graph_from_perturbations <- function(ref_ccs,
                                                          max_interval = 24,
                                                          log_abund_detection_thresh = -5,
                                                          min_pathfinding_lfc = 0,
-                                                         links_between_components = c("none","ctp", "strongest-pcor", "strong-pcor"),
+                                                         links_between_components = c("none", "ctp", "strongest-pcor", "strong-pcor"),
                                                          components = "partition",
                                                          verbose = FALSE,
                                                          edge_allowlist = NULL,

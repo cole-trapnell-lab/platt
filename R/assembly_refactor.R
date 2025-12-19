@@ -33,7 +33,9 @@ wt_assembly <- function(cds,
                         min_pathfinding_lfc = 0,
                         num_time_breaks = 4,
                         batches_excluded_from_assembly = c(),
-                        force_allowlist = FALSE) {
+                        force_allowlist = FALSE,
+                        min_penalty = 0.01,
+                        max_penalty = 1e+06) {
     colData(cds)$subassembly_group <- stringr::str_c(partition_name, colData(cds)[, cell_group], sep = "-")
     colData(cds)[["cell_state"]] <- as.character(colData(cds)[[cell_group]])
 
@@ -80,7 +82,9 @@ wt_assembly <- function(cds,
                 edge_denylist = edge_denylist,
                 num_bootstraps = num_bootstraps,
                 embryo_size_factors = embryo_size_factors,
-                num_time_breaks = num_time_breaks
+                num_time_breaks = num_time_breaks,
+                min_penalty = min_penalty,
+                max_penalty = max_penalty
             ))
 
             if (is.null(wt_ccm) || is.na(wt_ccm)) {
