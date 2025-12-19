@@ -35,7 +35,8 @@ wt_assembly <- function(cds,
                         batches_excluded_from_assembly = c(),
                         force_allowlist = FALSE,
                         min_penalty = 0.01,
-                        max_penalty = 1e+06) {
+                        max_penalty = 1e+06, 
+                        break_cycles = TRUE) {
     colData(cds)$subassembly_group <- stringr::str_c(partition_name, colData(cds)[, cell_group], sep = "-")
     colData(cds)[["cell_state"]] <- as.character(colData(cds)[[cell_group]])
 
@@ -120,7 +121,8 @@ wt_assembly <- function(cds,
                 component_col = component_col,
                 verbose = verbose,
                 q_val = q_val,
-                force_allowlist = force_allowlist
+                force_allowlist = force_allowlist, 
+                break_cycles = break_cycles
             )
 
             if (is.null(wt_graph) == FALSE) {

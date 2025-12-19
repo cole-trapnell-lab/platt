@@ -378,7 +378,7 @@ assemble_partition <- function(cds,
                                log_abund_detection_thresh = -5,
                                batches_excluded_from_assembly = c(),
                                component_col = "partition",
-                               embryo_size_factors = NULL, 
+                               embryo_size_factors = NULL,
                                force_allowlist = FALSE) {
   colData(cds)$subassembly_group <- stringr::str_c(partition_name, colData(cds)[, cell_group], sep = "-")
   colData(cds)[["cell_state"]] <- as.character(colData(cds)[[cell_group]])
@@ -466,7 +466,7 @@ assemble_partition <- function(cds,
         sparsity_factor = sparsity_factor,
         perturbation_col = perturbation_col,
         component_col = component_col,
-        verbose = verbose, 
+        verbose = verbose,
         force_allowlist = force_allowlist
       )
 
@@ -551,7 +551,7 @@ assemble_partition <- function(cds,
 
       message("Assembling mutant graphs...")
       mt_graph <- assemble_mt_graph(ref_ccs,
-                                    wt_graph, 
+        wt_graph,
         perturb_models_tbl,
         newdata = newdata,
         start_time = start_time,
@@ -737,8 +737,8 @@ fit_wt_model <- function(cds,
                          embryo_size_factors = NULL,
                          batches_excluded_from_assembly = c(),
                          include_time_in_nuisance = FALSE,
-                         min_penalty =  0.01,
-                         max_penalty = 1e+06, 
+                         min_penalty = 0.01,
+                         max_penalty = 1e+06,
                          num_bootstraps = 10) {
   if (is.null(ctrl_ids)) {
     ctrl_ids <- unique(colData(cds)[[perturbation_col]])
@@ -828,8 +828,8 @@ fit_wt_model <- function(cds,
     verbose = verbose,
     penalize_by_distance = penalize_by_distance,
     # covariance_type="spherical",
-    min_penalty = min_penalty, 
-    max_penalty = max_penalty, 
+    min_penalty = min_penalty,
+    max_penalty = max_penalty,
     num_bootstraps = num_bootstraps
   )
 
@@ -962,6 +962,34 @@ assemble_wt_graph <- function(cds,
     print("breaking cycles in control timeseries graph...")
     wt_state_transition_graph <- platt:::break_cycles_in_state_transition_graph(wt_state_transition_graph, "support")
   }
+
+  # ensure edges again
+  if (!is.null(edge_allowlist)) {
+    # Add missing edges from edge_allowlist
+    current_edges <- igraph::as_data_frame(wt_state_transition_graph, what = "edges") %>% select(from, to)
+    missing_edges <- anti_join(edge_allowlist, current_edges, by = c("from", "to"))
+    if (nrow(missing_edges) > 0) {
+      # Add missing edges with default support value
+      for (i in seq_len(nrow(missing_edges))) {
+        wt_state_transition_graph <- igraph::add_edges(
+          wt_state_transition_graph,
+          c(missing_edges$from[i], missing_edges$to[i]),
+          attr = list(support = NA)
+        )
+      }
+    }
+  }
+
+  if (!is.null(edge_denylist)) {
+    # Remove edges in edge_denylist
+    edges_to_remove <- igraph::as_data_frame(wt_state_transition_graph, what = "edges") %>%
+      inner_join(edge_denylist, by = c("from", "to"))
+    if (nrow(edges_to_remove) > 0) {
+      edge_ids <- igraph::get.edge.ids(wt_state_transition_graph, t(as.matrix(edges_to_remove[, c("from", "to")])))
+      wt_state_transition_graph <- igraph::delete_edges(wt_state_transition_graph, edge_ids)
+    }
+  }
+
 
   return(wt_state_transition_graph)
 }
