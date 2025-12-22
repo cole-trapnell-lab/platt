@@ -1,83 +1,83 @@
 load_ai_precompute_for_cell_types <- function(cell_types, ai_notes_path = "../../../ai_notes/cell_types/") {
-    breakFun <- function(x) {
-        if (nchar(x) == 0) {
-            return("\n\n")
-        } else {
-            return(x)
-        }
+  breakFun <- function(x) {
+    if (nchar(x) == 0) {
+      return("\n\n")
+    } else {
+      return(x)
     }
+  }
 
-    read_cell_type_background <- function(ct, ai_notes_path, bg_type = "genetic_req.md") {
-        ai_bg_path <- paste(ai_notes_path, blogdown:::dash_filename(ct), bg_type, sep = "/")
-        if (fs::file_exists(ai_bg_path)) {
-            storeLines <- readLines(ai_bg_path, warn = FALSE)
-            bg_content <- paste0(storeLines, collapse = "\n")
-            return(bg_content)
-        } else {
-            message(paste("No", bg_type, "file found for cell type", ct))
-            return(NA_character_)
-        }
+  read_cell_type_background <- function(ct, ai_notes_path, bg_type = "genetic_req.md") {
+    ai_bg_path <- paste(ai_notes_path, blogdown:::dash_filename(ct), bg_type, sep = "/")
+    if (fs::file_exists(ai_bg_path)) {
+      storeLines <- readLines(ai_bg_path, warn = FALSE)
+      bg_content <- paste0(storeLines, collapse = "\n")
+      return(bg_content)
+    } else {
+      message(paste("No", bg_type, "file found for cell type", ct))
+      return(NA_character_)
     }
+  }
 
-    # Load sig_pathways.rds for each cell type
-    read_sig_pathways <- function(ct, ai_notes_path) {
-        rds_path <- file.path(ai_notes_path, blogdown:::dash_filename(ct), "sig_pathways.rds")
-        if (fs::file_exists(rds_path)) {
-            tryCatch(
-                readRDS(rds_path),
-                error = function(e) {
-                    message(paste("Error loading sig_pathways.rds for", ct, ":", e$message))
-                    return(NULL)
-                }
-            )
-        } else {
-            message(paste("No sig_pathways.rds file found for cell type", ct))
-            return(NULL)
+  # Load sig_pathways.rds for each cell type
+  read_sig_pathways <- function(ct, ai_notes_path) {
+    rds_path <- file.path(ai_notes_path, blogdown:::dash_filename(ct), "sig_pathways.rds")
+    if (fs::file_exists(rds_path)) {
+      tryCatch(
+        readRDS(rds_path),
+        error = function(e) {
+          message(paste("Error loading sig_pathways.rds for", ct, ":", e$message))
+          return(NULL)
         }
+      )
+    } else {
+      message(paste("No sig_pathways.rds file found for cell type", ct))
+      return(NULL)
     }
+  }
 
-    ai_gen_req_bg <- lapply(cell_types, read_cell_type_background, ai_notes_path = ai_notes_path, bg_type = "genetic_req.md")
-    names(ai_gen_req_bg) <- cell_types
+  ai_gen_req_bg <- lapply(cell_types, read_cell_type_background, ai_notes_path = ai_notes_path, bg_type = "genetic_req.md")
+  names(ai_gen_req_bg) <- cell_types
 
-    ai_kinetic_bg <- lapply(cell_types, read_cell_type_background, ai_notes_path = ai_notes_path, bg_type = "kinetic_summary.md")
-    names(ai_kinetic_bg) <- cell_types
+  ai_kinetic_bg <- lapply(cell_types, read_cell_type_background, ai_notes_path = ai_notes_path, bg_type = "kinetic_summary.md")
+  names(ai_kinetic_bg) <- cell_types
 
-    ai_lineage_bg <- lapply(cell_types, read_cell_type_background, ai_notes_path = ai_notes_path, bg_type = "lineage_summary.md")
-    names(ai_lineage_bg) <- cell_types
+  ai_lineage_bg <- lapply(cell_types, read_cell_type_background, ai_notes_path = ai_notes_path, bg_type = "lineage_summary.md")
+  names(ai_lineage_bg) <- cell_types
 
-    ai_pathway_bg <- lapply(cell_types, read_cell_type_background, ai_notes_path = ai_notes_path, bg_type = "pathway_summary.md")
-    names(ai_pathway_bg) <- cell_types
+  ai_pathway_bg <- lapply(cell_types, read_cell_type_background, ai_notes_path = ai_notes_path, bg_type = "pathway_summary.md")
+  names(ai_pathway_bg) <- cell_types
 
-    ai_regulator_pathway_bg <- lapply(cell_types, read_cell_type_background, ai_notes_path = ai_notes_path, bg_type = "regulator_pathway_summary.md")
-    names(ai_regulator_pathway_bg) <- cell_types
+  ai_regulator_pathway_bg <- lapply(cell_types, read_cell_type_background, ai_notes_path = ai_notes_path, bg_type = "regulator_pathway_summary.md")
+  names(ai_regulator_pathway_bg) <- cell_types
 
-    ai_summary_bg <- lapply(cell_types, read_cell_type_background, ai_notes_path = ai_notes_path, bg_type = "summary.md")
-    names(ai_summary_bg) <- cell_types
+  ai_summary_bg <- lapply(cell_types, read_cell_type_background, ai_notes_path = ai_notes_path, bg_type = "summary.md")
+  names(ai_summary_bg) <- cell_types
 
-    # Load sig_pathways.rds for each cell type
-    sig_pathways <- lapply(cell_types, read_sig_pathways, ai_notes_path = ai_notes_path)
-    names(sig_pathways) <- cell_types
+  # Load sig_pathways.rds for each cell type
+  sig_pathways <- lapply(cell_types, read_sig_pathways, ai_notes_path = ai_notes_path)
+  names(sig_pathways) <- cell_types
 
-    bg_tibble <- tibble(
-        cell_type = names(ai_gen_req_bg),
-        genetic_req_background = unlist(ai_gen_req_bg),
-        kinetic_background = unlist(ai_kinetic_bg),
-        lineage_background = unlist(ai_lineage_bg),
-        pathway_background = unlist(ai_pathway_bg),
-        regulator_pathway_background = unlist(ai_regulator_pathway_bg),
-        summary_background = unlist(ai_summary_bg),
-        sig_pathways = sig_pathways
-    )
+  bg_tibble <- tibble(
+    cell_type = names(ai_gen_req_bg),
+    genetic_req_background = unlist(ai_gen_req_bg),
+    kinetic_background = unlist(ai_kinetic_bg),
+    lineage_background = unlist(ai_lineage_bg),
+    pathway_background = unlist(ai_pathway_bg),
+    regulator_pathway_background = unlist(ai_regulator_pathway_bg),
+    summary_background = unlist(ai_summary_bg),
+    sig_pathways = sig_pathways
+  )
 
-    return(bg_tibble)
+  return(bg_tibble)
 }
 
 format_goi <- function(degs_of_interest) {
   if (
     is.null(degs_of_interest) ||
-    !is.data.frame(degs_of_interest) ||
-    nrow(degs_of_interest) == 0 ||
-    !"gene_short_name" %in% colnames(degs_of_interest)
+      !is.data.frame(degs_of_interest) ||
+      nrow(degs_of_interest) == 0 ||
+      !"gene_short_name" %in% colnames(degs_of_interest)
   ) {
     return(list(goi_vector_sorted = character(0), goi_line = "none"))
   }
@@ -119,9 +119,9 @@ format_goi <- function(degs_of_interest) {
 
 format_pathway_regulatory_genes <- function(goi_in_pathway, degs_of_interest) {
   if (is.null(degs_of_interest) ||
-      !is.data.frame(degs_of_interest) ||
-      !"gene_short_name" %in% colnames(degs_of_interest) ||
-      is.null(goi_in_pathway) || length(goi_in_pathway) == 0) {
+    !is.data.frame(degs_of_interest) ||
+    !"gene_short_name" %in% colnames(degs_of_interest) ||
+    is.null(goi_in_pathway) || length(goi_in_pathway) == 0) {
     return("")
   }
   # Ensure columns exist
@@ -174,7 +174,7 @@ build_pathway_tbl <- function(info, sig_p_val_thresh, top_n_pathways) {
         mutate(
           regulatory_genes = purrr::map_chr(
             genes_of_interest_in_pathway,
-            ~format_pathway_regulatory_genes(.x, info$degs_of_interest)
+            ~ format_pathway_regulatory_genes(.x, info$degs_of_interest)
           )
         )
     }
@@ -184,21 +184,29 @@ build_pathway_tbl <- function(info, sig_p_val_thresh, top_n_pathways) {
 
 get_descendants <- function(cell_type, combined_psg) {
   g <- if (class(combined_psg) == "cell_state_graph") combined_psg@graph else combined_psg
-  if (!cell_type %in% igraph::V(g)$name) return(character(0))
-  igraph::subcomponent(g, cell_type, mode = "out") %>% names() %>% setdiff(cell_type)
+  if (!cell_type %in% igraph::V(g)$name) {
+    return(character(0))
+  }
+  igraph::subcomponent(g, cell_type, mode = "out") %>%
+    names() %>%
+    setdiff(cell_type)
 }
 
 # Helper: Get direct parent(s) of a cell type
-get_parents <- function(cell_type, combined_psg) {
+get_dir_parents <- function(cell_type, combined_psg) {
   g <- if (class(combined_psg) == "cell_state_graph") combined_psg@graph else combined_psg
-  if (!cell_type %in% igraph::V(g)$name) return(character(0))
+  if (!cell_type %in% igraph::V(g)$name) {
+    return(character(0))
+  }
   igraph::neighbors(g, cell_type, mode = "in")$name
 }
 
 get_roots <- function(ct, combined_psg) {
   g <- if (inherits(combined_psg, "cell_state_graph")) combined_psg@graph else combined_psg
   # Find all vertices in the connected component containing ct
-  if (!ct %in% igraph::V(g)$name) return(character(0))
+  if (!ct %in% igraph::V(g)$name) {
+    return(character(0))
+  }
   component_nodes <- igraph::subcomponent(g, ct, mode = "all") %>% names()
   # Roots are nodes in this component with no incoming edges
   roots <- component_nodes[
@@ -218,22 +226,22 @@ humanize_pathway_name <- function(pathway) {
 }
 
 summarize_cell_type_impact <- function(
-  ct,
-  perturbation_description,
-  target_gene_expression,
-  dact_results,
-  degs,
-  ref_expression,
-  ontologies,
-  ai_notes_path,
-  sig_p_val_thresh = 0.05,
-  genes_of_interest = NULL,
-  power_thresh = 0.8,
-  top_n_pathways = 5,
-  abundance_phenotypes = NULL,
-  fitness_phenotypes = NULL,
-  identity_phenotypes = NULL # <-- NEW ARGUMENT
-) {
+    ct,
+    perturbation_description,
+    target_gene_expression,
+    dact_results,
+    degs,
+    ref_expression,
+    ontologies,
+    ai_notes_path,
+    sig_p_val_thresh = 0.05,
+    genes_of_interest = NULL,
+    power_thresh = 0.8,
+    top_n_pathways = 5,
+    abundance_phenotypes = NULL,
+    fitness_phenotypes = NULL,
+    identity_phenotypes = NULL # <-- NEW ARGUMENT
+    ) {
   # 1. Abundance change (from abundance_phenotypes if available)
   abundance_row <- if (!is.null(abundance_phenotypes)) {
     abundance_phenotypes %>% filter(cell_group == ct)
@@ -249,9 +257,13 @@ summarize_cell_type_impact <- function(
     abundance_code
   } else if (nrow(dact_row) > 0 && all(c("delta_q_value", "delta_log_abund", "power") %in% colnames(dact_row))) {
     if (dact_row$delta_q_value[1] < sig_p_val_thresh) {
-      if (dact_row$delta_log_abund[1] < 0) "depleted"
-      else if (dact_row$delta_log_abund[1] > 0) "enriched"
-      else "significant_no_direction"
+      if (dact_row$delta_log_abund[1] < 0) {
+        "depleted"
+      } else if (dact_row$delta_log_abund[1] > 0) {
+        "enriched"
+      } else {
+        "significant_no_direction"
+      }
     } else {
       if (dact_row$power[1] >= power_thresh) {
         "no_change"
@@ -314,7 +326,9 @@ summarize_cell_type_impact <- function(
             universe = universe_genes
           )
         )
-        fora_res_list[[ont]] <- fora_res %>% arrange(pval) %>% mutate(ontology = ont)
+        fora_res_list[[ont]] <- fora_res %>%
+          arrange(pval) %>%
+          mutate(ontology = ont)
       }
     }
   }
@@ -363,7 +377,7 @@ summarize_cell_type_impact <- function(
           pathway_genes_in_pathways <<- union(pathway_genes_in_pathways, goi_in_pathway)
           paste0(
             "- [", ontology, "] ", pathway_name,
-            " (p=", pval, 
+            " (p=", pval,
             if (goi_arrows != "") paste0(", regulatory genes: ", goi_arrows) else "",
             ")"
           )
@@ -409,8 +423,8 @@ summarize_cell_type_impact <- function(
     paste0("Fitness label: ", fitness_label),
     paste0("Fitness severity: ", fitness_severity),
     paste0("Fitness evidence: ", fitness_evidence),
-    paste0("Identity label: ", identity_label),           # <-- NEW LINE
-    paste0("Identity evidence: ", identity_evidence),     # <-- NEW LINE
+    paste0("Identity label: ", identity_label), # <-- NEW LINE
+    paste0("Identity evidence: ", identity_evidence), # <-- NEW LINE
     paste0("Target genes expressed in this cell type: ", expressed_targets_line),
     paste0("Pathway background: ", pathway_background),
     pathway_lines,
@@ -426,8 +440,8 @@ summarize_cell_type_impact <- function(
     fitness_label = fitness_label,
     fitness_severity = fitness_severity,
     fitness_evidence = fitness_evidence,
-    identity_label = identity_label,           # <-- NEW FIELD
-    identity_evidence = identity_evidence,     # <-- NEW FIELD
+    identity_label = identity_label, # <-- NEW FIELD
+    identity_evidence = identity_evidence, # <-- NEW FIELD
     degs = cell_type_degs,
     goi_line = goi$goi_line,
     pathways = fora_res
@@ -439,7 +453,7 @@ build_lineage_context <- function(ct, parents, results, all_types = NULL) {
   if (!is.null(all_types)) {
     parents <- intersect(parents, all_types)
   }
-  
+
   # Build parent summaries
   parent_summaries <- unlist(lapply(parents, function(p) {
     parent_context <- if (!is.null(results[[p]]$llm_summary)) {
@@ -449,19 +463,19 @@ build_lineage_context <- function(ct, parents, results, all_types = NULL) {
     }
     paste0("Parent (", p, "):\n", parent_context)
   }), use.names = FALSE)
-  
+
   # Build current cell type summary
   ct_context <- paste0(
     "Current Cell Type (", ct, "):\n",
     if (!is.null(results[[ct]]$llm_summary)) results[[ct]]$llm_summary else results[[ct]]$summary
   )
-  
+
   # Combine parent summaries and current cell type summary
   context_text <- paste(
     c(parent_summaries, ct_context),
     collapse = "\n\n"
   )
-  
+
   context_text
 }
 
@@ -494,27 +508,26 @@ py_disrupted_pathways_to_tibble <- function(x) {
 }
 
 summarize_impact_in_lineage_context <- function(
-  perturbation_description,
-  target_gene_expression,
-  dact_results,
-  degs,
-  ref_expression,
-  ontologies,
-  combined_psg,
-  ai_notes_path,
-  sig_p_val_thresh = 0.05,
-  genes_of_interest = NULL,
-  llm_fun = NULL,
-  max_lineage_depth = Inf,
-  cell_types = NULL, 
-  primary_impact_summary = "",
-  excluded_cell_types = NULL,
-  abundance_phenotypes = NULL,
-  fitness_phenotypes = NULL,
-  identity_phenotypes = NULL,
-  verbose = FALSE,
-  ...
-) {
+    perturbation_description,
+    target_gene_expression,
+    dact_results,
+    degs,
+    ref_expression,
+    ontologies,
+    combined_psg,
+    ai_notes_path,
+    sig_p_val_thresh = 0.05,
+    genes_of_interest = NULL,
+    llm_fun = NULL,
+    max_lineage_depth = Inf,
+    cell_types = NULL,
+    primary_impact_summary = "",
+    excluded_cell_types = NULL,
+    abundance_phenotypes = NULL,
+    fitness_phenotypes = NULL,
+    identity_phenotypes = NULL,
+    verbose = FALSE,
+    ...) {
   g <- if (class(combined_psg) == "cell_state_graph") combined_psg@graph else combined_psg
 
   # Determine which cell types to analyze
@@ -556,7 +569,7 @@ summarize_impact_in_lineage_context <- function(
     progress <- FALSE
 
     ready <- purrr::keep(remaining, function(ct) {
-      parents <- get_parents(ct, combined_psg)
+      parents <- get_dir_parents(ct, combined_psg)
       relevant_parents <- intersect(parents, all_types)
       all(relevant_parents %in% processed) || length(relevant_parents) == 0
     })
@@ -564,7 +577,7 @@ summarize_impact_in_lineage_context <- function(
       ready <- remaining
     }
     for (ct in ready) {
-      parents <- get_parents(ct, combined_psg)
+      parents <- get_dir_parents(ct, combined_psg)
       if (verbose) message(sprintf("[DEBUG] Processing cell type: %s (iteration %d)", ct, iter))
       results[[ct]] <- summarize_cell_type_impact(
         ct,
@@ -577,7 +590,7 @@ summarize_impact_in_lineage_context <- function(
         ai_notes_path,
         sig_p_val_thresh,
         genes_of_interest,
-        abundance_phenotypes = abundance_phenotypes, 
+        abundance_phenotypes = abundance_phenotypes,
         fitness_phenotypes = fitness_phenotypes,
         identity_phenotypes = identity_phenotypes
       )
@@ -661,10 +674,10 @@ summarize_impact_in_lineage_context <- function(
           concise_summary <- paste(parent_phenotype_summaries, collapse = "\n")
         }
 
-        disrupted_pathways <- purrr::map(parents, ~results[[.x]]$llm_disrupted_pathways) %>%
+        disrupted_pathways <- purrr::map(parents, ~ results[[.x]]$llm_disrupted_pathways) %>%
           purrr::compact() %>%
           purrr::flatten()
-        other_dysregulated_genes <- purrr::map(parents, ~results[[.x]]$llm_other_dysregulated_genes) %>%
+        other_dysregulated_genes <- purrr::map(parents, ~ results[[.x]]$llm_other_dysregulated_genes) %>%
           purrr::compact() %>%
           unlist()
       }
@@ -728,7 +741,7 @@ collect_cell_loss_explanations <- function(explanations_df) {
                 "- Name: {pathway_row[['name']]}\n  Description: {pathway_row[['description']]}\n  Dysregulated genes: {paste(as.character(pathway_row[['dysregulated_genes']]), collapse=', ')}"
               )
             }),
-            collapse = '\n'
+            collapse = "\n"
           )
         }
       },
@@ -757,7 +770,7 @@ cell_type_link <- function(cell_type) {
     filter(cell_type == !!cell_type) %>%
     pull(post_file)
   if (length(post_file) > 0 && !is.na(post_file)) {
-    gt::html(as.character(htmltools::a(href = post_link(post_file, prefix="^content", base_url=base_url), cell_type)))
+    gt::html(as.character(htmltools::a(href = post_link(post_file, prefix = "^content", base_url = base_url), cell_type)))
   } else {
     cell_type
   }
@@ -769,7 +782,7 @@ gene_link <- function(gene) {
     filter(gene == !!gene) %>%
     pull(post_file)
   if (length(post_file) > 0 && !is.na(post_file)) {
-    gt::html(as.character(htmltools::a(href = post_link(post_file, prefix="^content", base_url=base_url), gene)))
+    gt::html(as.character(htmltools::a(href = post_link(post_file, prefix = "^content", base_url = base_url), gene)))
   } else {
     gene
   }
@@ -777,20 +790,19 @@ gene_link <- function(gene) {
 
 
 zscape_gt_perturbation_impact_table <- function(
-  impact_table,
-  cell_type_post_tbl,
-  gene_post_tbl,
-  cell_types_of_interest = NULL,
-  base_url = "",
-  show_only_with_pathways = TRUE
-) {
+    impact_table,
+    cell_type_post_tbl,
+    gene_post_tbl,
+    cell_types_of_interest = NULL,
+    base_url = "",
+    show_only_with_pathways = TRUE) {
   # Helper to get cell type link
   cell_type_link <- function(cell_type) {
     post_file <- cell_type_post_tbl %>%
       filter(cell_type == !!cell_type) %>%
       pull(post_file)
     if (length(post_file) > 0 && !is.na(post_file)) {
-      gt::html(as.character(htmltools::a(href = post_link(post_file, prefix="^content", base_url=base_url), cell_type)))
+      gt::html(as.character(htmltools::a(href = post_link(post_file, prefix = "^content", base_url = base_url), cell_type)))
     } else {
       cell_type
     }
@@ -802,7 +814,7 @@ zscape_gt_perturbation_impact_table <- function(
       filter(gene == !!gene) %>%
       pull(post_file)
     if (length(post_file) > 0 && !is.na(post_file)) {
-      gt::html(as.character(htmltools::a(href = post_link(post_file, prefix="^content", base_url=base_url), gene)))
+      gt::html(as.character(htmltools::a(href = post_link(post_file, prefix = "^content", base_url = base_url), gene)))
     } else {
       gene
     }
@@ -815,9 +827,8 @@ zscape_gt_perturbation_impact_table <- function(
 
   # Only proceed if there are valid pathway explanations
   if (!is.null(impact_table) && nrow(impact_table) > 0 &&
-      "llm_disrupted_pathways" %in% colnames(impact_table) &&
-      any(!purrr::map_lgl(impact_table$llm_disrupted_pathways, is.null))) {
-
+    "llm_disrupted_pathways" %in% colnames(impact_table) &&
+    any(!purrr::map_lgl(impact_table$llm_disrupted_pathways, is.null))) {
     pathway_table <- impact_table %>%
       group_by(cell_type) %>%
       mutate(
@@ -863,14 +874,14 @@ zscape_gt_perturbation_impact_table <- function(
         ),
         dysregulated_genes = purrr::map(
           dysregulated_genes,
-          ~purrr::map(.x, gene_link)
+          ~ purrr::map(.x, gene_link)
         )
       ) %>%
       ungroup() %>%
       mutate(
         dysregulated_genes = purrr::map_chr(
           dysregulated_genes,
-          ~paste(purrr::map_chr(.x, as.character), collapse = ", ")
+          ~ paste(purrr::map_chr(.x, as.character), collapse = ", ")
         )
       )
 
@@ -926,7 +937,7 @@ zscape_gt_perturbation_impact_table <- function(
         description = "LLM explanation",
         dysregulated_genes = "Dysregulated genes"
       ) %>%
-      gt::opt_interactive(use_search=TRUE, use_compact_mode=TRUE)
+      gt::opt_interactive(use_search = TRUE, use_compact_mode = TRUE)
   } else {
     gt::gt(data.frame(Message = "No valid LLM pathways found in impact_table."))
   }
@@ -934,9 +945,8 @@ zscape_gt_perturbation_impact_table <- function(
 
 
 filter_and_pivot_dysregulated_genes <- function(
-  impact_table,
-  phenotype_types = c("abundance", "identity", "stress")
-) {
+    impact_table,
+    phenotype_types = c("abundance", "identity", "stress")) {
   # Ensure columns exist and are list-columns
   if (!"llm_disrupted_pathways" %in% names(impact_table)) {
     impact_table$llm_disrupted_pathways <- vector("list", nrow(impact_table))
@@ -949,9 +959,9 @@ filter_and_pivot_dysregulated_genes <- function(
     filter(
       (
         ("abundance" %in% phenotype_types & !is.na(abundance_code) & abundance_code != "A0 No change") |
-        ("identity" %in% phenotype_types & !is.na(identity_label) & identity_label != "I0 Identity intact") |
-        ("fitness" %in% phenotype_types & !is.na(fitness_label) & !(fitness_label %in% c("F0 No significant phenotype", "F0 Normal"))) |
-        ("stress" %in% phenotype_types & !is.na(fitness_label) & stringr::str_detect(fitness_label, regex("stress|F3", ignore_case = TRUE)))
+          ("identity" %in% phenotype_types & !is.na(identity_label) & identity_label != "I0 Identity intact") |
+          ("fitness" %in% phenotype_types & !is.na(fitness_label) & !(fitness_label %in% c("F0 No significant phenotype", "F0 Normal"))) |
+          ("stress" %in% phenotype_types & !is.na(fitness_label) & stringr::str_detect(fitness_label, regex("stress|F3", ignore_case = TRUE)))
       )
     )
 
@@ -1018,5 +1028,3 @@ filter_and_pivot_dysregulated_genes <- function(
 
   return(result)
 }
-
-
