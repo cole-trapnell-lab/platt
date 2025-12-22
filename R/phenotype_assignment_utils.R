@@ -192,29 +192,29 @@ build_custom_modules <- function(gene_set_BP, module_definitions) {
 }
 
 load_deg_file <- function(deg_out_filename, deg_q_val_thresh = 1.0, cell_type_denylist = c()) {
-  tryCatch(
-    {
-      deg_tbl <- data.table::fread(deg_out_filename)
-      deg_tbl$cell_group <- stringr::str_trim(deg_tbl$cell_group)
-      deg_tbl <- deg_tbl %>% filter(cell_group %in% cell_type_denylist == FALSE)
-      # TODO: consider input validation with "problems", below.
-      ## print (problems(deg_tbl))
+    tryCatch(
+        {
+            deg_tbl <- data.table::fread(deg_out_filename)
+            deg_tbl$cell_group <- stringr::str_trim(deg_tbl$cell_group)
+            deg_tbl <- deg_tbl %>% filter(cell_group %in% cell_type_denylist == FALSE)
+            # TODO: consider input validation with "problems", below.
+            ## print (problems(deg_tbl))
 
-      # FIXME: remove this filter, shouldn't be needed:
-      # deg_tbl <- deg_tbl %>% mutate(perturb_to_ctrl_p_value = ifelse(abs(perturb_to_ctrl_shrunken_lfc) > 15, 1.0, perturb_to_ctrl_p_value))
-      # deg_tbl <- deg_tbl %>% mutate(perturb_to_ctrl_shrunken_lfc = ifelse(abs(perturb_to_ctrl_shrunken_lfc) > 15, 0, perturb_to_ctrl_shrunken_lfc))
+            # FIXME: remove this filter, shouldn't be needed:
+            # deg_tbl <- deg_tbl %>% mutate(perturb_to_ctrl_p_value = ifelse(abs(perturb_to_ctrl_shrunken_lfc) > 15, 1.0, perturb_to_ctrl_p_value))
+            # deg_tbl <- deg_tbl %>% mutate(perturb_to_ctrl_shrunken_lfc = ifelse(abs(perturb_to_ctrl_shrunken_lfc) > 15, 0, perturb_to_ctrl_shrunken_lfc))
 
-      deg_tbl <- deg_tbl %>% mutate(perturb_to_ctrl_q_value = p.adjust(perturb_to_ctrl_p_value))
-      deg_tbl <- deg_tbl %>% filter(perturb_to_ctrl_q_value <= deg_q_val_thresh)
+            deg_tbl <- deg_tbl %>% mutate(perturb_to_ctrl_q_value = p.adjust(perturb_to_ctrl_p_value))
+            deg_tbl <- deg_tbl %>% filter(perturb_to_ctrl_q_value <= deg_q_val_thresh)
 
 
-      deg_tbl
-    },
-    error = function(e) {
-      print(e)
-      NULL
-    }
-  )
+            deg_tbl
+        },
+        error = function(e) {
+            print(e)
+            NULL
+        }
+    )
 }
 
 assign_phenotypes <- function(contrast_tbls, fitness_gene_sets, identity_gene_sets, combined_psg, cell_type_denylist = NULL) {
@@ -271,12 +271,12 @@ filter_denylisted_cell_types <- function(dact_tbl, deg_tbl, cell_type_denylist) 
 
 
 assign_phenotypes_to_cell_types <- function(
-    dact_tbl, deg_tbl, gene_sets,
-    identity_gene_sets,
-    combined_psg,
-    perturb_name, perturb_group, perturb_time_window, run,
-    pb = NULL # Accept progress bar object
-    ) {
+  dact_tbl, deg_tbl, gene_sets,
+  identity_gene_sets,
+  combined_psg,
+  perturb_name, perturb_group, perturb_time_window, run,
+  pb = NULL # Accept progress bar object
+) {
     cell_types <- unique(dact_tbl$cell_group)
     results <- purrr::map_dfr(cell_types, function(ct) {
         if (!is.null(pb)) pb$tick()
@@ -452,7 +452,9 @@ write_phenotype_outputs <- function(phenotype_tbl, base_dir) {
         group_by(perturb_group, run, perturb_name) %>%
         group_walk(~ {
             # Output directory: <base_dir>/<perturb_group>/run_<run>/phenotypes/perturb_<perturb_name>/
-            out_dir <- file.path(base_dir, .y$perturb_group, paste0("run_", as.character(.y$run)), "phenotypes", paste0("perturb_", .y$perturb_name))
+            # out_dir <- file.path(base_dir, .y$perturb_group, paste0("run_", as.character(.y$run)), "phenotypes", paste0("perturb_", .y$perturb_name))
+
+            out_dir <- file.path(base_dir, "phenotypes")
             if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
 
             # Write abundance info
