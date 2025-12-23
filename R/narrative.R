@@ -226,22 +226,22 @@ humanize_pathway_name <- function(pathway) {
 }
 
 summarize_cell_type_impact <- function(
-    ct,
-    perturbation_description,
-    target_gene_expression,
-    dact_results,
-    degs,
-    ref_expression,
-    ontologies,
-    ai_notes_path,
-    sig_p_val_thresh = 0.05,
-    genes_of_interest = NULL,
-    power_thresh = 0.8,
-    top_n_pathways = 5,
-    abundance_phenotypes = NULL,
-    fitness_phenotypes = NULL,
-    identity_phenotypes = NULL # <-- NEW ARGUMENT
-    ) {
+  ct,
+  perturbation_description,
+  target_gene_expression,
+  dact_results,
+  degs,
+  ref_expression,
+  ontologies,
+  ai_notes_path,
+  sig_p_val_thresh = 0.05,
+  genes_of_interest = NULL,
+  power_thresh = 0.8,
+  top_n_pathways = 5,
+  abundance_phenotypes = NULL,
+  fitness_phenotypes = NULL,
+  identity_phenotypes = NULL # <-- NEW ARGUMENT
+) {
   # 1. Abundance change (from abundance_phenotypes if available)
   abundance_row <- if (!is.null(abundance_phenotypes)) {
     abundance_phenotypes %>% filter(cell_group == ct)
@@ -508,26 +508,27 @@ py_disrupted_pathways_to_tibble <- function(x) {
 }
 
 summarize_impact_in_lineage_context <- function(
-    perturbation_description,
-    target_gene_expression,
-    dact_results,
-    degs,
-    ref_expression,
-    ontologies,
-    combined_psg,
-    ai_notes_path,
-    sig_p_val_thresh = 0.05,
-    genes_of_interest = NULL,
-    llm_fun = NULL,
-    max_lineage_depth = Inf,
-    cell_types = NULL,
-    primary_impact_summary = "",
-    excluded_cell_types = NULL,
-    abundance_phenotypes = NULL,
-    fitness_phenotypes = NULL,
-    identity_phenotypes = NULL,
-    verbose = FALSE,
-    ...) {
+  perturbation_description,
+  target_gene_expression,
+  dact_results,
+  degs,
+  ref_expression,
+  ontologies,
+  combined_psg,
+  ai_notes_path,
+  sig_p_val_thresh = 0.05,
+  genes_of_interest = NULL,
+  llm_fun = NULL,
+  max_lineage_depth = Inf,
+  cell_types = NULL,
+  primary_impact_summary = "",
+  excluded_cell_types = NULL,
+  abundance_phenotypes = NULL,
+  fitness_phenotypes = NULL,
+  identity_phenotypes = NULL,
+  verbose = FALSE,
+  ...
+) {
   g <- if (class(combined_psg) == "cell_state_graph") combined_psg@graph else combined_psg
 
   # Determine which cell types to analyze
@@ -569,7 +570,7 @@ summarize_impact_in_lineage_context <- function(
     progress <- FALSE
 
     ready <- purrr::keep(remaining, function(ct) {
-      parents <- get_dir_parents(ct, combined_psg)
+      parents <- get_parents(ct, combined_psg)
       relevant_parents <- intersect(parents, all_types)
       all(relevant_parents %in% processed) || length(relevant_parents) == 0
     })
@@ -577,7 +578,7 @@ summarize_impact_in_lineage_context <- function(
       ready <- remaining
     }
     for (ct in ready) {
-      parents <- get_dir_parents(ct, combined_psg)
+      parents <- get_parents(ct, combined_psg)
       if (verbose) message(sprintf("[DEBUG] Processing cell type: %s (iteration %d)", ct, iter))
       results[[ct]] <- summarize_cell_type_impact(
         ct,
@@ -639,6 +640,10 @@ summarize_impact_in_lineage_context <- function(
         concise_summary <- if (!is.null(llm_structured) && !is.null(llm_structured$concise_summary)) llm_structured$concise_summary else NA_character_
         disrupted_pathways <- if (!is.null(llm_structured)) llm_structured$disrupted_pathways else NULL
         other_dysregulated_genes <- if (!is.null(llm_structured)) llm_structured$other_dysregulated_genes else NULL
+        # Defensive: ensure it's a character vector or NULL
+        if (!is.null(other_dysregulated_genes) && !is.character(other_dysregulated_genes)) {
+          other_dysregulated_genes <- as.character(other_dysregulated_genes)
+        }
       } else {
         if (verbose) message(sprintf("[DEBUG] Skipping LLM for cell type: %s (no abundance, fitness, or identity phenotype)", ct))
         parent_phenotype_summaries <- sapply(parents, function(p) {
@@ -706,6 +711,29 @@ summarize_impact_in_lineage_context <- function(
     cell_type = names(results),
     data = unname(results)
   ) %>% unnest_wider(data)
+
+  # Ensure llm_disrupted_pathways column exists before mutate
+  if (!"llm_disrupted_pathways" %in% names(results)) {
+    results$llm_disrupted_pathways <- vector("list", nrow(results))
+  }
+
+  results <- results %>%
+    mutate(
+      llm_disrupted_pathways = purrr::map(llm_disrupted_pathways, function(x) {
+        tryCatch(
+          py_disrupted_pathways_to_tibble(x),
+          error = function(e) {
+            warning(sprintf("Error processing llm_disrupted_pathways: %s", e$message))
+            tibble::tibble(
+              name = character(),
+              description = character(),
+              dysregulated_genes = character()
+            )
+          }
+        )
+      })
+    )
+  # ...existing code...
 
   results <- results %>%
     mutate(
@@ -790,12 +818,13 @@ gene_link <- function(gene) {
 
 
 zscape_gt_perturbation_impact_table <- function(
-    impact_table,
-    cell_type_post_tbl,
-    gene_post_tbl,
-    cell_types_of_interest = NULL,
-    base_url = "",
-    show_only_with_pathways = TRUE) {
+  impact_table,
+  cell_type_post_tbl,
+  gene_post_tbl,
+  cell_types_of_interest = NULL,
+  base_url = "",
+  show_only_with_pathways = TRUE
+) {
   # Helper to get cell type link
   cell_type_link <- function(cell_type) {
     post_file <- cell_type_post_tbl %>%
@@ -945,8 +974,9 @@ zscape_gt_perturbation_impact_table <- function(
 
 
 filter_and_pivot_dysregulated_genes <- function(
-    impact_table,
-    phenotype_types = c("abundance", "identity", "stress")) {
+  impact_table,
+  phenotype_types = c("abundance", "identity", "stress")
+) {
   # Ensure columns exist and are list-columns
   if (!"llm_disrupted_pathways" %in% names(impact_table)) {
     impact_table$llm_disrupted_pathways <- vector("list", nrow(impact_table))
