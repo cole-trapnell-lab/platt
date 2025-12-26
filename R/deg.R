@@ -135,6 +135,38 @@ measure_maintenance_effect <- function(self_estimate, other_estimates) {
   return(effect_size)
 }
 
+#' Gene filter helper for DEG tests
+#'
+#' Selects genes based on detection thresholds with optional condition-aware logic.
+#'
+#' @param expr_mat genes x samples sparse matrix of counts (or logical detections).
+#' @param condition_vec character vector labeling samples as control vs perturb.
+#' @param min_samples_detected integer threshold for detection.
+#' @param mode either "global" (aggregate) or "by_condition".
+#'
+#' @return integer indices of genes to keep.
+#' @keywords internal
+genes_to_test_from_detection <- function(expr_mat,
+                                         condition_vec,
+                                         min_samples_detected = 2,
+                                         mode = c("global", "by_condition")) {
+  mode <- match.arg(mode)
+  stopifnot(ncol(expr_mat) == length(condition_vec))
+
+  detection_mat <- expr_mat > 0
+  ctrl_mask <- tolower(condition_vec) == "control"
+  perturb_mask <- !ctrl_mask
+
+  if (mode == "global") {
+    return(which(Matrix::rowSums(detection_mat) >= min_samples_detected))
+  }
+
+  ctrl_detects <- if (any(ctrl_mask)) Matrix::rowSums(detection_mat[, ctrl_mask, drop = FALSE]) else rep(0, nrow(detection_mat))
+  perturb_detects <- if (any(perturb_mask)) Matrix::rowSums(detection_mat[, perturb_mask, drop = FALSE]) else rep(0, nrow(detection_mat))
+
+  which((ctrl_detects >= min_samples_detected) | (perturb_detects >= min_samples_detected))
+}
+
 #' Select genes to test for differential expression
 #'
 #' Internal helper to choose genes based on detection thresholds, with optional
@@ -158,28 +190,18 @@ select_genes_for_deg <- function(expr_over_thresh,
   filter_mode <- match.arg(filter_mode)
   stopifnot(ncol(expr_over_thresh) == length(perturbation_labels))
   stopifnot(nrow(expr_over_thresh) == nrow(detection_mat))
+  genes_to_test <- genes_to_test_from_detection(
+    expr_mat = detection_mat,
+    condition_vec = perturbation_labels,
+    min_samples_detected = if (filter_mode == "by_condition") condition_min_samples_detected else min_samples_detected,
+    mode = filter_mode
+  )
 
   ctrl_mask <- perturbation_labels == "Control"
   perturb_mask <- perturbation_labels != "Control"
 
-  ctrl_detects <- if (any(ctrl_mask)) {
-    Matrix::rowSums(detection_mat[, ctrl_mask, drop = FALSE])
-  } else {
-    rep(0, nrow(detection_mat))
-  }
-
-  perturb_detects <- if (any(perturb_mask)) {
-    Matrix::rowSums(detection_mat[, perturb_mask, drop = FALSE])
-  } else {
-    rep(0, nrow(detection_mat))
-  }
-
-  if (filter_mode == "by_condition") {
-    genes_to_test <- which((ctrl_detects >= condition_min_samples_detected) |
-      (perturb_detects >= condition_min_samples_detected))
-  } else {
-    genes_to_test <- which(Matrix::rowSums(expr_over_thresh) >= min_samples_detected)
-  }
+  ctrl_detects <- if (any(ctrl_mask)) Matrix::rowSums(detection_mat[, ctrl_mask, drop = FALSE]) else rep(0, nrow(detection_mat))
+  perturb_detects <- if (any(perturb_mask)) Matrix::rowSums(detection_mat[, perturb_mask, drop = FALSE]) else rep(0, nrow(detection_mat))
 
   stats <- list(
     n_genes_total = nrow(expr_over_thresh),
