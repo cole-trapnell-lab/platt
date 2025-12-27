@@ -135,6 +135,63 @@ measure_maintenance_effect <- function(self_estimate, other_estimates) {
   return(effect_size)
 }
 
+#' Compute DEG yield summaries for a DEG result table
+#' @keywords internal
+compute_deg_yield <- function(deg_df, alpha = 0.05) {
+  if (is.null(deg_df) || nrow(deg_df) == 0) {
+    return(list(
+      n_genes_written = 0,
+      n_degs_sig = 0,
+      n_degs_sig_up = 0,
+      n_degs_sig_down = 0,
+      n_padj_le_0.01 = 0,
+      n_padj_le_0.05 = 0,
+      n_padj_le_0.10 = 0
+    ))
+  }
+  p_cols <- grep("p_value|pval", names(deg_df), value = TRUE)
+  if (length(p_cols) == 0) {
+    return(list(
+      n_genes_written = nrow(deg_df),
+      n_degs_sig = NA_integer_,
+      n_degs_sig_up = NA_integer_,
+      n_degs_sig_down = NA_integer_,
+      n_padj_le_0.01 = NA_integer_,
+      n_padj_le_0.05 = NA_integer_,
+      n_padj_le_0.10 = NA_integer_
+    ))
+  }
+  pvals <- deg_df[[p_cols[1]]]
+  padj <- stats::p.adjust(pvals, method = "BH")
+  lfc_cols <- grep("shrunken_lfc|raw_lfc|lfc", names(deg_df), value = TRUE)
+  lfc <- if (length(lfc_cols) > 0) deg_df[[lfc_cols[1]]] else NA_real_
+
+  sig_mask <- padj <= alpha
+  n_sig <- sum(sig_mask, na.rm = TRUE)
+  n_up <- sum(sig_mask & lfc > 0, na.rm = TRUE)
+  n_down <- sum(sig_mask & lfc < 0, na.rm = TRUE)
+
+  list(
+    n_genes_written = nrow(deg_df),
+    n_degs_sig = n_sig,
+    n_degs_sig_up = n_up,
+    n_degs_sig_down = n_down,
+    n_padj_le_0.01 = sum(padj <= 0.01, na.rm = TRUE),
+    n_padj_le_0.05 = sum(padj <= 0.05, na.rm = TRUE),
+    n_padj_le_0.10 = sum(padj <= 0.10, na.rm = TRUE)
+  )
+}
+
+#' Gene-level detection summaries by threshold
+#' @keywords internal
+summarize_detection_counts <- function(detection_mat, mask, thresholds = c(1, 2, 3), prefix = "") {
+  if (!any(mask)) {
+    return(stats::setNames(rep(0, length(thresholds)), paste0(prefix, thresholds)))
+  }
+  rs <- Matrix::rowSums(detection_mat[, mask, drop = FALSE])
+  stats::setNames(vapply(thresholds, function(k) sum(rs >= k), numeric(1)), paste0(prefix, thresholds))
+}
+
 #' Gene filter helper for DEG tests
 #'
 #' Selects genes based on detection thresholds with optional condition-aware logic.
@@ -154,6 +211,7 @@ genes_to_test_from_detection <- function(expr_mat,
   stopifnot(ncol(expr_mat) == length(condition_vec))
 
   detection_mat <- expr_mat > 0
+  detection_mat <- expr_mat > 0
   ctrl_mask <- tolower(condition_vec) == "control"
   perturb_mask <- !ctrl_mask
 
@@ -165,6 +223,35 @@ genes_to_test_from_detection <- function(expr_mat,
   perturb_detects <- if (any(perturb_mask)) Matrix::rowSums(detection_mat[, perturb_mask, drop = FALSE]) else rep(0, nrow(detection_mat))
 
   which((ctrl_detects >= min_samples_detected) | (perturb_detects >= min_samples_detected))
+}
+
+#' Gene filter helper based on mean expression per arm
+#' @keywords internal
+genes_to_test_by_mean <- function(expr_mat,
+                                  condition_vec,
+                                  min_mean = 0,
+                                  condition_min_samples_detected = 0) {
+  stopifnot(ncol(expr_mat) == length(condition_vec))
+  detection_mat <- expr_mat > 0
+  ctrl_mask <- tolower(condition_vec) == "control"
+  perturb_mask <- !ctrl_mask
+  if (!any(ctrl_mask) || !any(perturb_mask)) {
+    stop("genes_to_test_by_mean requires both control and perturb samples.")
+  }
+  ctrl_means <- Matrix::rowSums(expr_mat[, ctrl_mask, drop = FALSE]) / sum(ctrl_mask)
+  perturb_means <- Matrix::rowSums(expr_mat[, perturb_mask, drop = FALSE]) / sum(perturb_mask)
+  mean_mask <- pmax(ctrl_means, perturb_means) >= min_mean
+
+  if (condition_min_samples_detected > 0) {
+    ctrl_detects <- Matrix::rowSums(detection_mat[, ctrl_mask, drop = FALSE])
+    perturb_detects <- Matrix::rowSums(detection_mat[, perturb_mask, drop = FALSE])
+    detect_mask <- (ctrl_detects >= condition_min_samples_detected) |
+      (perturb_detects >= condition_min_samples_detected)
+  } else {
+    detect_mask <- rep(TRUE, nrow(expr_mat))
+  }
+
+  which(mean_mask & detect_mask)
 }
 
 #' Select genes to test for differential expression
@@ -186,31 +273,67 @@ select_genes_for_deg <- function(expr_over_thresh,
                                  perturbation_labels,
                                  min_samples_detected,
                                  condition_min_samples_detected,
-                                 filter_mode = c("global", "by_condition")) {
+                                 filter_mode = c("global", "by_condition", "by_mean_expression"),
+                                 min_mean_expr = NULL) {
   filter_mode <- match.arg(filter_mode)
   stopifnot(ncol(expr_over_thresh) == length(perturbation_labels))
   stopifnot(nrow(expr_over_thresh) == nrow(detection_mat))
-  genes_to_test <- genes_to_test_from_detection(
-    expr_mat = detection_mat,
-    condition_vec = perturbation_labels,
-    min_samples_detected = if (filter_mode == "by_condition") condition_min_samples_detected else min_samples_detected,
-    mode = filter_mode
-  )
-
   ctrl_mask <- perturbation_labels == "Control"
   perturb_mask <- perturbation_labels != "Control"
 
   ctrl_detects <- if (any(ctrl_mask)) Matrix::rowSums(detection_mat[, ctrl_mask, drop = FALSE]) else rep(0, nrow(detection_mat))
   perturb_detects <- if (any(perturb_mask)) Matrix::rowSums(detection_mat[, perturb_mask, drop = FALSE]) else rep(0, nrow(detection_mat))
 
-  stats <- list(
-    n_genes_total = nrow(expr_over_thresh),
-    n_genes_tested = length(genes_to_test),
-    n_genes_all_zero_both = sum(ctrl_detects == 0 & perturb_detects == 0),
-    n_genes_zero_ctrl = sum(ctrl_detects == 0),
-    n_genes_zero_perturb = sum(perturb_detects == 0),
-    filter_mode = filter_mode,
-    condition_min_samples_detected = condition_min_samples_detected
+  if (filter_mode == "by_mean_expression") {
+    genes_to_test <- genes_to_test_by_mean(
+      expr_mat = expr_over_thresh,
+      condition_vec = perturbation_labels,
+      min_mean = if (is.null(min_mean_expr)) 0 else min_mean_expr,
+      condition_min_samples_detected = condition_min_samples_detected
+    )
+    mean_mask <- rep(TRUE, nrow(expr_over_thresh))
+  } else if (!is.null(min_mean_expr)) {
+    ctrl_means <- if (any(ctrl_mask)) Matrix::rowMeans(expr_over_thresh[, ctrl_mask, drop = FALSE]) else rep(0, nrow(expr_over_thresh))
+    perturb_means <- if (any(perturb_mask)) Matrix::rowMeans(expr_over_thresh[, perturb_mask, drop = FALSE]) else rep(0, nrow(expr_over_thresh))
+    mean_mask <- pmax(ctrl_means, perturb_means) >= min_mean_expr
+  } else {
+    mean_mask <- rep(TRUE, nrow(expr_over_thresh))
+  }
+
+  if (filter_mode != "by_mean_expression") {
+    genes_to_test <- genes_to_test_from_detection(
+      expr_mat = detection_mat,
+      condition_vec = perturbation_labels,
+      min_samples_detected = if (filter_mode == "by_condition") condition_min_samples_detected else min_samples_detected,
+      mode = filter_mode
+    )
+  }
+  genes_to_test <- intersect(genes_to_test, which(mean_mask))
+
+  det_ctrl <- summarize_detection_counts(detection_mat, ctrl_mask, prefix = "n_genes_detect_control_ge")
+  det_perturb <- summarize_detection_counts(detection_mat, perturb_mask, prefix = "n_genes_detect_perturb_ge")
+
+  drop_both_lt_k <- if (filter_mode %in% c("by_condition", "by_mean_expression")) {
+    sum(ctrl_detects < condition_min_samples_detected & perturb_detects < condition_min_samples_detected & mean_mask)
+  } else {
+    sum(Matrix::rowSums(detection_mat) < min_samples_detected & mean_mask)
+  }
+
+  stats <- c(
+    list(
+      n_genes_total = nrow(expr_over_thresh),
+      n_genes_tested = length(genes_to_test),
+      n_genes_all_zero_both = sum(ctrl_detects == 0 & perturb_detects == 0),
+      n_genes_zero_ctrl = sum(ctrl_detects == 0),
+      n_genes_zero_perturb = sum(perturb_detects == 0),
+      n_genes_dropped_both_lt_k = drop_both_lt_k,
+      n_genes_dropped_below_mean = sum(!mean_mask),
+      filter_mode = filter_mode,
+      condition_min_samples_detected = condition_min_samples_detected,
+      min_mean_expr = min_mean_expr
+    ),
+    as.list(det_ctrl),
+    as.list(det_perturb)
   )
 
   list(
@@ -753,17 +876,29 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
     dplyr::mutate(mean_expr = purrr::map(model, mean_expr_helper, new_data = colData(cds) %>% as.data.frame())) %>%
     tidyr::unnest(mean_expr)
   model_tbl$disp_fit <- rep(1.0, nrow(model_tbl))
-  tryCatch(
-    {
-      disp_fit <- mgcv::gam(log(dispersion) ~ s(log(mean_expr), bs = "cs"), data = model_tbl)
-      model_tbl$disp_fit <- exp(predict(disp_fit))
-    },
-    error = function(e) {
-      print(e)
-      print(head(model_tbl[, c("mean_expr", "dispersion")]))
-      model_tbl$disp_fit <- rep(1.0, nrow(model_tbl))
-    }
-  )
+
+  ok_models <- sum(model_tbl$status != "FAIL", na.rm = TRUE)
+  message(sprintf("dispersion fit: %d/%d models OK", ok_models, nrow(model_tbl)))
+
+  gam_df <- model_tbl %>%
+    dplyr::filter(status != "FAIL") %>%
+    dplyr::filter(is.finite(dispersion), is.finite(mean_expr))
+
+  if (nrow(gam_df) >= 5 && length(unique(gam_df$mean_expr)) > 1) {
+    tryCatch(
+      {
+        disp_fit <- mgcv::gam(log(dispersion) ~ s(log(mean_expr), bs = "cs"), data = gam_df)
+        model_tbl$disp_fit <- exp(predict(disp_fit, newdata = model_tbl))
+      },
+      error = function(e) {
+        message("dispersion GAM failed, falling back to raw dispersion; reason: ", e$message)
+        model_tbl$disp_fit <- ifelse(is.finite(model_tbl$dispersion), model_tbl$dispersion, 1.0)
+      }
+    )
+  } else {
+    message("insufficient data for dispersion GAM; using raw dispersion as fit")
+    model_tbl$disp_fit <- ifelse(is.finite(model_tbl$dispersion), model_tbl$dispersion, 1.0)
+  }
 
   # model_tbl$disp_fit = 1
 
@@ -868,6 +1003,7 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
   sigma_df$id <- NULL
   sigma_df <- sigma_df[row.names(estimate_matrix), ]
   sigma_df$sigma <- sigma_df$RSS / sigma_df$df.residual
+  sigma_df$sigma[!is.finite(sigma_df$sigma)] <- 1.0
 
   std_dev.unscaled <- stderr_matrix^2 / sigma_df$sigma
 
@@ -947,8 +1083,12 @@ compare_genes_within_state_graph <- function(ccs,
                                              write_dir = NULL,
                                              max_simultaneous_genes = NULL,
                                              cv_threshold = 100,
-                                             filter_mode = c("global", "by_condition"),
+                                             filter_mode = c("global", "by_condition", "by_mean_expression"),
                                              condition_min_samples_detected = NULL,
+                                             k_sweep = NULL,
+                                             filter_only = FALSE,
+                                             min_mean_expr = NULL,
+                                             alpha = 0.05,
                                              perf_summary_path = NULL,
                                              profile = FALSE,
                                              profile_out = NULL,
@@ -962,6 +1102,9 @@ compare_genes_within_state_graph <- function(ccs,
   filter_mode <- match.arg(filter_mode)
   if (is.null(condition_min_samples_detected)) {
     condition_min_samples_detected <- min_samples_detected
+  }
+  if (!is.null(k_sweep)) {
+    k_sweep <- sort(unique(k_sweep))
   }
   perf_enabled <- is.null(perf_summary_path) == FALSE
   if (perf_enabled) {
@@ -1002,13 +1145,15 @@ compare_genes_within_state_graph <- function(ccs,
   pseudobulk_time <- elapsed_sec(pseudobulk_timer)
   message(sprintf("constructed pseudobulks in %.2fs across %d samples", pseudobulk_time, ncol(pb_cds)))
   colData(pb_cds)$Size_Factor <- colData(pb_cds)$num_cells_in_group
+  perturbation_labels <- colData(pb_cds)[[perturbation_col]]
 
   # Once we pseudobulks, we are going to overwrite the provided control ids with "Control"
   # pb_cds = hooke:::add_covariate(ccs, pb_cds, perturbation_col)
-  colData(pb_cds)[["perturbation"]] <- colData(pb_cds)[[perturbation_col]]
+  colData(pb_cds)[["perturbation"]] <- perturbation_labels
   colData(pb_cds)[["perturbation"]] <- ifelse(colData(pb_cds)$perturbation %in% control_ids,
     "Control", colData(pb_cds)$perturbation
   )
+  perturbation_labels <- colData(pb_cds)[["perturbation"]]
 
   # to do: if we want to run it by assembly group, must provide a state graph
   if (is.null(assembly_group) == FALSE & is.null(state_graph) == FALSE) {
@@ -1044,7 +1189,8 @@ compare_genes_within_state_graph <- function(ccs,
     perturbation_labels = colData(pb_cds)[["perturbation"]],
     min_samples_detected = min_samples_detected,
     condition_min_samples_detected = condition_min_samples_detected,
-    filter_mode = filter_mode
+    filter_mode = filter_mode,
+    min_mean_expr = min_mean_expr
   )
   genes_to_test <- gene_selection$genes_to_test
   pb_cds <- pb_cds[genes_to_test, ]
@@ -1058,6 +1204,55 @@ compare_genes_within_state_graph <- function(ccs,
     filter_fraction * 100,
     gene_selection$stats$n_genes_all_zero_both
   ))
+  sweep_df <- data.frame()
+
+  if (!is.null(k_sweep)) {
+    if (!filter_mode %in% c("by_condition", "by_mean_expression")) {
+      warning("k_sweep is only supported for filter_mode = 'by_condition' or 'by_mean_expression'; skipping sweep.")
+    } else {
+      sweep_rows <- lapply(k_sweep, function(k) {
+        sweep_sel <- select_genes_for_deg(
+          expr_over_thresh = expr_over_thresh,
+          detection_mat = detection_mat,
+          perturbation_labels = perturbation_labels,
+          min_samples_detected = min_samples_detected,
+          condition_min_samples_detected = k,
+          filter_mode = filter_mode,
+          min_mean_expr = min_mean_expr
+        )
+        row <- data.frame(
+          scope = "k_sweep",
+          cell_group = NA_character_,
+          k = k,
+          stringsAsFactors = FALSE
+        )
+        for (nm in names(sweep_sel$stats)) {
+          val <- sweep_sel$stats[[nm]]
+          if (is.null(val) || length(val) == 0) {
+            row[[nm]] <- NA
+          } else {
+            row[[nm]] <- val[1]
+          }
+        }
+        row
+      })
+      sweep_df <- do.call(rbind, sweep_rows)
+      if (perf_enabled) {
+        utils::write.table(
+          sweep_df,
+          file = perf_summary_path,
+          append = file.exists(perf_summary_path),
+          sep = "\t",
+          row.names = FALSE,
+          col.names = !file.exists(perf_summary_path),
+          quote = FALSE
+        )
+      }
+      if (filter_only) {
+        return(sweep_df)
+      }
+    }
+  }
 
   if (length(genes_to_test) == 0) {
     warning("No genes passed the filtering criteria; returning empty result.")
@@ -1124,60 +1319,149 @@ compare_genes_within_state_graph <- function(ccs,
     }
   }
 
-  model_timer <- proc.time()
-  df <- data.frame(cell_group = cell_groups) %>%
-    mutate(genes_within_cell_group = purrr::map(
-      .f = purrr::possibly(function(cell_group) {
-        compare_gene_expression_within_node(
-          cell_group = cell_group,
-          pb_cds = pb_cds,
-          ccs = ccs,
-          control_ids = c("Control"),
-          perturbation_ids = perturbations,
-          ambient_estimate_matrix = ambient_coeffs$coefficients,
-          ambient_stderr_matrix = ambient_coeffs$stdev.unscaled,
-          cores = cores,
-          max_simultaneous_genes = max_simultaneous_genes,
-          nuisance_model_formula_str = nuisance_model_formula_str,
-          min_cells_per_pseudobulk = min_cells_per_pseudobulk,
-          write_dir = write_dir,
-          cv_threshold = cv_threshold,
-          abs_expr_thresh = abs_expr_thresh,
-          return_perf = perf_enabled
-        )
-      }, otherwise = list(result = NULL, perf = NULL)),
-      .x = cell_group
-    ))
-  model_time <- elapsed_sec(model_timer)
-  message(sprintf("modeling and contrasts completed in %.2fs", model_time))
+  model_time <- 0
+  runtime_write <- 0
+  perf_rows <- data.frame()
+
+  make_perf_stub <- function(cell_group) {
+    scalar_or_na <- function(x) {
+      if (is.null(x) || length(x) == 0) {
+        return(NA_real_)
+      }
+      x[1]
+    }
+    data.frame(
+      scope = "cell_group",
+      cell_group = cell_group,
+      k = NA_real_,
+      n_genes_total = NA_real_,
+      n_genes_tested = NA_real_,
+      fraction_removed_by_filter = NA_real_,
+      n_genes_all_zero_both = NA_real_,
+      n_genes_zero_ctrl = NA_real_,
+      n_genes_zero_perturb = NA_real_,
+      n_genes_dropped_both_lt_k = NA_real_,
+      n_genes_dropped_below_mean = NA_real_,
+      n_genes_detect_control_ge1 = NA_real_,
+      n_genes_detect_control_ge2 = NA_real_,
+      n_genes_detect_control_ge3 = NA_real_,
+      n_genes_detect_perturb_ge1 = NA_real_,
+      n_genes_detect_perturb_ge2 = NA_real_,
+      n_genes_detect_perturb_ge3 = NA_real_,
+      n_pseudobulks_total = NA_real_,
+      n_pseudobulks_ctrl = NA_real_,
+      n_pseudobulks_perturb = NA_real_,
+      runtime_total = NA_real_,
+      runtime_pseudobulk = NA_real_,
+      runtime_filter = NA_real_,
+      runtime_model = NA_real_,
+      runtime_write = NA_real_,
+      filter_mode = filter_mode,
+      condition_min_samples_detected = scalar_or_na(condition_min_samples_detected),
+      min_mean_expr = scalar_or_na(min_mean_expr),
+      alpha = scalar_or_na(alpha),
+      n_degs_sig = NA_real_,
+      n_degs_sig_up = NA_real_,
+      n_degs_sig_down = NA_real_,
+      n_padj_le_0_01 = NA_real_,
+      n_padj_le_0_05 = NA_real_,
+      n_padj_le_0_10 = NA_real_,
+      filter_only = FALSE,
+      timestamp = format(Sys.time(), tz = "UTC", usetz = TRUE),
+      stringsAsFactors = FALSE
+    )
+  }
+
+  if (!filter_only) {
+    model_timer <- proc.time()
+    df <- data.frame(cell_group = cell_groups) %>%
+      mutate(genes_within_cell_group = purrr::map(
+        .f = function(cell_group) {
+          tryCatch(
+            compare_gene_expression_within_node(
+              cell_group = cell_group,
+              pb_cds = pb_cds,
+              ccs = ccs,
+              control_ids = c("Control"),
+              perturbation_ids = perturbations,
+              ambient_estimate_matrix = ambient_coeffs$coefficients,
+              ambient_stderr_matrix = ambient_coeffs$stdev.unscaled,
+              cores = cores,
+              max_simultaneous_genes = max_simultaneous_genes,
+              nuisance_model_formula_str = nuisance_model_formula_str,
+              min_cells_per_pseudobulk = min_cells_per_pseudobulk,
+              write_dir = write_dir,
+              cv_threshold = cv_threshold,
+              abs_expr_thresh = abs_expr_thresh,
+              return_perf = perf_enabled,
+              alpha = alpha
+            ),
+            error = function(e) {
+              message(sprintf("perf logging: cell_group %s failed: %s", cell_group, e$message))
+              list(result = NULL, perf = make_perf_stub(cell_group))
+            }
+          )
+        },
+        .x = cell_group
+      ))
+    model_time <- elapsed_sec(model_timer)
+    message(sprintf("modeling and contrasts completed in %.2fs", model_time))
+
+    if (perf_enabled) {
+      perf_rows <- purrr::map_dfr(df$genes_within_cell_group, function(res) {
+        if (is.list(res) && !is.null(res$perf)) {
+          return(res$perf)
+        } else {
+          return(NULL)
+        }
+      })
+
+      df$genes_within_cell_group <- purrr::map(df$genes_within_cell_group, function(res) {
+        if (is.list(res) && "result" %in% names(res)) {
+          return(res$result)
+        }
+        res
+      })
+
+      runtime_write <- if ("runtime_write" %in% colnames(perf_rows)) sum(perf_rows$runtime_write, na.rm = TRUE) else 0
+    }
+  } else {
+    df <- data.frame()
+  }
 
   if (perf_enabled) {
-    perf_rows <- purrr::map_dfr(df$genes_within_cell_group, function(res) {
-      if (is.list(res) && !is.null(res$perf)) {
-        return(res$perf)
-      } else {
-        return(NULL)
+    scalar_or_na <- function(x) {
+      if (is.null(x) || length(x) == 0) {
+        return(NA_real_)
       }
-    })
+      x
+    }
 
-    df$genes_within_cell_group <- purrr::map(df$genes_within_cell_group, function(res) {
-      if (is.list(res) && "result" %in% names(res)) {
-        return(res$result)
-      }
-      res
-    })
-
-    runtime_write <- if ("runtime_write" %in% colnames(perf_rows)) sum(perf_rows$runtime_write, na.rm = TRUE) else 0
+    n_degs_sig_sum <- if (nrow(perf_rows) > 0 && "n_degs_sig" %in% colnames(perf_rows)) sum(perf_rows$n_degs_sig, na.rm = TRUE) else NA_real_
+    n_degs_sig_up_sum <- if (nrow(perf_rows) > 0 && "n_degs_sig_up" %in% colnames(perf_rows)) sum(perf_rows$n_degs_sig_up, na.rm = TRUE) else NA_real_
+    n_degs_sig_down_sum <- if (nrow(perf_rows) > 0 && "n_degs_sig_down" %in% colnames(perf_rows)) sum(perf_rows$n_degs_sig_down, na.rm = TRUE) else NA_real_
+    n_padj_le_0_01_sum <- if (nrow(perf_rows) > 0 && "n_padj_le_0_01" %in% colnames(perf_rows)) sum(perf_rows$n_padj_le_0_01, na.rm = TRUE) else NA_real_
+    n_padj_le_0_05_sum <- if (nrow(perf_rows) > 0 && "n_padj_le_0_05" %in% colnames(perf_rows)) sum(perf_rows$n_padj_le_0_05, na.rm = TRUE) else NA_real_
+    n_padj_le_0_10_sum <- if (nrow(perf_rows) > 0 && "n_padj_le_0_10" %in% colnames(perf_rows)) sum(perf_rows$n_padj_le_0_10, na.rm = TRUE) else NA_real_
 
     run_row <- data.frame(
       scope = "run",
       cell_group = NA_character_,
+      k = NA_real_,
       n_genes_total = gene_selection$stats$n_genes_total,
       n_genes_tested = gene_selection$stats$n_genes_tested,
       fraction_removed_by_filter = filter_fraction,
       n_genes_all_zero_both = gene_selection$stats$n_genes_all_zero_both,
       n_genes_zero_ctrl = gene_selection$stats$n_genes_zero_ctrl,
       n_genes_zero_perturb = gene_selection$stats$n_genes_zero_perturb,
+      n_genes_dropped_both_lt_k = scalar_or_na(gene_selection$stats$n_genes_dropped_both_lt_k),
+      n_genes_dropped_below_mean = scalar_or_na(gene_selection$stats$n_genes_dropped_below_mean),
+      n_genes_detect_control_ge1 = scalar_or_na(gene_selection$stats$n_genes_detect_control_ge1),
+      n_genes_detect_control_ge2 = scalar_or_na(gene_selection$stats$n_genes_detect_control_ge2),
+      n_genes_detect_control_ge3 = scalar_or_na(gene_selection$stats$n_genes_detect_control_ge3),
+      n_genes_detect_perturb_ge1 = scalar_or_na(gene_selection$stats$n_genes_detect_perturb_ge1),
+      n_genes_detect_perturb_ge2 = scalar_or_na(gene_selection$stats$n_genes_detect_perturb_ge2),
+      n_genes_detect_perturb_ge3 = scalar_or_na(gene_selection$stats$n_genes_detect_perturb_ge3),
       n_pseudobulks_total = ncol(detection_mat),
       n_pseudobulks_ctrl = sum(colData(pb_cds)[["perturbation"]] == "Control"),
       n_pseudobulks_perturb = sum(colData(pb_cds)[["perturbation"]] != "Control"),
@@ -1188,15 +1472,41 @@ compare_genes_within_state_graph <- function(ccs,
       runtime_write = runtime_write,
       filter_mode = filter_mode,
       condition_min_samples_detected = condition_min_samples_detected,
+      min_mean_expr = scalar_or_na(min_mean_expr),
+      alpha = alpha,
+      n_degs_sig = n_degs_sig_sum,
+      n_degs_sig_up = n_degs_sig_up_sum,
+      n_degs_sig_down = n_degs_sig_down_sum,
+      n_padj_le_0_01 = n_padj_le_0_01_sum,
+      n_padj_le_0_05 = n_padj_le_0_05_sum,
+      n_padj_le_0_10 = n_padj_le_0_10_sum,
+      filter_only = filter_only,
       timestamp = format(Sys.time(), tz = "UTC", usetz = TRUE),
       stringsAsFactors = FALSE
     )
 
-    perf_out <- if (nrow(perf_rows) > 0) {
-      dplyr::bind_rows(run_row, perf_rows)
-    } else {
-      run_row
+    perf_out <- run_row
+    if (nrow(perf_rows) > 0) {
+      perf_rows$k <- NA_real_
+      perf_rows$filter_only <- FALSE
+      perf_out <- dplyr::bind_rows(perf_out, perf_rows)
     }
+    if (!is.null(k_sweep) && exists("sweep_df") && nrow(sweep_df) > 0) {
+      sweep_df$runtime_pseudobulk <- pseudobulk_time
+      sweep_df$runtime_filter <- filter_time
+      sweep_df$runtime_model <- 0
+      sweep_df$runtime_write <- 0
+      sweep_df$n_pseudobulks_total <- ncol(detection_mat)
+      sweep_df$n_pseudobulks_ctrl <- sum(colData(pb_cds)[["perturbation"]] == "Control")
+      sweep_df$n_pseudobulks_perturb <- sum(colData(pb_cds)[["perturbation"]] != "Control")
+      sweep_df$runtime_total <- elapsed_sec(run_start)
+      sweep_df$filter_mode <- "by_condition"
+      sweep_df$condition_min_samples_detected <- sweep_df$k
+      sweep_df$min_mean_expr <- min_mean_expr
+      sweep_df$filter_only <- TRUE
+      perf_out <- dplyr::bind_rows(perf_out, sweep_df)
+    }
+
     utils::write.table(
       perf_out,
       file = perf_summary_path,
@@ -1279,7 +1589,8 @@ compare_gene_expression_within_node <- function(cell_group,
                                                 cores = 1,
                                                 max_simultaneous_genes = NULL,
                                                 cv_threshold = NULL,
-                                                return_perf = FALSE) {
+                                                return_perf = FALSE,
+                                                alpha = 0.05) {
   # now fit models per cell group
   elapsed_sec <- function(start_time) as.numeric((proc.time() - start_time)[3])
   cg_start <- proc.time()
@@ -1529,15 +1840,34 @@ compare_gene_expression_within_node <- function(cell_group,
   }
 
   if (return_perf) {
+    det_ctrl <- summarize_detection_counts(detection_mat, ctrl_mask, prefix = "n_genes_detect_control_ge")
+    det_perturb <- summarize_detection_counts(detection_mat, perturb_mask, prefix = "n_genes_detect_perturb_ge")
+    deg_yield <- compute_deg_yield(deg_out, alpha)
     perf_row <- tibble::tibble(
       scope = "cell_group",
       cell_group = cell_group,
+      k = NA_real_,
       n_genes_total = n_genes_total,
       n_genes_tested = n_genes_after_nz,
       fraction_removed_by_filter = 1 - (n_genes_after_nz / max(1, n_genes_total)),
       n_genes_all_zero_both = n_genes_all_zero_both,
       n_genes_zero_ctrl = sum(Matrix::rowSums(detection_mat[, ctrl_mask, drop = FALSE]) == 0),
       n_genes_zero_perturb = sum(Matrix::rowSums(detection_mat[, perturb_mask, drop = FALSE]) == 0),
+      n_genes_dropped_both_lt_k = NA_real_,
+      n_genes_dropped_below_mean = NA_real_,
+      n_genes_detect_control_ge1 = det_ctrl[[1]],
+      n_genes_detect_control_ge2 = det_ctrl[[2]],
+      n_genes_detect_control_ge3 = det_ctrl[[3]],
+      n_genes_detect_perturb_ge1 = det_perturb[[1]],
+      n_genes_detect_perturb_ge2 = det_perturb[[2]],
+      n_genes_detect_perturb_ge3 = det_perturb[[3]],
+      n_degs_sig = deg_yield$n_degs_sig,
+      n_degs_sig_up = deg_yield$n_degs_sig_up,
+      n_degs_sig_down = deg_yield$n_degs_sig_down,
+      n_padj_le_0_01 = deg_yield$n_padj_le_0.01,
+      n_padj_le_0_05 = deg_yield$n_padj_le_0.05,
+      n_padj_le_0_10 = deg_yield$n_padj_le_0.10,
+      alpha = alpha,
       n_pseudobulks_total = ncol(detection_mat),
       n_pseudobulks_ctrl = sum(ctrl_mask),
       n_pseudobulks_perturb = sum(perturb_mask),
@@ -1548,6 +1878,8 @@ compare_gene_expression_within_node <- function(cell_group,
       runtime_write = write_time,
       filter_mode = NA_character_,
       condition_min_samples_detected = NA_real_,
+      min_mean_expr = NA_real_,
+      filter_only = FALSE,
       timestamp = format(Sys.time(), tz = "UTC", usetz = TRUE)
     )
 
