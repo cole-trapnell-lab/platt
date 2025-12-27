@@ -1269,6 +1269,8 @@ compare_genes_within_state_graph <- function(ccs,
         n_pseudobulks_total = ncol(detection_mat),
         n_pseudobulks_ctrl = sum(colData(pb_cds)[["perturbation"]] == "Control"),
         n_pseudobulks_perturb = sum(colData(pb_cds)[["perturbation"]] != "Control"),
+        n_models_total = 0,
+        n_models_non_fail = 0,
         runtime_total = elapsed_sec(run_start),
         runtime_pseudobulk = pseudobulk_time,
         runtime_filter = filter_time,
@@ -1277,6 +1279,16 @@ compare_genes_within_state_graph <- function(ccs,
         filter_mode = filter_mode,
         condition_min_samples_detected = condition_min_samples_detected,
         timestamp = format(Sys.time(), tz = "UTC", usetz = TRUE),
+        perf_failure_reason = "no_genes_after_filter",
+        min_mean_expr = ifelse(is.null(min_mean_expr), NA_real_, min_mean_expr),
+        alpha = alpha,
+        n_degs_sig = NA_real_,
+        n_degs_sig_up = NA_real_,
+        n_degs_sig_down = NA_real_,
+        n_padj_le_0_01 = NA_real_,
+        n_padj_le_0_05 = NA_real_,
+        n_padj_le_0_10 = NA_real_,
+        filter_only = FALSE,
         stringsAsFactors = FALSE
       )
       utils::write.table(
@@ -1366,6 +1378,9 @@ compare_genes_within_state_graph <- function(ccs,
       n_padj_le_0_01 = NA_real_,
       n_padj_le_0_05 = NA_real_,
       n_padj_le_0_10 = NA_real_,
+      n_models_total = NA_real_,
+      n_models_non_fail = NA_real_,
+      perf_failure_reason = NA_character_,
       filter_only = FALSE,
       timestamp = format(Sys.time(), tz = "UTC", usetz = TRUE),
       stringsAsFactors = FALSE
@@ -1443,6 +1458,8 @@ compare_genes_within_state_graph <- function(ccs,
     n_padj_le_0_01_sum <- if (nrow(perf_rows) > 0 && "n_padj_le_0_01" %in% colnames(perf_rows)) sum(perf_rows$n_padj_le_0_01, na.rm = TRUE) else NA_real_
     n_padj_le_0_05_sum <- if (nrow(perf_rows) > 0 && "n_padj_le_0_05" %in% colnames(perf_rows)) sum(perf_rows$n_padj_le_0_05, na.rm = TRUE) else NA_real_
     n_padj_le_0_10_sum <- if (nrow(perf_rows) > 0 && "n_padj_le_0_10" %in% colnames(perf_rows)) sum(perf_rows$n_padj_le_0_10, na.rm = TRUE) else NA_real_
+    n_models_total_sum <- if (nrow(perf_rows) > 0 && "n_models_total" %in% colnames(perf_rows)) sum(perf_rows$n_models_total, na.rm = TRUE) else NA_real_
+    n_models_non_fail_sum <- if (nrow(perf_rows) > 0 && "n_models_non_fail" %in% colnames(perf_rows)) sum(perf_rows$n_models_non_fail, na.rm = TRUE) else NA_real_
 
     run_row <- data.frame(
       scope = "run",
@@ -1480,6 +1497,9 @@ compare_genes_within_state_graph <- function(ccs,
       n_padj_le_0_01 = n_padj_le_0_01_sum,
       n_padj_le_0_05 = n_padj_le_0_05_sum,
       n_padj_le_0_10 = n_padj_le_0_10_sum,
+      n_models_total = n_models_total_sum,
+      n_models_non_fail = n_models_non_fail_sum,
+      perf_failure_reason = NA_character_,
       filter_only = filter_only,
       timestamp = format(Sys.time(), tz = "UTC", usetz = TRUE),
       stringsAsFactors = FALSE
@@ -1499,6 +1519,9 @@ compare_genes_within_state_graph <- function(ccs,
       sweep_df$n_pseudobulks_total <- ncol(detection_mat)
       sweep_df$n_pseudobulks_ctrl <- sum(colData(pb_cds)[["perturbation"]] == "Control")
       sweep_df$n_pseudobulks_perturb <- sum(colData(pb_cds)[["perturbation"]] != "Control")
+      sweep_df$n_models_total <- NA_real_
+      sweep_df$n_models_non_fail <- NA_real_
+      sweep_df$perf_failure_reason <- NA_character_
       sweep_df$runtime_total <- elapsed_sec(run_start)
       sweep_df$filter_mode <- "by_condition"
       sweep_df$condition_min_samples_detected <- sweep_df$k
@@ -1603,6 +1626,62 @@ compare_gene_expression_within_node <- function(cell_group,
   # perturbation ids so we get coefficient entries for all of them, even if no cells are present in some groups
   colData(cg_pb_cds)$perturbation <- factor(colData(cg_pb_cds)$perturbation, levels = c(control_ids, perturbation_ids))
 
+  n_ctrl_pbs <- sum(colData(cg_pb_cds)$perturbation %in% control_ids)
+  n_perturb_pbs <- sum(!(colData(cg_pb_cds)$perturbation %in% control_ids))
+  message(sprintf("\t%s pseudobulks by arm: control=%d, perturb=%d", cell_group, n_ctrl_pbs, n_perturb_pbs))
+  make_missing_arm_perf <- function(reason) {
+    tibble::tibble(
+      scope = "cell_group",
+      cell_group = cell_group,
+      k = NA_real_,
+      n_genes_total = NA_real_,
+      n_genes_tested = NA_real_,
+      fraction_removed_by_filter = NA_real_,
+      n_genes_all_zero_both = NA_real_,
+      n_genes_zero_ctrl = NA_real_,
+      n_genes_zero_perturb = NA_real_,
+      n_genes_dropped_both_lt_k = NA_real_,
+      n_genes_dropped_below_mean = NA_real_,
+      n_genes_detect_control_ge1 = NA_real_,
+      n_genes_detect_control_ge2 = NA_real_,
+      n_genes_detect_control_ge3 = NA_real_,
+      n_genes_detect_perturb_ge1 = NA_real_,
+      n_genes_detect_perturb_ge2 = NA_real_,
+      n_genes_detect_perturb_ge3 = NA_real_,
+      n_degs_sig = NA_real_,
+      n_degs_sig_up = NA_real_,
+      n_degs_sig_down = NA_real_,
+      n_padj_le_0_01 = NA_real_,
+      n_padj_le_0_05 = NA_real_,
+      n_padj_le_0_10 = NA_real_,
+      alpha = alpha,
+      n_pseudobulks_total = ncol(cg_pb_cds),
+      n_pseudobulks_ctrl = n_ctrl_pbs,
+      n_pseudobulks_perturb = n_perturb_pbs,
+      n_models_total = 0,
+      n_models_non_fail = 0,
+      perf_failure_reason = reason,
+      runtime_total = elapsed_sec(cg_start),
+      runtime_pseudobulk = NA_real_,
+      runtime_filter = NA_real_,
+      runtime_model = 0,
+      runtime_write = 0,
+      filter_mode = NA_character_,
+      condition_min_samples_detected = NA_real_,
+      min_mean_expr = NA_real_,
+      filter_only = FALSE,
+      timestamp = format(Sys.time(), tz = "UTC", usetz = TRUE)
+    )
+  }
+
+  if (n_ctrl_pbs == 0 || n_perturb_pbs == 0) {
+    warning(sprintf("%s: missing pseudobulks in one arm (control=%d, perturb=%d); skipping models.", cell_group, n_ctrl_pbs, n_perturb_pbs))
+    if (return_perf) {
+      return(list(result = NULL, perf = make_missing_arm_perf("missing_control_or_perturb_pseudobulk")))
+    }
+    return(NULL)
+  }
+
   # if (is.null(min_cells_per_pseudobulk)){
   perturb_sf_summary <- colData(cg_pb_cds) %>%
     as.data.frame() %>%
@@ -1697,6 +1776,9 @@ compare_gene_expression_within_node <- function(cell_group,
   print(levels(colData(cg_pb_cds)$perturbation))
 
   model_timer <- proc.time()
+  n_models_total <- 0
+  n_models_non_fail <- 0
+  model_statuses <- list()
   coeffs_for_blocks <- lapply(gene_blocks, function(gb) {
     gb <- unlist(gb)
     # print (gb)
@@ -1706,6 +1788,10 @@ compare_gene_expression_within_node <- function(cell_group,
       model_formula_str = full_model_str,
       cores = cores
     ) %>% dplyr::select(gene_short_name, id, model, model_summary, status)
+
+    n_models_total <<- n_models_total + nrow(pb_group_models)
+    n_models_non_fail <<- n_models_non_fail + sum(pb_group_models$status != "FAIL", na.rm = TRUE)
+    model_statuses[[length(model_statuses) + 1]] <<- pb_group_models$status
     
     # pb_coeffs = collect_coefficients_for_limma(cg_pb_cds, pb_group_models, abs_expr_thresh) #coefficient_table(pb_group_models) %>%
 
@@ -1718,6 +1804,13 @@ compare_gene_expression_within_node <- function(cell_group,
 
     return(pb_coeffs)
   })
+
+  if (length(model_statuses) > 0) {
+    status_vec <- unlist(model_statuses, use.names = FALSE)
+    status_tab <- table(status_vec, useNA = "ifany")
+    msg <- paste(paste(names(status_tab), status_tab, sep = "="), collapse = "; ")
+    message(sprintf("\tmodel status counts for %s: %s", cell_group, msg))
+  }
 
   pb_coeffs <- list()
   pb_coeffs$coefficients <- do.call(rbind, lapply(coeffs_for_blocks, function(b) {
@@ -1871,6 +1964,9 @@ compare_gene_expression_within_node <- function(cell_group,
       n_pseudobulks_total = ncol(detection_mat),
       n_pseudobulks_ctrl = sum(ctrl_mask),
       n_pseudobulks_perturb = sum(perturb_mask),
+      n_models_total = n_models_total,
+      n_models_non_fail = n_models_non_fail,
+      perf_failure_reason = if (n_models_non_fail == 0) "no_nonfail_models" else NA_character_,
       runtime_total = elapsed_sec(cg_start),
       runtime_pseudobulk = NA_real_,
       runtime_filter = NA_real_,
