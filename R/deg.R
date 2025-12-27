@@ -1629,15 +1629,6 @@ compare_gene_expression_within_node <- function(cell_group,
   elapsed_sec <- function(start_time) as.numeric((proc.time() - start_time)[3])
   cg_start <- proc.time()
 
-  env_clean <- Sys.getenv("SEASCAPE_PLATT_CLEAN_MODELS", unset = NA)
-  if (is.na(env_clean)) {
-    env_clean <- Sys.getenv("ZSCAPE_PLATT_CLEAN_MODELS", unset = NA)
-  }
-  clean_models <- TRUE
-  if (!is.na(env_clean)) {
-    clean_models <- tolower(env_clean) %in% c("1", "true", "t", "yes")
-  }
-
   cg_pb_cds <- pb_cds[, colData(pb_cds)[[state_term]] == cell_group]
 
   assertthat::assert_that(is.na(cell_group) == FALSE)
@@ -1806,8 +1797,7 @@ compare_gene_expression_within_node <- function(cell_group,
     # print (gb_cds)
     pb_group_models <- fit_models(gb_cds,
       model_formula_str = full_model_str,
-      cores = cores,
-      clean_model = clean_models
+      cores = cores
     ) %>% dplyr::select(gene_short_name, id, model, model_summary, status)
 
     n_models_total <<- n_models_total + nrow(pb_group_models)
@@ -1820,8 +1810,6 @@ compare_gene_expression_within_node <- function(cell_group,
 
     pb_coeffs <- collect_coefficients_for_shrinkage(gb_cds, pb_group_models, abs_expr_thresh, term_to_keep = "perturbation") # coefficient_table(pb_group_models) %>%
 
-    pb_group_models$model <- NULL
-    pb_group_models$model_summary <- NULL
     rm(pb_group_models) # DO NOT REMOVE. This is important for keeping the memory footprint of this analysis light.
     gc()
 

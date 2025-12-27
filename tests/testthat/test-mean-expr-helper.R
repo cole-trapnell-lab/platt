@@ -5,7 +5,7 @@ test_that("compute_model_mean_expr uses fitted values when available", {
     x = rnorm(20),
     y = rpois(20, lambda = exp(0.5 + rnorm(20)))
   )
-  m <- speedglm::speedglm(y ~ x, data = df, family = poisson(), clean = FALSE)
+  m <- speedglm::speedglm(y ~ x, data = df, family = poisson())
   if (is.null(m$fitted.values)) {
     expect_equal(
       platt:::compute_model_mean_expr(m, new_data = df),
