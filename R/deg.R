@@ -192,10 +192,31 @@ summarize_detection_counts <- function(detection_mat, mask, thresholds = c(1, 2,
   stats::setNames(vapply(thresholds, function(k) sum(rs >= k), numeric(1)), paste0(prefix, thresholds))
 }
 
+#' Compute mean expression from a fitted model efficiently
+#' @keywords internal
+compute_model_mean_expr <- function(model, new_data, type = "response") {
+  if (!is.null(model$fitted.values)) {
+    # Use stored fitted values when available to avoid recomputing predictions.
+    return(mean(model$fitted.values, na.rm = TRUE))
+  }
+  tryCatch(
+    {
+      if (inherits(model, "speedglm")) {
+        mean(speedglm:::predict.speedglm(model, newdata = new_data, type = type))
+      } else {
+        mean(stats::predict(model, newdata = new_data, type = type))
+      }
+    },
+    error = function(e) {
+      NA_real_
+    }
+  )
+}
+
 #' Gene filter helper for DEG tests
 #'
 #' Selects genes based on detection thresholds with optional condition-aware logic.
-#'
+#' 
 #' @param expr_mat genes x samples sparse matrix of counts (or logical detections).
 #' @param condition_vec character vector labeling samples as control vs perturb.
 #' @param min_samples_detected integer threshold for detection.
@@ -859,17 +880,7 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
     tidyr::unnest(dispersion)
 
   mean_expr_helper <- function(model, new_data, type = "response") {
-    res <- tryCatch(
-      {
-        # mean(stats::predict(model, newdata=new_data, type=type))
-        # FIXME: this is a hack to avoid attaching speedglm for now
-        mean(speedglm:::predict.speedglm(model, newdata = new_data, type = type))
-      },
-      error = function(e) {
-        NA
-      }
-    )
-    return(res)
+    compute_model_mean_expr(model, new_data = new_data, type = type)
   }
 
   model_tbl <- model_tbl %>%
@@ -1618,6 +1629,15 @@ compare_gene_expression_within_node <- function(cell_group,
   elapsed_sec <- function(start_time) as.numeric((proc.time() - start_time)[3])
   cg_start <- proc.time()
 
+  env_clean <- Sys.getenv("SEASCAPE_PLATT_CLEAN_MODELS", unset = NA)
+  if (is.na(env_clean)) {
+    env_clean <- Sys.getenv("ZSCAPE_PLATT_CLEAN_MODELS", unset = NA)
+  }
+  clean_models <- TRUE
+  if (!is.na(env_clean)) {
+    clean_models <- tolower(env_clean) %in% c("1", "true", "t", "yes")
+  }
+
   cg_pb_cds <- pb_cds[, colData(pb_cds)[[state_term]] == cell_group]
 
   assertthat::assert_that(is.na(cell_group) == FALSE)
@@ -1786,7 +1806,8 @@ compare_gene_expression_within_node <- function(cell_group,
     # print (gb_cds)
     pb_group_models <- fit_models(gb_cds,
       model_formula_str = full_model_str,
-      cores = cores
+      cores = cores,
+      clean_model = clean_models
     ) %>% dplyr::select(gene_short_name, id, model, model_summary, status)
 
     n_models_total <<- n_models_total + nrow(pb_group_models)
@@ -1799,6 +1820,8 @@ compare_gene_expression_within_node <- function(cell_group,
 
     pb_coeffs <- collect_coefficients_for_shrinkage(gb_cds, pb_group_models, abs_expr_thresh, term_to_keep = "perturbation") # coefficient_table(pb_group_models) %>%
 
+    pb_group_models$model <- NULL
+    pb_group_models$model_summary <- NULL
     rm(pb_group_models) # DO NOT REMOVE. This is important for keeping the memory footprint of this analysis light.
     gc()
 
