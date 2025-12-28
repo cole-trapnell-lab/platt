@@ -22,16 +22,14 @@ test_that("background counts filter excludes soup singletons and keeps markers",
     expr_over_thresh = counts, # not used for counts-based filtering
     detection_mat = counts > 0,
     perturbation_labels = perturbation_labels,
-    min_samples_detected = 1,
-    condition_min_samples_detected = 1,
+    detection_min_samples = 1,
     filter_mode = "by_background_counts",
     cell_types = cell_types,
     counts_mat = counts,
     library_sizes = lib_sizes,
     background_bottom_frac = 0.5,
     background_quantile_p = 0.99,
-    background_count_floor = 2,
-    background_min_samples_over_threshold = 1
+    background_count_floor = 2
   )
 
   kept_genes <- rownames(counts)[res$genes_to_test]
@@ -59,16 +57,14 @@ test_that("background count floor guards against scattered single UMIs", {
     expr_over_thresh = counts,
     detection_mat = counts > 0,
     perturbation_labels = perturbation_labels,
-    min_samples_detected = 1,
-    condition_min_samples_detected = 1,
+    detection_min_samples = 1,
     filter_mode = "by_background_counts",
     cell_types = cell_types,
     counts_mat = counts,
     library_sizes = lib_sizes,
     background_bottom_frac = 1.0,
     background_quantile_p = 0.99,
-    background_count_floor = 2,
-    background_min_samples_over_threshold = 1
+    background_count_floor = 2
   )
 
   kept_genes <- rownames(counts)[res$genes_to_test]

@@ -15,8 +15,7 @@ test_that("select_genes_for_deg supports condition-aware filtering", {
     expr_over_thresh = expr,
     detection_mat = expr > 0,
     perturbation_labels = perturbation_labels,
-    min_samples_detected = 2,
-    condition_min_samples_detected = 2,
+    detection_min_samples = 2,
     filter_mode = "global"
   )
   expect_equal(global_res$genes_to_test, 1)
@@ -26,8 +25,7 @@ test_that("select_genes_for_deg supports condition-aware filtering", {
     expr_over_thresh = expr,
     detection_mat = expr > 0,
     perturbation_labels = perturbation_labels,
-    min_samples_detected = 2,
-    condition_min_samples_detected = 1,
+    detection_min_samples = 1,
     filter_mode = "by_condition"
   )
   expect_setequal(by_condition$genes_to_test, c(1, 2))

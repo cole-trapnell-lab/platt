@@ -428,8 +428,8 @@ genes_to_test_by_mean <- function(expr_mat,
 #' @param expr_over_thresh Matrix of expression values used for the legacy global filter.
 #' @param detection_mat Logical/sparse matrix indicating whether each gene is detected in each pseudobulk.
 #' @param perturbation_labels Character vector of perturbation labels (length = ncol of matrices).
-#' @param min_samples_detected Minimum samples for the global filter.
-#' @param condition_min_samples_detected Minimum samples in either condition for the condition-aware filter.
+#' @param detection_min_samples Minimum samples required for a gene to be considered detected
+#'   (interpreted per mode: overall for global/by_mean_expression; per-arm for by_condition; per-arm above background for background modes).
 #' @param filter_mode Either "global" (legacy) or "by_condition".
 #'
 #' @return list with `genes_to_test` (integer indices) and `stats` (list of summary metrics).
@@ -437,8 +437,7 @@ genes_to_test_by_mean <- function(expr_mat,
 select_genes_for_deg <- function(expr_over_thresh,
                                  detection_mat,
                                  perturbation_labels,
-                                 min_samples_detected,
-                                 condition_min_samples_detected,
+                                 detection_min_samples = 1,
                                  filter_mode = c("global", "by_condition", "by_mean_expression", "by_background", "by_background_counts"),
                                  min_mean_expr = NULL,
                                  cell_types = NULL,
@@ -450,7 +449,6 @@ select_genes_for_deg <- function(expr_over_thresh,
                                  background_mult = 2.0,
                                  background_quantile_p = 0.99,
                                  background_count_floor = 2,
-                                 background_min_samples_over_threshold = 1,
                                  trace = FALSE) {
   filter_mode <- match.arg(filter_mode)
   background_threshold_type_val <- match.arg(background_threshold_type)
@@ -467,7 +465,7 @@ select_genes_for_deg <- function(expr_over_thresh,
       expr_mat = expr_over_thresh,
       condition_vec = perturbation_labels,
       min_mean = if (is.null(min_mean_expr)) 0 else min_mean_expr,
-      condition_min_samples_detected = condition_min_samples_detected
+      condition_min_samples_detected = detection_min_samples
     )
     mean_mask <- rep(TRUE, nrow(expr_over_thresh))
   } else if (filter_mode == "by_background") {
@@ -485,7 +483,7 @@ select_genes_for_deg <- function(expr_over_thresh,
     )
     ctrl_counts <- count_above_threshold_by_mask(expr_over_thresh, bg$thresholds, ctrl_mask)
     pert_counts <- count_above_threshold_by_mask(expr_over_thresh, bg$thresholds, perturb_mask)
-    keep_mask <- (ctrl_counts >= background_min_samples_over_threshold) | (pert_counts >= background_min_samples_over_threshold)
+    keep_mask <- (ctrl_counts >= detection_min_samples) | (pert_counts >= detection_min_samples)
     genes_to_test <- which(keep_mask)
     mean_mask <- rep(TRUE, nrow(expr_over_thresh))
   } else if (filter_mode == "by_background_counts") {
@@ -516,7 +514,7 @@ select_genes_for_deg <- function(expr_over_thresh,
       quantile_p = background_quantile_p,
       count_floor = background_count_floor
     )
-    keep_mask <- (ctrl_counts >= background_min_samples_over_threshold) | (pert_counts >= background_min_samples_over_threshold)
+    keep_mask <- (ctrl_counts >= detection_min_samples) | (pert_counts >= detection_min_samples)
     genes_to_test <- which(keep_mask)
     mean_mask <- rep(TRUE, nrow(expr_over_thresh))
   } else if (!is.null(min_mean_expr)) {
@@ -531,7 +529,7 @@ select_genes_for_deg <- function(expr_over_thresh,
     genes_to_test <- genes_to_test_from_detection(
       expr_mat = detection_mat,
       condition_vec = perturbation_labels,
-      min_samples_detected = if (filter_mode == "by_condition") condition_min_samples_detected else min_samples_detected,
+      min_samples_detected = detection_min_samples,
       mode = filter_mode
     )
   }
@@ -541,9 +539,9 @@ select_genes_for_deg <- function(expr_over_thresh,
   det_perturb <- summarize_detection_counts(detection_mat, perturb_mask, prefix = "n_genes_detect_perturb_ge")
 
   drop_both_lt_k <- if (filter_mode %in% c("by_condition", "by_mean_expression")) {
-    sum(ctrl_detects < condition_min_samples_detected & perturb_detects < condition_min_samples_detected & mean_mask)
+    sum(ctrl_detects < detection_min_samples & perturb_detects < detection_min_samples & mean_mask)
   } else {
-    sum(Matrix::rowSums(detection_mat) < min_samples_detected & mean_mask)
+    sum(Matrix::rowSums(detection_mat) < detection_min_samples & mean_mask)
   }
 
   stats <- c(
@@ -558,7 +556,8 @@ select_genes_for_deg <- function(expr_over_thresh,
       n_genes_dropped_both_lt_k = drop_both_lt_k,
       n_genes_dropped_below_mean = sum(!mean_mask),
       filter_mode = filter_mode,
-      condition_min_samples_detected = condition_min_samples_detected,
+      condition_min_samples_detected = detection_min_samples,
+      background_min_samples_over_threshold = if (filter_mode %in% c("by_background", "by_background_counts")) detection_min_samples else NA_real_,
       min_mean_expr = min_mean_expr
     ),
     if (filter_mode == "by_background_counts") {
@@ -1291,13 +1290,13 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
 #' @param log_fc_thresh Log fold change threshold. Default is 1.
 #' @param abs_expr_thresh Absolute expression threshold. Default is 1e-3.
 #' @param sig_thresh Significance threshold. Default is 0.05.
-#' @param min_samples_detected Minimum number of samples detected. Default is 2.
+#' @param detection_min_samples Minimum number of pseudobulk samples required for a gene to be considered detected
+#'   (interpreted per mode: overall for global/by_mean_expression; per-arm for by_condition; per-arm above background for background modes).
 #' @param min_cells_per_pseudobulk Minimum number of cells per pseudobulk. Default is NULL.
 #' @param cores Number of cores to use for parallel processing. Default is 1.
 #' @param write_dir Directory to write output files. Default is NULL.
 #' @param max_simultaneous_genes Maximum number of genes to analyze simultaneously. Default is NULL.
 #' @param filter_mode Gene filtering strategy ("global" uses existing aggregate filter, "by_condition" requires detection in control or perturbation).
-#' @param condition_min_samples_detected Minimum samples per condition when filter_mode = "by_condition". Defaults to min_samples_detected.
 #' @param perf_summary_path Optional path to a TSV where runtime and filtering diagnostics will be appended.
 #' @param profile Whether to enable Rprof profiling for the DEG run.
 #' @param profile_out Path for the Rprof output (default derived from write_dir when profile = TRUE).
@@ -1323,14 +1322,13 @@ compare_genes_within_state_graph <- function(ccs,
                                              log_fc_thresh = 1,
                                              abs_expr_thresh = 1e-3,
                                              sig_thresh = 0.05,
-                                             min_samples_detected = 2,
+                                             detection_min_samples = 2,
                                              min_cells_per_pseudobulk = NULL,
                                              cores = 1,
                                              write_dir = NULL,
                                              max_simultaneous_genes = NULL,
                                              cv_threshold = 100,
                                              filter_mode = c("global", "by_condition", "by_mean_expression", "by_background", "by_background_counts"),
-                                             condition_min_samples_detected = NULL,
                                              k_sweep = NULL,
                                              filter_only = FALSE,
                                              min_mean_expr = NULL,
@@ -1340,7 +1338,6 @@ compare_genes_within_state_graph <- function(ccs,
                                              background_mult = 2.0,
                                              background_quantile_p = 0.99,
                                              background_count_floor = 2,
-                                             background_min_samples_over_threshold = 1,
                                              alpha = 0.05,
                                              perf_summary_path = NULL,
                                              profile = FALSE,
@@ -1354,9 +1351,6 @@ compare_genes_within_state_graph <- function(ccs,
   # }
   filter_mode <- match.arg(filter_mode)
   background_threshold_type_val <- match.arg(background_threshold_type)
-  if (is.null(condition_min_samples_detected)) {
-    condition_min_samples_detected <- min_samples_detected
-  }
   if (!is.null(k_sweep)) {
     k_sweep <- sort(unique(k_sweep))
   }
@@ -1443,8 +1437,7 @@ compare_genes_within_state_graph <- function(ccs,
     expr_over_thresh = expr_over_thresh,
     detection_mat = detection_mat,
     perturbation_labels = colData(pb_cds)[["perturbation"]],
-    min_samples_detected = min_samples_detected,
-    condition_min_samples_detected = condition_min_samples_detected,
+    detection_min_samples = detection_min_samples,
     filter_mode = filter_mode,
     min_mean_expr = min_mean_expr,
     cell_types = colData(pb_cds)[["cell_group"]],
@@ -1455,8 +1448,7 @@ compare_genes_within_state_graph <- function(ccs,
     background_delta = background_delta,
     background_mult = background_mult,
     background_quantile_p = background_quantile_p,
-    background_count_floor = background_count_floor,
-    background_min_samples_over_threshold = background_min_samples_over_threshold
+    background_count_floor = background_count_floor
   )
   genes_to_test <- gene_selection$genes_to_test
   background_thresholds <- if (filter_mode == "by_background") gene_selection$background_thresholds else NULL
@@ -1485,8 +1477,7 @@ compare_genes_within_state_graph <- function(ccs,
           expr_over_thresh = expr_over_thresh,
           detection_mat = detection_mat,
           perturbation_labels = perturbation_labels,
-          min_samples_detected = min_samples_detected,
-          condition_min_samples_detected = k,
+          detection_min_samples = k,
           filter_mode = filter_mode,
           min_mean_expr = min_mean_expr
         )
@@ -1549,7 +1540,7 @@ compare_genes_within_state_graph <- function(ccs,
         runtime_model = 0,
         runtime_write = 0,
         filter_mode = filter_mode,
-        condition_min_samples_detected = condition_min_samples_detected,
+        condition_min_samples_detected = detection_min_samples,
         timestamp = format(Sys.time(), tz = "UTC", usetz = TRUE),
         perf_failure_reason = "no_genes_after_filter",
         min_mean_expr = ifelse(is.null(min_mean_expr), NA_real_, min_mean_expr),
@@ -1557,7 +1548,7 @@ compare_genes_within_state_graph <- function(ccs,
         background_threshold_type = ifelse(filter_mode == "by_background", background_threshold_type_val, NA_character_),
         background_delta = ifelse(filter_mode == "by_background", background_delta, NA_real_),
         background_mult = ifelse(filter_mode == "by_background", background_mult, NA_real_),
-        background_min_samples_over_threshold = ifelse(filter_mode %in% c("by_background", "by_background_counts"), background_min_samples_over_threshold, NA_real_),
+        background_min_samples_over_threshold = ifelse(filter_mode %in% c("by_background", "by_background_counts"), detection_min_samples, NA_real_),
         background_rate_q25 = gene_selection$stats$background_rate_q25,
         background_rate_median = gene_selection$stats$background_rate_median,
         background_rate_q75 = gene_selection$stats$background_rate_q75,
@@ -1656,13 +1647,13 @@ compare_genes_within_state_graph <- function(ccs,
       runtime_model = NA_real_,
       runtime_write = NA_real_,
       filter_mode = filter_mode,
-      condition_min_samples_detected = scalar_or_na(condition_min_samples_detected),
+      condition_min_samples_detected = scalar_or_na(detection_min_samples),
       min_mean_expr = scalar_or_na(min_mean_expr),
       background_bottom_frac = NA_real_,
       background_threshold_type = NA_character_,
       background_delta = NA_real_,
       background_mult = NA_real_,
-      background_min_samples_over_threshold = NA_real_,
+      background_min_samples_over_threshold = ifelse(filter_mode %in% c("by_background", "by_background_counts"), scalar_or_na(detection_min_samples), NA_real_),
        background_rate_q25 = NA_real_,
        background_rate_median = NA_real_,
        background_rate_q75 = NA_real_,
@@ -1713,10 +1704,10 @@ compare_genes_within_state_graph <- function(ccs,
               alpha = alpha,
               background_thresholds = if (filter_mode == "by_background") background_thresholds else NULL,
               background_rates = if (filter_mode == "by_background_counts") background_rates else NULL,
-              background_min_samples_over_threshold = background_min_samples_over_threshold,
               background_quantile_p = if (filter_mode == "by_background_counts") background_quantile_p else NA_real_,
               background_count_floor = if (filter_mode == "by_background_counts") background_count_floor else NA_real_,
-              background_bottom_frac = if (filter_mode %in% c("by_background", "by_background_counts")) background_bottom_frac else NA_real_
+              background_bottom_frac = if (filter_mode %in% c("by_background", "by_background_counts")) background_bottom_frac else NA_real_,
+              detection_min_samples = detection_min_samples
             ),
             error = function(e) {
               message(sprintf("perf logging: cell_group %s failed: %s", cell_group, e$message))
@@ -1902,7 +1893,7 @@ compare_gene_expression_within_node <- function(cell_group,
                                                 background_mult = NA_real_,
                                                 background_quantile_p = NA_real_,
                                                 background_count_floor = NA_real_,
-                                                background_min_samples_over_threshold = 1) {
+                                                detection_min_samples = 1) {
   # now fit models per cell group
   elapsed_sec <- function(start_time) as.numeric((proc.time() - start_time)[3])
   cg_start <- proc.time()
@@ -2059,8 +2050,8 @@ compare_gene_expression_within_node <- function(cell_group,
     bg_thresh[!is.finite(bg_thresh)] <- 0
     ctrl_counts_bg <- count_above_threshold_by_mask(expr_norm, bg_thresh, ctrl_mask)
     pert_counts_bg <- count_above_threshold_by_mask(expr_norm, bg_thresh, perturb_mask)
-    keep_bg <- (ctrl_counts_bg >= background_min_samples_over_threshold) | (pert_counts_bg >= background_min_samples_over_threshold)
-    message(sprintf("\t%s: background keep %d/%d genes (K=%d)", cell_group, sum(keep_bg), length(keep_bg), background_min_samples_over_threshold))
+    keep_bg <- (ctrl_counts_bg >= detection_min_samples) | (pert_counts_bg >= detection_min_samples)
+    message(sprintf("\t%s: background keep %d/%d genes (K=%d)", cell_group, sum(keep_bg), length(keep_bg), detection_min_samples))
     if (!any(keep_bg)) {
       warning(sprintf("%s: background filter removed all genes; skipping.", cell_group))
       if (return_perf) {
@@ -2090,8 +2081,8 @@ compare_gene_expression_within_node <- function(cell_group,
       quantile_p = background_quantile_p,
       count_floor = background_count_floor
     )
-    keep_bg <- (ctrl_counts_bg >= background_min_samples_over_threshold) | (pert_counts_bg >= background_min_samples_over_threshold)
-    message(sprintf("\t%s: background keep %d/%d genes (K=%d)", cell_group, sum(keep_bg), length(keep_bg), background_min_samples_over_threshold))
+    keep_bg <- (ctrl_counts_bg >= detection_min_samples) | (pert_counts_bg >= detection_min_samples)
+    message(sprintf("\t%s: background keep %d/%d genes (K=%d)", cell_group, sum(keep_bg), length(keep_bg), detection_min_samples))
     if (!any(keep_bg)) {
       warning(sprintf("%s: background (counts) filter removed all genes; skipping.", cell_group))
       if (return_perf) {
