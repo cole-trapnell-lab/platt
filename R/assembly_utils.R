@@ -739,7 +739,8 @@ fit_wt_model <- function(cds,
                          include_time_in_nuisance = FALSE,
                          min_penalty = 0.01,
                          max_penalty = 1e+06,
-                         num_bootstraps = 10) {
+                         num_bootstraps = 10,
+                         ...) {
   if (is.null(ctrl_ids)) {
     ctrl_ids <- unique(colData(cds)[[perturbation_col]])
     ctrl_ids <- ctrl_ids[grepl("wt|ctrl|reference", ctrl_ids)]
@@ -830,7 +831,8 @@ fit_wt_model <- function(cds,
     # covariance_type="spherical",
     min_penalty = min_penalty,
     max_penalty = max_penalty,
-    num_bootstraps = num_bootstraps
+    num_bootstraps = num_bootstraps,
+    ...
   )
 
   wt_ccm <- select_model(wt_ccm, criterion = "EBIC", sparsity_factor = sparsity_factor)
