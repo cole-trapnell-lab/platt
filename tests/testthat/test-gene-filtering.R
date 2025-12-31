@@ -25,34 +25,41 @@ make_test_matrix <- function() {
 
 conditions <- c("control", "control", "control", "perturb", "perturb", "perturb")
 
-test_that("by_condition drops genes all-zero in both conditions", {
+test_that("global filter drops genes all-zero across samples", {
   expr <- make_test_matrix()
-  genes <- genes_to_test_from_detection(expr, conditions, min_samples_detected = 2, mode = "by_condition")
+  genes <- genes_to_test_from_detection(expr, conditions, min_samples_detected = 2, mode = "global")
   expect_s4_class(expr, "dgCMatrix")
   expect_setequal(rownames(expr)[genes], c("g2", "g3", "g4", "g5"))
   expect_false("g1" %in% rownames(expr)[genes])
 })
 
-test_that("by_condition respects min_samples_detected", {
+test_that("global filter respects min_samples_detected", {
   expr <- make_test_matrix()
   # make g5 present in only one perturb sample so it should drop when min=2
   expr[5, 6] <- 0
-  genes <- genes_to_test_from_detection(expr, conditions, min_samples_detected = 2, mode = "by_condition")
+  genes <- genes_to_test_from_detection(expr, conditions, min_samples_detected = 2, mode = "global")
   expect_false("g5" %in% rownames(expr)[genes])
-  expect_true("g3" %in% rownames(expr)[genes]) # still meets threshold
+  expect_true("g3" %in% rownames(expr)[genes]) # still meets threshold aggregated
 })
 
-test_that("by_condition keeps everything global would keep for min=1", {
+test_that("global mode matches itself for min=1", {
   expr <- make_test_matrix()
   global_genes <- genes_to_test_from_detection(expr, conditions, min_samples_detected = 1, mode = "global")
-  by_cond_genes <- genes_to_test_from_detection(expr, conditions, min_samples_detected = 1, mode = "by_condition")
-  expect_true(all(global_genes %in% by_cond_genes))
+  expect_true(all(global_genes %in% global_genes))
 })
 
 test_that("helper returns integer indices without densifying", {
   expr <- make_test_matrix()
-  genes <- genes_to_test_from_detection(expr, conditions, min_samples_detected = 2, mode = "by_condition")
+  genes <- genes_to_test_from_detection(expr, conditions, min_samples_detected = 2, mode = "global")
   expect_type(genes, "integer")
   expect_true("dgCMatrix" %in% class(expr))
   expect_false(any(is.na(genes)))
+})
+
+test_that("invalid filter mode errors cleanly", {
+  expr <- make_test_matrix()
+  expect_error(
+    genes_to_test_from_detection(expr, conditions, min_samples_detected = 2, mode = "by_condition"),
+    "arg should be one of"
+  )
 })
