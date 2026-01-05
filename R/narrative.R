@@ -183,7 +183,7 @@ build_pathway_tbl <- function(info, sig_p_val_thresh, top_n_pathways) {
 }
 
 get_descendants <- function(cell_type, combined_psg) {
-  g <- if (class(combined_psg) == "cell_state_graph") combined_psg@graph else combined_psg
+  g <- coerce_state_graph(combined_psg)
   if (!cell_type %in% igraph::V(g)$name) {
     return(character(0))
   }
@@ -194,15 +194,11 @@ get_descendants <- function(cell_type, combined_psg) {
 
 # Helper: Get direct parent(s) of a cell type
 get_dir_parents <- function(cell_type, combined_psg) {
-  g <- if (class(combined_psg) == "cell_state_graph") combined_psg@graph else combined_psg
-  if (!cell_type %in% igraph::V(g)$name) {
-    return(character(0))
-  }
-  igraph::neighbors(g, cell_type, mode = "in")$name
+  get_parents(combined_psg, cell_type)
 }
 
 get_roots <- function(ct, combined_psg) {
-  g <- if (inherits(combined_psg, "cell_state_graph")) combined_psg@graph else combined_psg
+  g <- coerce_state_graph(combined_psg)
   # Find all vertices in the connected component containing ct
   if (!ct %in% igraph::V(g)$name) {
     return(character(0))
@@ -570,7 +566,7 @@ summarize_impact_in_lineage_context <- function(
     progress <- FALSE
 
     ready <- purrr::keep(remaining, function(ct) {
-      parents <- get_parents(ct, combined_psg)
+      parents <- get_parents(combined_psg, ct)
       relevant_parents <- intersect(parents, all_types)
       all(relevant_parents %in% processed) || length(relevant_parents) == 0
     })
@@ -578,7 +574,7 @@ summarize_impact_in_lineage_context <- function(
       ready <- remaining
     }
     for (ct in ready) {
-      parents <- get_parents(ct, combined_psg)
+      parents <- get_parents(combined_psg, ct)
       if (verbose) message(sprintf("[DEBUG] Processing cell type: %s (iteration %d)", ct, iter))
       results[[ct]] <- summarize_cell_type_impact(
         ct,

@@ -31,7 +31,8 @@ Remotes:
     cole-trapnell-lab/speedglm,
     bioc::fgsea
 Suggests: 
-    testthat (>= 3.0.0)
+    testthat (>= 3.0.0),
+    Matrix
 Config/testthat/edition: 3
 VignetteBuilder: knitr
 Language: en-US
