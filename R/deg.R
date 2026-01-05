@@ -17,6 +17,22 @@ makeprobsvec <- function(p) {
   phat
 }
 
+# Coerce a cell_state_graph (or similar S4 wrapper) to an igraph; otherwise return the input.
+# Stops with a clear message if the resulting object is not an igraph.
+coerce_state_graph <- function(g) {
+  if (methods::is(g, "cell_state_graph")) {
+    if (!"graph" %in% slotNames(g)) {
+      stop("cell_state_graph object is missing a 'graph' slot; cannot extract igraph.", call. = FALSE)
+    }
+    g <- g@graph
+  }
+  if (!igraph::is_igraph(g)) {
+    cls <- paste(class(g), collapse = ",")
+    stop(paste0("get_parents/get_children/get_siblings expect an igraph; received class ", cls), call. = FALSE)
+  }
+  g
+}
+
 #' This function takes a relative abundance matrix and calculates the probability matrix.
 #' It normalizes each column by dividing by the column sum, and replaces any NA values with 0.
 #'
@@ -509,7 +525,11 @@ select_genes_for_deg <- function(expr_over_thresh,
 #' print(parents)
 #' @noRd
 get_parents <- function(state_graph, cell_state) {
-  parents <- igraph::neighbors(state_graph, cell_state, mode = "in")
+  graph_obj <- coerce_state_graph(state_graph)
+  if (!cell_state %in% igraph::V(graph_obj)$name) {
+    return(character(0))
+  }
+  parents <- igraph::neighbors(graph_obj, cell_state, mode = "in")
   if (length(parents) > 0) {
     return(parents$name)
   } else {
@@ -527,7 +547,11 @@ get_parents <- function(state_graph, cell_state) {
 #' @import igraph
 #' @noRd
 get_children <- function(state_graph, cell_state) {
-  children <- igraph::neighbors(state_graph, cell_state, mode = "out")
+  graph_obj <- coerce_state_graph(state_graph)
+  if (!cell_state %in% igraph::V(graph_obj)$name) {
+    return(character(0))
+  }
+  children <- igraph::neighbors(graph_obj, cell_state, mode = "out")
   if (length(children) > 0) {
     return(children$name)
   } else {
@@ -550,7 +574,8 @@ get_children <- function(state_graph, cell_state) {
 get_siblings <- function(state_graph, cell_state) {
   parents <- get_parents(state_graph, cell_state)
   if (length(parents) > 0) {
-    siblings <- igraph::neighbors(state_graph, parents, mode = "out")
+    graph_obj <- coerce_state_graph(state_graph)
+    siblings <- igraph::neighbors(graph_obj, parents, mode = "out")
     siblings <- setdiff(siblings$name, cell_state) # exclude self
     return(siblings)
   } else {
