@@ -36,7 +36,7 @@ plot_state_graph_abundance_changes(
 )
 }
 \arguments{
-\item{ccs}{A data frame containing cell cluster information.}
+\item{ccs}{A data frame containing cell count information.}
 
 \item{state_graph}{An igraph object or data frame representing the state graph.}
 

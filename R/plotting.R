@@ -644,7 +644,7 @@ calc_sig_rank <- function(p_value) {
 #'
 #' This function plots the changes in abundance across different states in a state graph.
 #'
-#' @param ccs A data frame containing cell cluster information.
+#' @param ccs A data frame containing cell count information.
 #' @param state_graph An igraph object or data frame representing the state graph.
 #' @param comp_abund_table A data frame containing the comparison abundance table.
 #' @param contrast A string specifying the contrast column in the comparison abundance table. Default is "contrast".
@@ -970,7 +970,7 @@ plot_state_graph_abundance_changes <- function(ccs,
 #'
 #' This function plots a state graph with gene expression data.
 #'
-#' @param ccs Cell cluster data.
+#' @param ccs Cell count data.
 #' @param state_graph State graph data, either as an igraph object or a data frame.
 #' @param genes A vector of gene names to plot.
 #' @param method Method to aggregate gene expression data, default is "min".
@@ -1249,7 +1249,7 @@ plot_state_graph_gene_expression <- function(ccs,
 #'
 #' This function collects metadata for nodes in a cell count set (CCS).
 #'
-#' @param ccs A cell clustering structure object containing metadata and column data.
+#' @param ccs A cell count set object containing metadata and column data.
 #' @param color_nodes_by A string specifying the metadata column to color nodes by.
 #' @param label_nodes_by A string specifying the metadata column to label nodes by.
 #' @param group_nodes_by A string specifying the metadata column to group nodes by.

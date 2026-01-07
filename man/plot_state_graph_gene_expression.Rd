@@ -37,7 +37,7 @@ plot_state_graph_gene_expression(
 )
 }
 \arguments{
-\item{ccs}{Cell cluster data.}
+\item{ccs}{Cell count data.}
 
 \item{state_graph}{State graph data, either as an igraph object or a data frame.}
 

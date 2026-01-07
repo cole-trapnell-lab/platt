@@ -28,7 +28,7 @@ compare_genes_within_state_graph(
 )
 }
 \arguments{
-\item{ccs}{A cell cluster set object.}
+\item{ccs}{A cell count set object.}
 
 \item{perturbation_col}{The column name in the cell data set that contains perturbation information. Default is "perturbation".}
 
@@ -72,7 +72,7 @@ compare_genes_within_state_graph(
 A data frame containing the comparison results.
 }
 \description{
-This function compares gene expression within a state graph for a given cell cluster set (ccs).
+This function compares gene expression within a state graph for a given cell count set (ccs).
 }
 \examples{
 # Example usage:
