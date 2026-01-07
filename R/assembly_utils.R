@@ -986,7 +986,8 @@ assemble_wt_graph <- function(cds,
     edges_to_remove <- igraph::as_data_frame(wt_state_transition_graph, what = "edges") %>%
       inner_join(edge_denylist, by = c("from", "to"))
     if (nrow(edges_to_remove) > 0) {
-      edge_ids <- igraph::get.edge.ids(wt_state_transition_graph, t(as.matrix(edges_to_remove[, c("from", "to")])))
+      vp <- as.vector(t(as.matrix(edges_to_remove[, c("from", "to")])))
+      edge_ids <- igraph::get_edge_ids(wt_state_transition_graph, vp)
       wt_state_transition_graph <- igraph::delete_edges(wt_state_transition_graph, edge_ids)
     }
   }
