@@ -684,10 +684,10 @@ measure_time_delta_along_path <- function(path_df, ccs, cells_along_path_df, int
 }
 # debug(cells_along_path)
 
-#' score a path based on fitting a linear model of perturbation ~ geodesic distance
-#' @param ccs
-#' @param path_df
-#' @noRd
+# # ' score a path based on fitting a linear model of perturbation ~ geodesic distance
+# # ' @param ccs
+# # ' @param path_df
+# # ' @noRd
 # measure_perturbation_freq_along_path <- function(path_df, ccs, cells_along_path_df, perturbation_col="knockout", interval_col="timepoint", batch_col=NULL) {
 #
 #
@@ -1998,15 +1998,6 @@ assess_perturbation_effects <- function(perturbation_ccm_tbl,
   return(perturbation_ccm_tbl)
 }
 
-#' Assemble a state transition graph from a set of perturbations
-#'
-#' This function takes as input a control timeseries Hooke model, and a set of timeseries perturbation models.
-#' Each perturbation model describes a separate experimental perturbation that may eliminate one or more
-#' cell states in the experiment. The tibble must have columns "perturb_name" and "perturb_ccm", and each row
-#' must have a perturbation model with a unique name.
-#'
-#' The function returns a state graph with edges annotated by the level of support from the perturbations.
-#' @export
 #' Assemble a state transition graph from a set of perturbations
 #'
 #' This function takes as input a control timeseries Hooke model, and a set of timeseries perturbation models.

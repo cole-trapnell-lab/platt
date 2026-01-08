@@ -10,19 +10,28 @@ compare_gene_expression_within_node(
   pb_cds,
   control_ids,
   perturbation_ids,
+  filter_mode = NA_character_,
   ambient_estimate_matrix = NULL,
   ambient_stderr_matrix = NULL,
   nuisance_model_formula_str = "0",
   state_term = "cell_group",
   log_fc_thresh = 1,
-  abs_expr_thresh = 1e-10,
+  abs_expr_thresh = 0.001,
   sig_thresh = 0.05,
   min_cells_per_pseudobulk = NULL,
   exclude_results_below_ambient = TRUE,
   expected_effect_mode_interval = c(-10, 10),
   write_dir = NULL,
   cores = 1,
-  max_simultaneous_genes = NULL
+  max_simultaneous_genes = NULL,
+  cv_threshold = NULL,
+  return_perf = FALSE,
+  alpha = 0.05,
+  background_rates = NULL,
+  background_bottom_frac = NA_real_,
+  background_quantile_p = NA_real_,
+  background_count_floor = NA_real_,
+  detection_min_samples = 1
 )
 }
 \arguments{
@@ -61,6 +70,8 @@ compare_gene_expression_within_node(
 \item{cores}{Integer. Number of cores to use for parallel processing.}
 
 \item{max_simultaneous_genes}{Integer. Maximum number of genes to process simultaneously.}
+
+\item{return_perf}{Logical. Whether to return performance diagnostics alongside results.}
 }
 \value{
 A data frame with perturbation effects, or NULL if write_dir is specified.

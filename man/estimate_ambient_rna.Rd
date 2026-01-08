@@ -18,7 +18,7 @@ estimate_ambient_rna(
 \arguments{
 \item{ccs}{A cell count matrix or similar object.}
 
-\item{abs_expr_thresh}{Absolute expression threshold. Default is 1e-10.}
+\item{abs_expr_thresh}{Absolute expression threshold. Default is 1e-3.}
 
 \item{min_samples_detected}{Minimum number of samples in which a gene must be detected. Default is 2.}
 

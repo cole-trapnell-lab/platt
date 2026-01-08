@@ -17,7 +17,7 @@ assemble_partition(
   ctrl_ids = NULL,
   mt_ids = NULL,
   sparsity_factor = 0.01,
-  perturbation_col = "gene_target",
+  perturbation_col = "perturbation",
   batch_col = "expt",
   max_num_cells = NULL,
   verbose = FALSE,
@@ -30,11 +30,12 @@ assemble_partition(
   newdata = tibble(),
   edge_allowlist = NULL,
   min_lfc = 0,
-  links_between_components = c("ctp", "none", "strongest-pcor", "strong-pcor"),
+  links_between_components = c("none", "ctp", "strongest-pcor", "strong-pcor"),
   log_abund_detection_thresh = -5,
   batches_excluded_from_assembly = c(),
   component_col = "partition",
-  embryo_size_factors = NULL
+  embryo_size_factors = NULL,
+  force_allowlist = FALSE
 )
 }
 \arguments{

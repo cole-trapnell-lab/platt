@@ -5,7 +5,6 @@
 \title{Assess the cell type gains and losses following a perturbation.}
 \usage{
 assess_perturbation_effects(
-  control_timeseries_ccm,
   perturbation_ccm_tbl,
   q_val = 0.01,
   start_time = NULL,
@@ -17,7 +16,7 @@ assess_perturbation_effects(
   log_abund_detection_thresh = -5,
   min_lfc = 0,
   verbose = FALSE,
-  newdata = newdata
+  newdata = tibble()
 )
 }
 \description{

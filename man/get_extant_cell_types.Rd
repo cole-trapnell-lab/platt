@@ -10,7 +10,7 @@ get_extant_cell_types(
   stop,
   interval_col = "timepoint",
   interval_step = 2,
-  log_abund_detection_thresh = -5,
+  log_abund_detection_thresh = 0,
   pct_dynamic_range = 0.25,
   pct_range_detection_thresh = pct_dynamic_range,
   min_cell_range = 2,

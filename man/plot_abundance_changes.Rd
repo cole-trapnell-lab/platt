@@ -10,13 +10,13 @@ plot_abundance_changes(
   facet_group = NULL,
   scale_node = FALSE,
   plot_labels = TRUE,
-  arrow_unit = 7,
+  label_size = 3,
   node_size = 2,
   node_scale = 1,
-  con_colour = "darkgrey",
+  arrow_unit = 7,
+  arrow_color = "darkgrey",
   legend_position = "right",
-  node_label_width = 50,
-  group_label_font_size = 1,
+  group_label_size = 1,
   fc_limits = c(-3, 3)
 )
 }
@@ -31,19 +31,17 @@ plot_abundance_changes(
 
 \item{plot_labels}{Logical, whether to plot labels for nodes.}
 
-\item{arrow_unit}{Numeric, the size of the arrows in the plot.}
-
 \item{node_size}{Numeric, the size of the nodes in the plot.}
 
 \item{node_scale}{Numeric, the scaling factor for node sizes.}
 
-\item{con_colour}{Character, the color of the connections between nodes.}
+\item{arrow_unit}{Numeric, the size of the arrows in the plot.}
+
+\item{arrow_color}{Character, the color of the connections between nodes.}
 
 \item{legend_position}{Character, the position of the legend in the plot.}
 
-\item{node_label_width}{Numeric, the width of the node labels.}
-
-\item{group_label_font_size}{Numeric, the font size of the group labels.}
+\item{group_label_size}{Numeric, the font size of the group labels.}
 
 \item{fc_limits}{Numeric vector of length 2, the limits for the fold change color scale.}
 }

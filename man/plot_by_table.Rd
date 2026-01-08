@@ -11,14 +11,14 @@ plot_by_table(
   label_nodes_by = NULL,
   arrow_unit = 7,
   node_size = 2,
-  con_colour = "darkgrey",
+  arrow_color = "darkgrey",
   legend_position = "none",
   min_edge_size = 0.1,
   max_edge_size = 2,
   edge_weights = NULL,
   plot_labels = T,
-  node_label_width = 50,
-  group_label_font_size = 1
+  label_size = 3,
+  group_label_size = 1
 )
 }
 \arguments{
@@ -34,7 +34,7 @@ plot_by_table(
 
 \item{node_size}{Numeric value specifying the size of the nodes in the plot. Default is 2.}
 
-\item{con_colour}{A string specifying the color of the connections between nodes. Default is "darkgrey".}
+\item{arrow_color}{A string specifying the color of the connections between nodes. Default is "darkgrey".}
 
 \item{legend_position}{A string specifying the position of the legend in the plot. Default is "none".}
 
@@ -46,9 +46,7 @@ plot_by_table(
 
 \item{plot_labels}{Logical value indicating whether to plot labels for the nodes. Default is TRUE.}
 
-\item{node_label_width}{Numeric value specifying the width of the node labels. Default is 50.}
-
-\item{group_label_font_size}{Numeric value specifying the font size of the group labels. Default is 1.}
+\item{group_label_size}{Numeric value specifying the font size of the group labels. Default is 1.}
 }
 \value{
 A ggplot object representing the cell state graph.

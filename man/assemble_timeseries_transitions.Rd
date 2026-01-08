@@ -16,10 +16,11 @@ assemble_timeseries_transitions(
   log_abund_detection_thresh = -5,
   min_pathfinding_lfc = 0,
   make_dag = FALSE,
-  links_between_components = c("ctp", "none", "strongest-pcor", "strong-pcor"),
+  links_between_components = c("none", "ctp", "strongest-pcor", "strong-pcor"),
   components = "partition",
   edge_allowlist = NULL,
   edge_denylist = NULL,
+  force_allowlist = FALSE,
   newdata = tibble()
 )
 }

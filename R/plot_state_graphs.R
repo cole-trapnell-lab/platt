@@ -7,14 +7,13 @@
 #' @param label_nodes_by A character string specifying the attribute to label nodes by. Default is NULL.
 #' @param arrow_unit Numeric value specifying the size of the arrows. Default is 7.
 #' @param node_size Numeric value specifying the size of the nodes. Default is 2.
-#' @param con_colour A character string specifying the color of the connections. Default is "darkgrey".
+#' @param arrow_color A character string specifying the color of the connections. Default is "darkgrey".
 #' @param legend_position A character string specifying the position of the legend. Default is "none".
 #' @param min_edge_size Numeric value specifying the minimum edge size. Default is 0.1.
 #' @param max_edge_size Numeric value specifying the maximum edge size. Default is 2.
 #' @param edge_weights A numeric vector specifying the weights of the edges. Default is NULL.
 #' @param plot_labels Logical value indicating whether to plot labels. Default is TRUE.
-#' @param group_label_font_size Numeric value specifying the font size of group labels. Default is 1.
-#' @param node_label_width Numeric value specifying the width of node labels. Default is 50.
+#' @param group_label_size Numeric value specifying the font size of group labels. Default is 1.
 #'
 #' @return A ggplot object representing the cell state graph with annotations.
 #'
@@ -34,22 +33,33 @@ plot_annotations <- function(cell_state_graph,
                              label_nodes_by = NULL,
                              arrow_unit = 7,
                              node_size = 2,
-                             con_colour = "darkgrey",
+                             arrow_color = "darkgrey",
                              legend_position = "none",
                              min_edge_size = 0.1,
                              max_edge_size = 2,
                              edge_weights = NULL,
                              plot_labels = TRUE,
                              label_size = 3,
-                             group_label_font_size = 1,
-                             node_label_width = 50) {
-  if (is.null(color_nodes_by)) {
-    color_nodes_by <- cell_state_graph@ccs@info$cell_group
-  } else {
-    cell_state_graph@g[["color_nodes_by"]] <- color_nodes_by
-  }
+                             group_label_size = 1) {
+  # override if defined in arguments, otherwise take csg info or default to cell group
+  color_nodes_by <- color_nodes_by %||%
+    csg@metadata$color_nodes_by %||%
+    ccs@info$cell_group
 
-  group_nodes_by <- cell_state_graph@metadata$group_nodes_by
+  label_nodes_by <- label_nodes_by %||%
+    csg@metadata$label_nodes_by %||%
+    ccs@info$cell_group
+
+  group_nodes_by <- csg@metadata$group_nodes_by %||%
+    ccs@info$cell_group
+
+  node_metadata <- collect_psg_node_metadata(ccs, color_nodes_by, label_nodes_by, group_nodes_by)
+
+  cell_state_graph@g[["color_nodes_by"]] <- NULL
+  cell_state_graph@g[["label_nodes_by"]] <- NULL
+  cell_state_graph@g[["group_nodes_by"]] <- NULL
+
+  cell_state_graph@g <- dplyr::left_join(cell_state_graph@g, node_metadata, by = c("name" = "id"))
 
   g <- cell_state_graph@g
 
@@ -57,6 +67,7 @@ plot_annotations <- function(cell_state_graph,
   grouping_df <- cell_state_graph@layout_info$grouping_df
 
   y_plot_range <- max(g$y)
+
   group_label_position_df <- g %>%
     dplyr::select(x, y, group_nodes_by) %>%
     dplyr::distinct() %>%
@@ -65,11 +76,11 @@ plot_annotations <- function(cell_state_graph,
 
   p <- ggplot(aes(x, y), data = g) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(bidirectional)
     ) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(!bidirectional),
       arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
       linejoin = "mitre"
@@ -89,7 +100,7 @@ plot_annotations <- function(cell_state_graph,
       data = g
     )
 
-    p <- p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_font_size)
+    p <- p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_size)
     plot_labels <- FALSE
     color_nodes_by <- group_nodes_by
   }
@@ -108,13 +119,13 @@ plot_annotations <- function(cell_state_graph,
 
   if (plot_labels) {
     p <- p + ggrepel::geom_text_repel(
-      data = g %>% select(x, y, name) %>% distinct(),
-      aes(x, y, label = name, size=label_size),
+      data = g %>% select(x, y, label_nodes_by) %>% distinct(),
+      aes(x, y, label = label_nodes_by),
+      size = label_size,
       color = I("black"),
       box.padding = 0.5
     )
   }
-
 
   num.colors <- cell_state_graph@g[["color_nodes_by"]] %>%
     unique() %>%
@@ -149,10 +160,9 @@ plot_annotations <- function(cell_state_graph,
 #' @param arrow_unit Numeric, the size of the arrows in the plot.
 #' @param node_size Numeric, the size of the nodes in the plot.
 #' @param node_scale Numeric, the scaling factor for node sizes.
-#' @param con_colour Character, the color of the connections between nodes.
+#' @param arrow_color Character, the color of the connections between nodes.
 #' @param legend_position Character, the position of the legend in the plot.
-#' @param node_label_width Numeric, the width of the node labels.
-#' @param group_label_font_size Numeric, the font size of the group labels.
+#' @param group_label_size Numeric, the font size of the group labels.
 #' @param fc_limits Numeric vector of length 2, the limits for the fold change color scale.
 #'
 #' @return A ggplot object representing the abundance changes.
@@ -175,13 +185,13 @@ plot_abundance_changes <- function(cell_state_graph,
                                    facet_group = NULL,
                                    scale_node = FALSE,
                                    plot_labels = TRUE,
-                                   arrow_unit = 7,
+                                   label_size = 3,
                                    node_size = 2,
                                    node_scale = 1,
-                                   con_colour = "darkgrey",
+                                   arrow_unit = 7,
+                                   arrow_color = "darkgrey",
                                    legend_position = "right",
-                                   node_label_width = 50,
-                                   group_label_font_size = 1,
+                                   group_label_size = 1,
                                    fc_limits = c(-3, 3)) {
   g <- cell_state_graph@g
   bezier_df <- cell_state_graph@layout_info$bezier_df
@@ -214,11 +224,11 @@ plot_abundance_changes <- function(cell_state_graph,
 
   p <- ggplot(aes(x, y), data = g) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(bidirectional)
     ) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(!bidirectional),
       arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
       linejoin = "mitre"
@@ -239,7 +249,7 @@ plot_abundance_changes <- function(cell_state_graph,
       data = g
     )
 
-    p <- p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_font_size)
+    p <- p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_size)
     plot_labels <- F
     scale_node <- T
   }
@@ -297,6 +307,7 @@ plot_abundance_changes <- function(cell_state_graph,
     p <- p + ggrepel::geom_text_repel(
       data = g %>% select(x, y, name) %>% distinct(),
       aes(x, y, label = name),
+      size = label_size,
       color = I("black")
     )
   }
@@ -325,7 +336,7 @@ plot_abundance_changes <- function(cell_state_graph,
 #' @param cell_state_graph An object containing the cell state graph data.
 #' @param genes A vector of gene names to plot.
 #' @param arrow_unit Numeric value for the size of the arrows in the plot. Default is 7.
-#' @param con_colour Colour for the connections in the plot. Default is "lightgrey".
+#' @param arrow_color Colour for the connections in the plot. Default is "lightgrey".
 #' @param fract_expr Minimum fraction of cells expressing the gene to be considered. Default is 0.0.
 #' @param mean_expr Minimum mean expression level to be considered. Default is 0.0.
 #' @param legend_position Position of the legend in the plot. Default is "right".
@@ -337,8 +348,7 @@ plot_abundance_changes <- function(cell_state_graph,
 #' @param log_expr If TRUE, the expression values will be log-transformed
 #' @param pseudocount Pseudocount to add when log-transforming expression data. Default is 1e-5.
 #' @param expr_limits Numeric vector of length 2 specifying the limits for expression values. Default is NULL.
-#' @param node_label_width Numeric value for the width of node labels. Default is 50.
-#' @param group_label_font_size Numeric value for the font size of group labels. Default is 1.
+#' @param group_label_size Numeric value for the font size of group labels. Default is 1.
 #'
 #' @return A ggplot2 object representing the gene expression on the cell state graph.
 #'
@@ -356,22 +366,22 @@ plot_abundance_changes <- function(cell_state_graph,
 #' @importFrom stats ave
 #' @importFrom utils head tail
 #' @export
-plot_gene_expr <- function(cell_state_graph,
-                           genes,
-                           arrow_unit = 7,
-                           node_size = 2,
-                           con_colour = "lightgrey",
-                           fract_expr = 0.0,
-                           mean_expr = 0.0,
-                           legend_position = "right",
-                           plot_labels = TRUE,
-                           aggregate = FALSE,
-                           scale_to_range = FALSE,
-                           log_expr = FALSE,
-                           pseudocount = 1e-5,
-                           expr_limits = NULL,
-                           node_label_width = 50,
-                           group_label_font_size = 1) {
+plot_gene_expression <- function(cell_state_graph,
+                                 genes,
+                                 arrow_unit = 7,
+                                 node_size = 2,
+                                 arrow_color = "lightgrey",
+                                 fract_expr = 0.0,
+                                 mean_expr = 0.0,
+                                 legend_position = "right",
+                                 plot_labels = TRUE,
+                                 label_size = 3,
+                                 aggregate = FALSE,
+                                 scale_to_range = FALSE,
+                                 log_expr = FALSE,
+                                 pseudocount = 1e-5,
+                                 expr_limits = NULL,
+                                 group_label_size = 1) {
   if (scale_to_range && aggregate) {
     message("Warning: scale_to_range is not compatible with aggregate. Setting scale_to_range to FALSE.")
     scale_to_range <- FALSE
@@ -383,6 +393,7 @@ plot_gene_expr <- function(cell_state_graph,
   grouping_df <- cell_state_graph@layout_info$grouping_df
 
   y_plot_range <- max(g$y)
+
   group_label_position_df <- g %>%
     dplyr::select(x, y, group_nodes_by) %>%
     dplyr::distinct() %>%
@@ -460,11 +471,11 @@ plot_gene_expr <- function(cell_state_graph,
 
   p <- ggplot(aes(x, y), data = g) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(bidirectional)
     ) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(!bidirectional),
       arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
       linejoin = "mitre"
@@ -485,7 +496,7 @@ plot_gene_expr <- function(cell_state_graph,
       data = g
     )
 
-    p <- p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_font_size)
+    p <- p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_size)
     plot_labels <- FALSE
   }
 
@@ -497,7 +508,7 @@ plot_gene_expr <- function(cell_state_graph,
         # size = fraction_max,
       ),
       shape = "circle filled",
-      fill = I(con_colour),
+      fill = I(arrow_color),
       color = I("black")
     ) +
     ggnewscale::new_scale_fill() +
@@ -520,6 +531,7 @@ plot_gene_expr <- function(cell_state_graph,
     p <- p + ggrepel::geom_text_repel(
       data = g %>% select(x, y, name) %>% distinct(),
       aes(x, y, label = name),
+      size = label_size,
       color = I("black")
     )
   }
@@ -546,7 +558,7 @@ plot_deviation_plot <- function(cell_state_graph,
                                 facet_group = NULL,
                                 arrow_unit = 7,
                                 node_size = 2,
-                                con_colour = "darkgrey",
+                                arrow_color = "darkgrey",
                                 fract_expr = 0.0,
                                 mean_expr = 0.0,
                                 legend_position = "none",
@@ -564,11 +576,11 @@ plot_deviation_plot <- function(cell_state_graph,
 
   p <- ggplot(aes(x, y), data = g) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(bidirectional)
     ) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(!bidirectional),
       arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
       linejoin = "mitre"
@@ -631,7 +643,7 @@ plot_deg_change <- function(cell_state_graph,
                             facet_group = "term",
                             arrow_unit = 7,
                             node_size = 2,
-                            con_colour = "darkgrey",
+                            arrow_color = "darkgrey",
                             fract_expr = 0.0,
                             mean_expr = 0.0,
                             legend_position = "none",
@@ -648,11 +660,11 @@ plot_deg_change <- function(cell_state_graph,
 
   p <- ggplot(aes(x, y), data = g) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(bidirectional)
     ) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(!bidirectional),
       arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
       linejoin = "mitre"
@@ -697,14 +709,13 @@ plot_deg_change <- function(cell_state_graph,
 #' @param facet_group A string specifying the facet group. Default is "term".
 #' @param arrow_unit Numeric value specifying the size of the arrows. Default is 7.
 #' @param node_size Numeric value specifying the size of the nodes. Default is 1.
-#' @param con_colour A string specifying the color of the connections. Default is "darkgrey".
+#' @param arrow_color A string specifying the color of the connections. Default is "darkgrey".
 #' @param fract_expr Numeric value specifying the fraction of expression. Default is 0.0.
 #' @param mean_expr Numeric value specifying the mean expression. Default is 0.0.
 #' @param legend_position A string specifying the position of the legend. Default is "none".
 #' @param fc_limits A numeric vector specifying the limits for the fold change scale. Default is c(-3, 3).
 #' @param plot_labels Logical value indicating whether to plot labels. Default is TRUE.
-#' @param node_label_width Numeric value specifying the width of the node labels. Default is 50.
-#' @param group_label_font_size Numeric value specifying the font size of the group labels. Default is 1.
+#' @param group_label_size Numeric value specifying the font size of the group labels. Default is 1.
 #'
 #' @return A ggplot object representing the cell state graph with DEGs plotted.
 #'
@@ -726,14 +737,14 @@ plot_degs <- function(cell_state_graph,
                       facet_group = "term",
                       arrow_unit = 7,
                       node_size = 1,
-                      con_colour = "darkgrey",
+                      arrow_color = "darkgrey",
                       fract_expr = 0.0,
                       mean_expr = 0.0,
                       legend_position = "none",
                       fc_limits = c(-3, 3),
                       plot_labels = T,
-                      node_label_width = 50,
-                      group_label_font_size = 1) {
+                      label_size = 3,
+                      group_label_size = 1) {
   g <- cell_state_graph@g
   bezier_df <- cell_state_graph@layout_info$bezier_df
 
@@ -778,11 +789,11 @@ plot_degs <- function(cell_state_graph,
 
   p <- ggplot(aes(x, y), data = g) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(bidirectional)
     ) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(!bidirectional),
       arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
       linejoin = "mitre"
@@ -802,7 +813,7 @@ plot_degs <- function(cell_state_graph,
       data = g
     )
 
-    p <- p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_font_size)
+    p <- p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_size)
     plot_labels <- FALSE
   }
 
@@ -858,6 +869,7 @@ plot_degs <- function(cell_state_graph,
       data = g %>% select(x, y, name) %>% distinct(),
       aes(x, y, label = name),
       color = I("black"),
+      size = label_size,
       box.padding = 0.5
     )
   }
@@ -878,7 +890,7 @@ plot_perturb_effects <- function(cell_state_graph,
                                  num_top_genes = 3,
                                  arrow_unit = 7,
                                  node_size = 2,
-                                 con_colour = "darkgrey",
+                                 arrow_color = "darkgrey",
                                  fract_expr = 0.0,
                                  mean_expr = 0.0,
                                  legend_position = "none",
@@ -916,11 +928,11 @@ plot_perturb_effects <- function(cell_state_graph,
 
   p <- ggplot(aes(x, y), data = g) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(bidirectional)
     ) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(!bidirectional),
       arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
       linejoin = "mitre"
@@ -983,14 +995,13 @@ plot_perturb_effects <- function(cell_state_graph,
 #' @param label_nodes_by A string specifying the column name in `node_table` to label nodes by. Default is NULL.
 #' @param arrow_unit Numeric value specifying the length of the arrows in the plot. Default is 7.
 #' @param node_size Numeric value specifying the size of the nodes in the plot. Default is 2.
-#' @param con_colour A string specifying the color of the connections between nodes. Default is "darkgrey".
+#' @param arrow_color A string specifying the color of the connections between nodes. Default is "darkgrey".
 #' @param legend_position A string specifying the position of the legend in the plot. Default is "none".
 #' @param min_edge_size Numeric value specifying the minimum size of the edges. Default is 0.1.
 #' @param max_edge_size Numeric value specifying the maximum size of the edges. Default is 2.
 #' @param edge_weights A vector specifying the weights of the edges. Default is NULL.
 #' @param plot_labels Logical value indicating whether to plot labels for the nodes. Default is TRUE.
-#' @param node_label_width Numeric value specifying the width of the node labels. Default is 50.
-#' @param group_label_font_size Numeric value specifying the font size of the group labels. Default is 1.
+#' @param group_label_size Numeric value specifying the font size of the group labels. Default is 1.
 #'
 #' @return A ggplot object representing the cell state graph.
 #'
@@ -1011,14 +1022,14 @@ plot_by_table <- function(cell_state_graph,
                           label_nodes_by = NULL,
                           arrow_unit = 7,
                           node_size = 2,
-                          con_colour = "darkgrey",
+                          arrow_color = "darkgrey",
                           legend_position = "none",
                           min_edge_size = 0.1,
                           max_edge_size = 2,
                           edge_weights = NULL,
                           plot_labels = T,
-                          node_label_width = 50,
-                          group_label_font_size = 1) {
+                          label_size = 3,
+                          group_label_size = 1) {
   group_nodes_by <- cell_state_graph@metadata$group_nodes_by
 
   g <- cell_state_graph@g
@@ -1040,11 +1051,11 @@ plot_by_table <- function(cell_state_graph,
 
   p <- ggplot(aes(x, y), data = g) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(bidirectional)
     ) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(!bidirectional),
       arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
       linejoin = "mitre"
@@ -1064,7 +1075,7 @@ plot_by_table <- function(cell_state_graph,
       data = g
     )
 
-    p <- p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_font_size)
+    p <- p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_size)
     plot_labels <- FALSE
   }
 
@@ -1089,6 +1100,7 @@ plot_by_table <- function(cell_state_graph,
     p <- p + ggrepel::geom_text_repel(
       data = g %>% select(x, y, name) %>% distinct(),
       aes(x, y, label = name),
+      size = label_size,
       color = I("black"),
       box.padding = 0.5
     )
@@ -1128,14 +1140,13 @@ plot_by_table <- function(cell_state_graph,
 #' @param label_nodes_by A string specifying the column name to label the nodes by. Default is NULL.
 #' @param arrow_unit Numeric value specifying the length of the arrow units. Default is 7.
 #' @param node_size Numeric value specifying the size of the nodes. Default is 2.
-#' @param con_colour A string specifying the color of the edges when `color_edges_by` is NA. Default is "lightgrey".
+#' @param arrow_color A string specifying the color of the edges when `color_edges_by` is NA. Default is "lightgrey".
 #' @param legend_position A string specifying the position of the legend. Default is "none".
 #' @param min_edge_size Numeric value specifying the minimum edge size. Default is 0.1.
 #' @param max_edge_size Numeric value specifying the maximum edge size. Default is 2.
 #' @param edge_weights A vector specifying the weights of the edges. Default is NULL.
 #' @param plot_labels Logical value indicating whether to plot labels for the nodes. Default is TRUE.
-#' @param node_label_width Numeric value specifying the width of the node labels. Default is 50.
-#' @param group_label_font_size Numeric value specifying the font size of the group labels. Default is 1.
+#' @param group_label_size Numeric value specifying the font size of the group labels. Default is 1.
 #'
 #' @return A ggplot object representing the cell state graph.
 #'
@@ -1156,14 +1167,14 @@ plot_by_support <- function(cell_state_graph,
                             label_nodes_by = NULL,
                             arrow_unit = 7,
                             node_size = 2,
-                            con_colour = "lightgrey",
+                            arrow_color = "lightgrey",
                             legend_position = "none",
                             min_edge_size = 0.1,
                             max_edge_size = 2,
                             edge_weights = NULL,
                             plot_labels = T,
-                            node_label_width = 50,
-                            group_label_font_size = 1) {
+                            label_size = 3,
+                            group_label_size = 1) {
   group_nodes_by <- cell_state_graph@metadata$group_nodes_by
 
   g <- cell_state_graph@g
@@ -1190,7 +1201,7 @@ plot_by_support <- function(cell_state_graph,
       data = bezier_df %>% distinct() %>% filter(!is.na(color_edges_by_col)) %>% filter(bidirectional)
     ) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      color = con_colour,
+      color = arrow_color,
       data = bezier_df %>% distinct() %>% filter(is.na(color_edges_by_col)) %>% filter(bidirectional)
     ) +
     ggplot2::geom_path(
@@ -1203,7 +1214,7 @@ plot_by_support <- function(cell_state_graph,
       linejoin = "mitre"
     ) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      color = con_colour,
+      color = arrow_color,
       data = bezier_df %>% distinct() %>% filter(is.na(color_edges_by_col)) %>% filter(!bidirectional),
       arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
       linejoin = "mitre"
@@ -1226,7 +1237,7 @@ plot_by_support <- function(cell_state_graph,
       data = g
     )
 
-    p <- p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_font_size)
+    p <- p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_size)
     plot_labels <- FALSE
   }
 
@@ -1247,6 +1258,7 @@ plot_by_support <- function(cell_state_graph,
       data = g %>% select(x, y, name) %>% distinct(),
       aes(x, y, label = name),
       color = I("black"),
+      size = label_size,
       box.padding = 0.5
     )
   }

@@ -12,8 +12,10 @@ contrast_helper(
   PEM_2 = PEM,
   PSEM_2 = PSEM,
   prefix = NULL,
+  n = NULL,
   ash.control = NULL,
-  cv_threshold = 10
+  cv_threshold = NULL,
+  abs_expr_thresh = 0.001
 )
 }
 \arguments{

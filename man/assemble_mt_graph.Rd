@@ -5,13 +5,14 @@
 \title{assembles a graph using the perturbation data}
 \usage{
 assemble_mt_graph(
-  wt_ccm,
+  ref_ccs,
+  wt_graph,
   perturb_models_tbl,
   interval_col = "timepoint",
   start_time = NULL,
   stop_time = NULL,
   interval_step = 2,
-  links_between_components = "none",
+  links_between_components = c("none", "ctp", "strongest-pcor", "strong-pcor"),
   log_abund_detection_thresh = -5,
   q_val = 0.1,
   newdata = tibble(),
