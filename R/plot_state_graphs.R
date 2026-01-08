@@ -1,3 +1,95 @@
+#' Collect PSG Node Metadata
+#'
+#' This function collects metadata for nodes in a cell count set (CCS).
+#'
+#' @param ccs A cell count set object containing metadata and column data.
+#' @param color_nodes_by A string specifying the metadata column to color nodes by.
+#' @param label_nodes_by A string specifying the metadata column to label nodes by.
+#' @param group_nodes_by A string specifying the metadata column to group nodes by.
+#'
+#' @return A data frame containing node metadata with columns for node ID, color, group, and label.
+#'
+#' @details
+#' The function extracts unique cell groups from the CCS metadata and constructs a data frame
+#' with node IDs. It then adds metadata columns for coloring, grouping, and labeling nodes based
+#' on the specified parameters. If a parameter is not provided, the corresponding metadata column
+#' is not added. The resulting data frame is returned with distinct rows and node IDs as row names.
+#'
+#' @import dplyr
+#' @import tibble
+#' @importFrom rlang sym
+#'
+#' @examples
+#' \dontrun{
+#' ccs <- load_ccs_data() # Assuming a function to load CCS data
+#' node_metadata <- collect_psg_node_metadata(ccs, "color_column", "label_column", "group_column")
+#' }
+#'
+#' @noRd
+collect_psg_node_metadata <- function(ccs,
+                                      color_nodes_by,
+                                      label_nodes_by,
+                                      group_nodes_by) {
+  cell_groups <- ccs@metadata[["cell_group_assignments"]] %>%
+    pull(cell_group) %>%
+    unique()
+  node_metadata <- tibble(id = cell_groups)
+
+  metadata_cols <- c(
+    color_nodes_by,
+    group_nodes_by
+  )
+  if (is.null(label_nodes_by) == FALSE && label_nodes_by != "cell_group") {
+    metadata_cols <- c(metadata_cols, label_nodes_by)
+  }
+
+  # G = edges %>% select(from, to, n, scaled_weight, distance_from_root)  %>% igraph::graph_from_data_frame(directed = T)
+  cell_group_metadata <- ccs@cds_coldata[, metadata_cols, drop = F] %>%
+    as.data.frame()
+  cell_group_metadata$cell_group <- ccs@metadata[["cell_group_assignments"]] %>% pull(cell_group)
+
+  if (is.null(color_nodes_by) == FALSE) {
+    color_by_metadata <- cell_group_metadata[, c("cell_group", color_nodes_by)] %>%
+      as.data.frame() %>%
+      dplyr::count(cell_group, !!sym(color_nodes_by)) %>%
+      group_by(cell_group) %>%
+      slice_max(n, with_ties = FALSE) %>%
+      dplyr::select(-n)
+    colnames(color_by_metadata) <- c("cell_group", "color_nodes_by")
+    node_metadata <- left_join(node_metadata, color_by_metadata, by = c("id" = "cell_group"))
+  }
+  if (is.null(group_nodes_by) == FALSE) {
+    group_by_metadata <- cell_group_metadata[, c("cell_group", group_nodes_by)] %>%
+      as.data.frame() %>%
+      dplyr::count(cell_group, !!sym(group_nodes_by)) %>%
+      group_by(cell_group) %>%
+      slice_max(n, with_ties = FALSE) %>%
+      dplyr::select(-n)
+    colnames(group_by_metadata) <- c("cell_group", "group_nodes_by")
+    node_metadata <- left_join(node_metadata, group_by_metadata, by = c("id" = "cell_group"))
+  }
+  if (is.null(label_nodes_by) == FALSE) {
+    label_by_metadata <- cell_group_metadata[, c("cell_group", label_nodes_by), drop = F]
+    colnames(label_by_metadata) <- c("cell_group", "label_nodes_by")
+    label_by_metadata <- label_by_metadata %>%
+      as.data.frame() %>%
+      dplyr::count(cell_group, label_nodes_by) %>%
+      group_by(cell_group) %>%
+      slice_max(n, with_ties = FALSE) %>%
+      dplyr::select(-n)
+    node_metadata <- left_join(node_metadata, label_by_metadata, by = c("id" = "cell_group"))
+  } else {
+    node_metadata$label_nodes_by <- node_metadata$id
+  }
+
+  node_metadata <- node_metadata %>%
+    distinct() %>%
+    as.data.frame(stringsAsFactor = FALSE)
+  row.names(node_metadata) <- node_metadata$id
+
+  return(node_metadata)
+}
+
 #' Plot Annotations for Cell State Graph
 #'
 #' This function generates a plot of cell state graphs with various customization options.
@@ -146,6 +238,81 @@ plot_annotations <- function(cell_state_graph,
   )
 
   return(p)
+}
+
+#' Deprecated: use plot_annotations()
+#'
+#' @inheritParams plot_annotations
+#' @export
+plot_state_graph_annotations <- function(...) {
+  warning("plot_state_graph_annotations is deprecated; use plot_annotations instead.", call. = FALSE)
+  plot_annotations(...)
+}
+
+#' @noRd
+num_extract <- function(string, as_char = TRUE) {
+  if (as_char) {
+    stringr::str_trim(
+      format(stringr::str_extract(string, "\\-*\\d+\\.*\\d*"),
+        scientific = FALSE,
+        trim = TRUE
+      )
+    )
+  } else {
+    as.numeric(
+      stringr::str_trim(
+        format(stringr::str_extract(string, "\\-*\\d+\\.*\\d*"),
+          scientific = FALSE,
+          trim = TRUE
+        )
+      )
+    )
+  }
+}
+
+#' @noRd
+calc_sig_ind <- function(p_value, html = TRUE) {
+  # p_value <- suppressWarnings(
+  #  num_extract(p_value, as_char = FALSE)
+  # )
+
+  if (html) {
+    dplyr::case_when(
+      p_value <= 0 ~ "",
+      p_value <= 0.001 ~ "\\***",
+      p_value <= 0.01 ~ "\\**",
+      p_value <= 0.05 ~ "\\*",
+      p_value <= 0.1 ~ ".",
+      p_value <= 1 ~ "",
+      TRUE ~ ""
+    )
+  } else {
+    dplyr::case_when(
+      p_value <= 0 ~ "",
+      p_value <= 0.001 ~ "***",
+      p_value <= 0.01 ~ "**",
+      p_value <= 0.05 ~ "*",
+      p_value <= 0.1 ~ ".",
+      p_value <= 1 ~ "",
+      TRUE ~ ""
+    )
+  }
+}
+
+#' @noRd
+calc_sig_rank <- function(p_value) {
+  # p_value <- suppressWarnings(
+  #  num_extract(p_value, as_char = FALSE)
+  # )
+  dplyr::case_when(
+    p_value <= 0 ~ 2,
+    p_value <= 0.001 ~ 2,
+    p_value <= 0.01 ~ 1,
+    p_value <= 0.05 ~ 1,
+    p_value <= 0.1 ~ 0.5,
+    p_value <= 1 ~ 0.5,
+    TRUE ~ 1
+  )
 }
 
 #' Plot Abundance Changes
@@ -329,6 +496,15 @@ plot_abundance_changes <- function(cell_state_graph,
   return(p)
 }
 
+#' Deprecated: use plot_abundance_changes()
+#'
+#' @inheritParams plot_abundance_changes
+#' @export
+plot_state_abundance_changes <- function(...) {
+  warning("plot_state_abundance_changes is deprecated; use plot_abundance_changes instead.", call. = FALSE)
+  plot_abundance_changes(...)
+}
+
 #' Plot Gene Expression on Cell State Graph
 #'
 #' This function plots gene expression data on a cell state graph.
@@ -354,7 +530,7 @@ plot_abundance_changes <- function(cell_state_graph,
 #'
 #' @examples
 #' # Example usage:
-#' # plot_gene_expr(cell_state_graph, genes = c("Gene1", "Gene2"))
+#' # plot_gene_expression(cell_state_graph, genes = c("Gene1", "Gene2"))
 #'
 #' @import dplyr
 #' @import ggplot2
@@ -550,6 +726,15 @@ plot_gene_expression <- function(cell_state_graph,
     mapping = aes(x, y), color = "white", alpha = 0
   )
   return(p)
+}
+
+#' Deprecated: use plot_gene_expression()
+#'
+#' @inheritParams plot_gene_expression
+#' @export
+plot_gene_expr <- function(...) {
+  warning("plot_gene_expr is deprecated; use plot_gene_expression instead.", call. = FALSE)
+  plot_gene_expression(...)
 }
 
 
