@@ -1,3 +1,272 @@
+#' Connect Isolated Nodes in a Graph
+#'
+#' This function takes a graph and node metadata, and connects isolated nodes within each group specified in the metadata.
+#'
+#' @param G An igraph object representing the graph.
+#' @param node_metadata A data frame containing node metadata. It must have columns "id" and "group_nodes_by".
+#'
+#' @return An igraph object with isolated nodes connected within each group.
+#'
+#' @details
+#' The function performs the following steps:
+#' \itemize{
+#'   \item Checks if the node metadata contains the required columns "id" and "group_nodes_by".
+#'   \item Creates a mapping from node id to group.
+#'   \item Iterates over each group and identifies isolated nodes within the group.
+#'   \item Connects isolated nodes in a grid-like structure within each group.
+#' }
+#'
+#' @examples
+#' \dontrun{
+#' library(igraph)
+#'
+#' # Create a sample graph
+#' G <- make_empty_graph(n = 10, directed = FALSE)
+#'
+#' # Create sample node metadata
+#' node_metadata <- data.frame(
+#'   id = 1:10,
+#'   group_nodes_by = rep(1:2, each = 5)
+#' )
+#'
+#' # Connect isolated nodes
+#' G_aug <- connect_isolated_nodes(G, node_metadata)
+#'
+#' # Plot the augmented graph
+#' plot(G_aug)
+#' }
+#'
+#' @import igraph
+#' @import dplyr
+connect_isolated_nodes <- function(G, node_metadata) {
+  # Ensure node_metadata has columns "id" and "group_nodes_by"
+  if (!all(c("id", "group_nodes_by") %in% colnames(node_metadata))) {
+    stop("node_metadata must have 'id' and 'group_nodes_by' columns.")
+  }
+
+  # Create a mapping from node id to group
+  node_group_map <- node_metadata %>%
+    setNames(c("node", "group")) %>%
+    as.list()
+
+  # Get the list of groups
+  groups <- unique(node_metadata$group_nodes_by)
+
+  G_aug <- G
+
+  for (group in groups) {
+    # Extract nodes belonging to the current group
+    group_nodes <- node_metadata %>%
+      filter(group_nodes_by == group) %>%
+      pull(id)
+
+    # Induce subgraph for the current group
+    G_sub <- igraph::induced_subgraph(G_aug, v = group_nodes)
+
+    # Identify isolated nodes in the subgraph
+    isolated_nodes <- igraph::V(G_sub)[igraph::degree(G_sub) == 0]$name
+
+    if (length(isolated_nodes) > 1) {
+      # Find connected components in the subgraph
+      components <- igraph::decompose.graph(G_sub)
+
+      # Calculate the number of rows and columns for the grid
+      num_nodes <- length(isolated_nodes)
+
+      # Determine the height of the grid based on the tallest connected component
+      max_component_size <- max(sapply(components, igraph::diameter))
+      if (max_component_size == 0) {
+        num_rows <- floor(sqrt(num_nodes))
+      } else {
+        num_rows <- ceiling(num_nodes / max_component_size)
+      }
+
+      num_cols <- max(1, num_nodes %/% num_rows)
+
+      # Create a grid structure to connect isolated nodes
+      for (i in seq_len(num_nodes - 1)) {
+        row_i <- (i %/% num_cols) + 1
+        col_i <- (i %% num_cols) + 1
+
+        row_j <- ((i + 1) %/% num_cols) + 1
+        col_j <- ((i + 1) %% num_cols) + 1
+
+        if (row_i == row_j && col_j == col_i + 1) {
+          G_aug <- igraph::add_edges(G_aug, edges = c(isolated_nodes[i], isolated_nodes[i + 1]))
+        } else if (row_i == row_j + 1 && col_j == col_i) {
+          G_aug <- igraph::add_edges(G_aug, edges = c(isolated_nodes[i], isolated_nodes[i + 1]))
+        }
+      }
+    }
+  }
+
+  return(G_aug)
+}
+
+assign_nodes_to_layers <- function(G, num_layers, node_metadata) {
+  # Ensure node_metadata has columns "id" and "group_nodes_by"
+  if (!all(c("id", "group_nodes_by") %in% colnames(node_metadata))) {
+    stop("node_metadata must have 'id' and 'group_nodes_by' columns.")
+  }
+
+  # Create a mapping from node id to group
+  node_group_map <- setNames(node_metadata$group_nodes_by, node_metadata$id)
+
+  # Get the list of groups
+  groups <- unique(node_metadata$group_nodes_by)
+
+  # Create a list to hold nodes for each group
+  group_nodes <- vector("list", length(groups))
+  names(group_nodes) <- groups
+
+  # Populate the group_nodes list with nodes from node_metadata
+  for (group in groups) {
+    group_nodes[[group]] <- node_metadata %>%
+      filter(group_nodes_by == group) %>%
+      pull(id)
+  }
+
+  # Calculate the total number of nodes
+  total_nodes <- vcount(G)
+
+  # Calculate the target number of nodes per layer
+  target_nodes_per_layer <- ceiling(total_nodes / num_layers)
+
+  # Create a list to hold layers
+  layers <- vector("list", num_layers)
+
+  current_layer <- 1
+  node_count_in_current_layer <- 0
+
+  for (group in groups) {
+    group_node_ids <- unlist(group_nodes[[group]])
+
+    # Check if adding this group would exceed the target number of nodes per layer
+    if (node_count_in_current_layer + length(group_node_ids) > target_nodes_per_layer && current_layer < num_layers) {
+      current_layer <- current_layer + 1
+      node_count_in_current_layer <- 0
+    }
+
+    # Add the group to the current layer
+    layers[[current_layer]] <- c(layers[[current_layer]], group_node_ids)
+    node_count_in_current_layer <- node_count_in_current_layer + length(group_node_ids)
+  }
+
+  return(layers)
+}
+
+#'
+#' @examples
+#' # Example usage:
+#' # G_with_hidden <- igraph::make_graph(...)
+#' ##' Connect Hidden Nodes for Layers
+#'
+#' This function connects hidden nodes between layers in a given graph.
+#'
+#' @param G_with_hidden An igraph object representing the graph with hidden nodes.
+#' @param layers A list of vectors, where each vector contains the node IDs for a specific layer.
+#'
+#' @return An igraph object with added connections between hidden nodes of consecutive layers.
+#'
+#' @details
+#' The function iterates through the layers and connects the tail nodes of the current layer to the head nodes of the next layer.
+#' It uses the `make_ego_graph` function to get the subgraph for each layer and its hidden nodes.
+#' The tail nodes are identified by the prefix "tail_" and the head nodes by the prefix "head_".
+#' The function ensures that each tail node is connected to a subset of head nodes in a round-robin fashion.
+#'
+connect_hidden_nodes_for_layers <- function(G_with_hidden, layers) {
+  connected_G_with_hidden <- G_with_hidden
+  num_layers <- length(layers)
+
+  # Add connections between tail nodes of one layer and head nodes of the next layer
+  for (i in seq_len(num_layers - 1)) {
+    # current_layer_subgraph <- igraph::induced_subgraph(graph = connected_G_with_hidden, vids = layers[[i]])
+    current_layer_subgraph <- igraph::make_ego_graph(connected_G_with_hidden, order = 1, nodes = layers[[i]], mode = "out") # get current layer plus its hidden tail nodes
+    current_layer_subgraph <- do.call(igraph::union, current_layer_subgraph)
+    current_layer_tail_nodes <- igraph::V(current_layer_subgraph)[igraph::degree(current_layer_subgraph, mode = "out") == 0]$name
+    current_layer_tail_nodes <- current_layer_tail_nodes[grepl("^tail_", current_layer_tail_nodes)] # select only the hidden tail nodes
+
+    # next_layer_subgraph <- igraph::induced_subgraph(graph = connected_G_with_hidden, vids = layers[[i + 1]])
+    next_layer_subgraph <- igraph::make_ego_graph(connected_G_with_hidden, order = 1, nodes = layers[[i + 1]], mode = "in") # get current layer plus its hidden tail nodes
+    next_layer_subgraph <- do.call(igraph::union, next_layer_subgraph)
+    next_layer_head_nodes <- igraph::V(next_layer_subgraph)[igraph::degree(next_layer_subgraph, mode = "in") == 0]$name
+    next_layer_head_nodes <- next_layer_head_nodes[grepl("^head_", next_layer_head_nodes)] # select only the hidden head nodes
+
+    # Convert vertex sequences to numeric IDs
+    # current_layer_tail_ids <- as.numeric(current_layer_tail_nodes)
+    # next_layer_head_ids <- as.numeric(next_layer_head_nodes)
+
+    num_heads <- length(next_layer_head_nodes)
+
+    for (j in seq_along(current_layer_tail_nodes)) {
+      tail_n <- current_layer_tail_nodes[j]
+
+      # Determine the indices of head nodes to connect
+      start_idx <- ((j - 1) %% num_heads) + 1
+      end_idx <- min(start_idx + 5, num_heads)
+
+      selected_heads <- next_layer_head_nodes[start_idx:end_idx]
+
+      for (head_n in selected_heads) {
+        connected_G_with_hidden <- add_edges(connected_G_with_hidden, edges = c(tail_n, head_n))
+      }
+    }
+  }
+
+  return(connected_G_with_hidden)
+}
+
+
+
+
+
+#' geom_richnodelabel
+#'
+#' This function creates a custom ggplot2 layer for rich text node labels in network plots.
+#'
+#' @param mapping Set of aesthetic mappings created by `aes()` or `aes_()`. If specified and `inherit.aes = TRUE` (the default), it is combined with the default mapping at the top level of the plot. You must supply `mapping` if there is no plot mapping.
+#' @param data The data to be displayed in this layer. There are three options:
+#'   - If `NULL`, the default, the data is inherited from the plot data as specified in the call to `ggplot()`.
+#'   - A `data.frame`, or other object, will override the plot data. All objects will be fortified to produce a data frame. See `fortify()` for which variables will be created.
+#'   - A `function` will be called with a single argument, the plot data. The return value must be a `data.frame`, and will be used as the layer data.
+#' @param position Position adjustment, either as a string, or the result of a call to a position adjustment function.
+#' @param ... Other arguments passed on to `layer()`. These are often aesthetics, used to set an aesthetic to a fixed value, like `color = "red"` or `size = 3`. They may also be parameters to the paired geom/stat.
+#' @param parse If `TRUE`, the labels will be parsed into expressions and displayed as described in `?plotmath`.
+#' @param nudge_x Horizontal adjustment to nudge labels by. Useful for offsetting text from points, particularly on discrete scales.
+#' @param nudge_y Vertical adjustment to nudge labels by. Useful for offsetting text from points, particularly on discrete scales.
+#' @param label.padding Amount of padding around label. Defaults to `unit(0.25, "lines")`.
+#' @param label.r Radius of rounded corners. Defaults to `unit(0.15, "lines")`.
+#' @param label.size Size of label border. Defaults to `0.25`.
+#' @param na.rm If `FALSE`, the default, missing values are removed with a warning. If `TRUE`, missing values are silently removed.
+#' @param show.legend Logical. Should this layer be included in the legends? `NA`, the default, includes if any aesthetics are mapped. `FALSE` never includes, and `TRUE` always includes.
+#' @param inherit.aes If `FALSE`, overrides the default aesthetics, rather than combining with them. This is most useful for helper functions that define both data and aesthetics and shouldn't inherit behaviour from the default plot specification, e.g. `borders()`.
+#'
+#' @return A ggplot2 layer that can be added to a ggplot object.
+geom_richnodelabel <- function(mapping = NULL, data = NULL, position = "identity",
+                               ..., parse = FALSE, nudge_x = 0, nudge_y = 0, label.padding = unit(
+                                 0.25,
+                                 "lines"
+                               ), label.r = unit(0.15, "lines"), label.size = 0.25,
+                               na.rm = FALSE, show.legend = NA, inherit.aes = TRUE) {
+  if (!missing(nudge_x) || !missing(nudge_y)) {
+    if (!missing(position)) {
+      stop("Specify either `position` or `nudge_x`/`nudge_y`",
+        call. = FALSE
+      )
+    }
+    position <- ggplot2::position_nudge(nudge_x, nudge_y)
+  }
+  ggplot2::layer(
+    data = data, mapping = mapping, stat = ggnetwork:::StatNodes,
+    geom = ggtext:::GeomRichtext, position = position, show.legend = show.legend,
+    inherit.aes = inherit.aes, params = list(
+      parse = parse,
+      label.padding = label.padding, label.r = label.r,
+      label.size = label.size, na.rm = na.rm, ...
+    )
+  )
+}
+
 #' Layout State Graph
 #'
 #' This function layouts a directed graph with optional node metadata and edge labels.
