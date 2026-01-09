@@ -62,6 +62,6 @@ This function plots gene expression data on a cell state graph.
 }
 \examples{
 # Example usage:
-# plot_gene_expr(cell_state_graph, genes = c("Gene1", "Gene2"))
+# plot_gene_expression(cell_state_graph, genes = c("Gene1", "Gene2"))
 
 }

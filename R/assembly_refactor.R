@@ -1,3 +1,46 @@
+#' Assemble a wild-type state graph
+#'
+#' Fit the wild-type model and assemble a state graph for a partition of the data.
+#'
+#' @param cds A SingleCellExperiment/CellDataSet with expression and metadata.
+#' @param sample_group Column name in colData specifying sample grouping.
+#' @param cell_group Column name in colData specifying cell grouping.
+#' @param partition_name Optional partition label appended to graph nodes.
+#' @param main_model_formula_str Model formula string for the main effect.
+#' @param start_time Start time for model fitting.
+#' @param stop_time Stop time for model fitting.
+#' @param interval_col Column name for time intervals.
+#' @param nuisance_model_formula_str Nuisance model formula string.
+#' @param ctrl_ids Optional vector of control IDs.
+#' @param sparsity_factor Sparsity factor for model fitting.
+#' @param perturbation_col Column name for perturbation labels.
+#' @param batch_col Column name for batch labels.
+#' @param verbose Logical, whether to log progress.
+#' @param keep_ccs Logical, whether to keep cell_count_set outputs.
+#' @param num_threads Number of threads to use.
+#' @param backend Optimization backend to use.
+#' @param q_val FDR threshold.
+#' @param vhat_method Method to estimate vhat.
+#' @param num_bootstraps Number of bootstraps for vhat.
+#' @param newdata Optional data frame of new timepoints for prediction.
+#' @param edge_allowlist Optional allowlist of edges.
+#' @param edge_denylist Optional denylist of edges.
+#' @param links_between_components Strategy for linking graph components.
+#' @param component_col Column name for component labels.
+#' @param embryo_size_factors Optional size factors for embryo data.
+#' @param log_abund_detection_thresh Log abundance detection threshold.
+#' @param interval_step Step size for interval grid.
+#' @param min_interval Minimum interval length.
+#' @param max_interval Maximum interval length.
+#' @param min_pathfinding_lfc Minimum log-fold-change for pathfinding.
+#' @param num_time_breaks Number of time breaks for fitting.
+#' @param batches_excluded_from_assembly Vector of batches to exclude.
+#' @param force_allowlist Logical, whether to force the edge allowlist.
+#' @param min_penalty Minimum penalty for model fitting.
+#' @param max_penalty Maximum penalty for model fitting.
+#' @param break_cycles Logical, whether to break cycles in the graph.
+#'
+#' @return An igraph object for the assembled wild-type graph, or NA on failure.
 #'
 #' @export
 wt_assembly <- function(cds,
@@ -152,6 +195,44 @@ wt_assembly <- function(cds,
 
 
 
+#' Assemble a mutant state graph
+#'
+#' Fit mutant models and assemble a state graph based on perturbation effects.
+#'
+#' @param cds A SingleCellExperiment/CellDataSet with expression and metadata.
+#' @param sample_group Column name in colData specifying sample grouping.
+#' @param cell_group Column name in colData specifying cell grouping.
+#' @param wt_graph Wild-type graph to anchor mutant assembly.
+#' @param partition_name Optional partition label.
+#' @param main_model_formula_str Model formula string for the main effect.
+#' @param start_time Start time for model fitting.
+#' @param stop_time Stop time for model fitting.
+#' @param interval_col Column name for time intervals.
+#' @param nuisance_model_formula_str Nuisance model formula string.
+#' @param ctrl_ids Optional vector of control IDs.
+#' @param mt_ids Optional vector of mutant IDs.
+#' @param sparsity_factor Sparsity factor for model fitting.
+#' @param perturbation_col Column name for perturbation labels.
+#' @param batch_col Column name for batch labels.
+#' @param max_num_cells Optional cap on number of cells.
+#' @param verbose Logical, whether to log progress.
+#' @param keep_ccs Logical, whether to keep cell_count_set outputs.
+#' @param num_threads Number of threads to use.
+#' @param backend Optimization backend to use.
+#' @param q_val FDR threshold.
+#' @param interval_step Step size for interval grid.
+#' @param vhat_method Method to estimate vhat.
+#' @param num_bootstraps Number of bootstraps for vhat.
+#' @param newdata Optional data frame of new timepoints for prediction.
+#' @param edge_allowlist Optional allowlist of edges.
+#' @param min_lfc Minimum log-fold-change for perturbation effects.
+#' @param links_between_components Strategy for linking graph components.
+#' @param log_abund_detection_thresh Log abundance detection threshold.
+#' @param batches_excluded_from_assembly Vector of batches to exclude.
+#' @param component_col Column name for component labels.
+#' @param embryo_size_factors Optional size factors for embryo data.
+#'
+#' @return An igraph object for the assembled mutant graph, or the WT graph on failure.
 mt_assembly <- function(cds,
                         sample_group,
                         cell_group,
