@@ -217,7 +217,19 @@ load_deg_file <- function(deg_out_filename, deg_q_val_thresh = 1.0, cell_type_de
     )
 }
 
-assign_phenotypes <- function(contrast_tbls, fitness_gene_sets, identity_gene_sets, combined_psg, cell_type_denylist = NULL) {
+log_ts <- function(...) {
+    msg <- paste(..., collapse = " ")
+    message(sprintf("[%s] %s", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), msg))
+}
+
+get_phenotype_threads <- function(num_threads = NULL) {
+    if (!is.null(num_threads) && is.numeric(num_threads) && num_threads > 0) {
+        return(as.integer(num_threads))
+    }
+    1L
+}
+
+assign_phenotypes <- function(contrast_tbls, fitness_gene_sets, identity_gene_sets, combined_psg, cell_type_denylist = NULL, num_threads = NULL) {
     # Get all cell types across all perturbations
     all_cell_types <- unique(unlist(
         lapply(seq_len(nrow(contrast_tbls)), function(i) {
@@ -232,6 +244,14 @@ assign_phenotypes <- function(contrast_tbls, fitness_gene_sets, identity_gene_se
         total = total_updates,
         clear = FALSE,
         width = 60
+    )
+    num_threads <- get_phenotype_threads(num_threads)
+    log_ts(
+        "assign_phenotypes start:",
+        sprintf("perturbations=%d", nrow(contrast_tbls)),
+        sprintf("total_cell_types=%d", length(all_cell_types)),
+        sprintf("updates=%d", total_updates),
+        sprintf("num_threads=%d", num_threads)
     )
 
     purrr::map_dfr(seq_len(nrow(contrast_tbls)), function(i) {
@@ -251,12 +271,20 @@ assign_phenotypes <- function(contrast_tbls, fitness_gene_sets, identity_gene_se
 
         # Use summarized differential cell abundance table
         dact_tbl <- perturb_record$summarized_differential_cell_abundance[[1]]
+        log_ts(
+            sprintf(
+                "perturbation %s (%d/%d): %d cell types",
+                perturb_name, i, nrow(contrast_tbls), length(unique(dact_tbl$cell_group))
+            )
+        )
 
         assign_phenotypes_to_cell_types(
             dact_tbl, deg_tbl, fitness_gene_sets, identity_gene_sets,
             combined_psg,
             perturb_name, perturb_group, perturb_time_window, run,
-            pb = pb # Pass the progress bar object
+            pb = pb, # Pass the progress bar object
+            log_fn = log_ts,
+            num_threads = num_threads
         )
     })
 }
@@ -275,16 +303,37 @@ assign_phenotypes_to_cell_types <- function(
   identity_gene_sets,
   combined_psg,
   perturb_name, perturb_group, perturb_time_window, run,
-  pb = NULL # Accept progress bar object
+  pb = NULL, # Accept progress bar object
+  log_fn = NULL,
+  num_threads = NULL
 ) {
     cell_types <- unique(dact_tbl$cell_group)
-    results <- purrr::map_dfr(cell_types, function(ct) {
+    num_threads <- get_phenotype_threads(num_threads)
+    worker_fn <- function(i) {
+        if (requireNamespace("BiocParallel", quietly = TRUE)) {
+            BiocParallel::register(BiocParallel::SerialParam())
+        }
+        ct <- cell_types[[i]]
+        if (!is.null(log_fn)) {
+            log_fn(sprintf(
+                "perturbation %s: cell type %s (%d/%d) start",
+                perturb_name, ct, i, length(cell_types)
+            ))
+        }
+        ct_start <- Sys.time()
         if (!is.null(pb)) pb$tick()
         dact_row <- dact_tbl %>% filter(cell_group == ct)
         abundance_code <- if (nrow(dact_row) > 0) assign_abundance_code(dact_row$change_when_present, dact_row$change_when_present_q_val) else NA_character_
         abundance_severity <- if (nrow(dact_row) > 0) assign_abundance_severity(dact_row$change_when_present, dact_row$change_when_present_q_val) else NA_character_
         identity_labels <- assign_identity_maturation_labels(deg_tbl, ct, identity_gene_sets, combined_psg)
         fitness_labels <- assign_fitness_labels(deg_tbl, ct, gene_sets)
+        if (!is.null(log_fn)) {
+            elapsed <- as.numeric(difftime(Sys.time(), ct_start, units = "secs"))
+            log_fn(sprintf(
+                "perturbation %s: cell type %s done (%.1fs)",
+                perturb_name, ct, elapsed
+            ))
+        }
         tibble(
             cell_group = ct,
             perturb_group = perturb_group,
@@ -297,7 +346,24 @@ assign_phenotypes_to_cell_types <- function(
             fitness_labels = list(fitness_labels),
             identity_labels = list(identity_labels)
         )
-    })
+    }
+    results <- if (num_threads > 1) {
+        old_max <- getOption("future.globals.maxSize")
+        options(future.globals.maxSize = 10 * 1024^3)
+        on.exit(options(future.globals.maxSize = old_max), add = TRUE)
+        old_plan <- future::plan()
+        on.exit(future::plan(old_plan), add = TRUE)
+        plan_strategy <- if (future::supportsMulticore()) {
+            future::multicore
+        } else {
+            future::multisession
+        }
+        future::plan(plan_strategy, workers = num_threads)
+        future.apply::future_lapply(seq_along(cell_types), worker_fn, future.seed = TRUE) %>%
+            dplyr::bind_rows()
+    } else {
+        purrr::map_dfr(seq_along(cell_types), worker_fn)
+    }
     results
 }
 
@@ -339,11 +405,12 @@ assign_identity_maturation_labels <- function(deg_tbl, ct, identity_gene_sets, c
     }
 
     # Get lineage info
-    parents <- get_dir_parents(ct, combined_psg@graph)
-    descendants <- get_descendants(ct, combined_psg@graph)
-    roots <- get_roots(ct, combined_psg@graph)
+    g <- coerce_state_graph(combined_psg)
+    parents <- get_dir_parents(ct, g)
+    descendants <- get_descendants(ct, g)
+    roots <- get_roots(ct, g)
     lineage_tree <- if (length(roots) > 0) {
-        unique(unlist(lapply(roots, function(r) get_descendants(r, combined_psg@graph))))
+        unique(unlist(lapply(roots, function(r) get_descendants(r, g))))
     } else {
         character()
     }
