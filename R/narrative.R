@@ -192,11 +192,6 @@ get_descendants <- function(cell_type, combined_psg) {
     setdiff(cell_type)
 }
 
-# Helper: Get direct parent(s) of a cell type
-get_dir_parents <- function(cell_type, combined_psg) {
-  get_parents(combined_psg, cell_type)
-}
-
 get_roots <- function(ct, combined_psg) {
   g <- coerce_state_graph(combined_psg)
   # Find all vertices in the connected component containing ct

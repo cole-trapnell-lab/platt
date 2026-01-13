@@ -406,7 +406,7 @@ assign_identity_maturation_labels <- function(deg_tbl, ct, identity_gene_sets, c
 
     # Get lineage info
     g <- coerce_state_graph(combined_psg)
-    parents <- get_dir_parents(ct, g)
+    parents <- get_parents(g, ct)
     descendants <- get_descendants(ct, g)
     roots <- get_roots(ct, g)
     lineage_tree <- if (length(roots) > 0) {
