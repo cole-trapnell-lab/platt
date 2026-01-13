@@ -120,7 +120,6 @@ combine_gene_models <- function(gene_model_list) {
 #' @param log_fc_thresh Log fold-change threshold for class assignment.
 #' @param abs_expr_thresh Absolute expression threshold for filtering.
 #' @param cv_threshold Coefficient of variation threshold for filtering.
-#' @param n Sample size used for scoring (overridden internally if provided).
 #' @param sig_thresh Significance threshold for class assignment.
 #' @param cores Number of cores for scoring.
 #'
@@ -133,7 +132,6 @@ classify_gene_patterns <- function(state_graph,
                                    log_fc_thresh = 1,
                                    abs_expr_thresh = 1e-3,
                                    cv_threshold = 100,
-                                   n,
                                    sig_thresh = 0.05,
                                    cores = 1) {
   

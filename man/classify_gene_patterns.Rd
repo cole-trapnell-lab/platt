@@ -13,7 +13,6 @@ classify_gene_patterns(
   log_fc_thresh = 1,
   abs_expr_thresh = 0.001,
   cv_threshold = 100,
-  n,
   sig_thresh = 0.05,
   cores = 1
 )
@@ -35,7 +34,6 @@ classify_gene_patterns(
 
 \item{cv_threshold}{Coefficient of variation threshold for filtering.}
 
-\item{n}{Sample size used for scoring (overridden internally if provided).}
 
 \item{sig_thresh}{Significance threshold for class assignment.}
 
