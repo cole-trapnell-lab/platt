@@ -43,43 +43,43 @@
 #' @return An igraph object for the assembled wild-type graph, or NA on failure.
 #'
 #' @export
-wt_assembly <- function(cds,
-                        sample_group,
-                        cell_group,
-                        partition_name = NULL,
-                        main_model_formula_str = NULL,
-                        start_time = 18,
-                        stop_time = 72,
-                        interval_col = "timepoint",
-                        nuisance_model_formula_str = "~1",
-                        ctrl_ids = NULL,
-                        sparsity_factor = 0.01,
-                        perturbation_col = "perturbation",
-                        batch_col = "expt",
-                        verbose = FALSE,
-                        keep_ccs = TRUE,
-                        num_threads = 1,
-                        backend = "nlopt",
-                        q_val = 0.1,
-                        vhat_method = "bootstrap",
-                        num_bootstraps = 10,
-                        newdata = tibble(),
-                        edge_allowlist = NULL,
-                        edge_denylist = NULL,
-                        links_between_components = c("none", "ctp", "strongest-pcor", "strong-pcor"),
-                        component_col = "partition",
-                        embryo_size_factors = NULL,
-                        log_abund_detection_thresh = -5,
-                        interval_step = 2,
-                        min_interval = 4,
-                        max_interval = 24,
-                        min_pathfinding_lfc = 0,
-                        num_time_breaks = 4,
-                        batches_excluded_from_assembly = c(),
-                        force_allowlist = FALSE,
-                        min_penalty = 0.01,
-                        max_penalty = 1e+06, 
-                        break_cycles = TRUE) {
+run_wildtype_assembly <- function(cds,
+                                  sample_group,
+                                  cell_group,
+                                  partition_name = NULL,
+                                  main_model_formula_str = NULL,
+                                  start_time = 18,
+                                  stop_time = 72,
+                                  interval_col = "timepoint",
+                                  nuisance_model_formula_str = "~1",
+                                  ctrl_ids = NULL,
+                                  sparsity_factor = 0.01,
+                                  perturbation_col = "perturbation",
+                                  batch_col = "expt",
+                                  verbose = FALSE,
+                                  keep_ccs = TRUE,
+                                  num_threads = 1,
+                                  backend = "nlopt",
+                                  q_val = 0.1,
+                                  vhat_method = "bootstrap",
+                                  num_bootstraps = 10,
+                                  newdata = tibble(),
+                                  edge_allowlist = NULL,
+                                  edge_denylist = NULL,
+                                  links_between_components = c("none", "ctp", "strongest-pcor", "strong-pcor"),
+                                  component_col = "partition",
+                                  embryo_size_factors = NULL,
+                                  log_abund_detection_thresh = -5,
+                                  interval_step = 2,
+                                  min_interval = 4,
+                                  max_interval = 24,
+                                  min_pathfinding_lfc = 0,
+                                  num_time_breaks = 4,
+                                  batches_excluded_from_assembly = c(),
+                                  force_allowlist = FALSE,
+                                  min_penalty = 0.01,
+                                  max_penalty = 1e+06,
+                                  break_cycles = TRUE) {
     colData(cds)$subassembly_group <- stringr::str_c(partition_name, colData(cds)[, cell_group], sep = "-")
     colData(cds)[["cell_state"]] <- as.character(colData(cds)[[cell_group]])
 
@@ -164,7 +164,7 @@ wt_assembly <- function(cds,
                 component_col = component_col,
                 verbose = verbose,
                 q_val = q_val,
-                force_allowlist = force_allowlist, 
+                force_allowlist = force_allowlist,
                 break_cycles = break_cycles
             )
 
@@ -192,7 +192,6 @@ wt_assembly <- function(cds,
         }
     )
 }
-
 
 
 #' Assemble a mutant state graph
@@ -233,38 +232,38 @@ wt_assembly <- function(cds,
 #' @param embryo_size_factors Optional size factors for embryo data.
 #'
 #' @return An igraph object for the assembled mutant graph, or the WT graph on failure.
-mt_assembly <- function(cds,
-                        sample_group,
-                        cell_group,
-                        wt_graph,
-                        partition_name = NULL,
-                        main_model_formula_str = NULL,
-                        start_time = 18,
-                        stop_time = 72,
-                        interval_col = "timepoint",
-                        nuisance_model_formula_str = "~1",
-                        ctrl_ids = NULL,
-                        mt_ids = NULL,
-                        sparsity_factor = 0.01,
-                        perturbation_col = "perturbation",
-                        batch_col = "expt",
-                        max_num_cells = NULL,
-                        verbose = FALSE,
-                        keep_ccs = TRUE,
-                        num_threads = 1,
-                        backend = "nlopt",
-                        q_val = 0.1,
-                        interval_step = 2,
-                        vhat_method = "bootstrap",
-                        num_bootstraps = 10,
-                        newdata = tibble(),
-                        edge_allowlist = NULL,
-                        min_lfc = 0,
-                        links_between_components = c("none", "ctp", "strongest-pcor", "strong-pcor"),
-                        log_abund_detection_thresh = -5,
-                        batches_excluded_from_assembly = c(),
-                        component_col = "partition",
-                        embryo_size_factors = NULL) {
+run_perturbation_assembly <- function(cds,
+                                      sample_group,
+                                      cell_group,
+                                      wt_graph,
+                                      partition_name = NULL,
+                                      main_model_formula_str = NULL,
+                                      start_time = 18,
+                                      stop_time = 72,
+                                      interval_col = "timepoint",
+                                      nuisance_model_formula_str = "~1",
+                                      ctrl_ids = NULL,
+                                      mt_ids = NULL,
+                                      sparsity_factor = 0.01,
+                                      perturbation_col = "perturbation",
+                                      batch_col = "expt",
+                                      max_num_cells = NULL,
+                                      verbose = FALSE,
+                                      keep_ccs = TRUE,
+                                      num_threads = 1,
+                                      backend = "nlopt",
+                                      q_val = 0.1,
+                                      interval_step = 2,
+                                      vhat_method = "bootstrap",
+                                      num_bootstraps = 10,
+                                      newdata = tibble(),
+                                      edge_allowlist = NULL,
+                                      min_lfc = 0,
+                                      links_between_components = c("none", "ctp", "strongest-pcor", "strong-pcor"),
+                                      log_abund_detection_thresh = -5,
+                                      batches_excluded_from_assembly = c(),
+                                      component_col = "partition",
+                                      embryo_size_factors = NULL) {
     message("Starting mutant fits...")
     perturb_models_tbl <- suppressWarnings(fit_mt_models(cds,
         sample_group = sample_group,
@@ -345,4 +344,17 @@ mt_assembly <- function(cds,
         return(wt_graph)
     }
     return(mt_graph)
+}
+
+# Backward-compatible wrappers
+#' @export
+wt_assembly <- function(...) {
+    .Deprecated("run_wildtype_assembly")
+    run_wildtype_assembly(...)
+}
+
+#' @export
+mt_assembly <- function(...) {
+    .Deprecated("run_perturbation_assembly")
+    run_perturbation_assembly(...)
 }
