@@ -5,7 +5,7 @@ TEST_DIR ?= tests/testthat
 TEST_FILE_CHECK ?= find "$(TEST_DIR)" -maxdepth 1 -name 'test*.R' -print -quit | grep -q .
 
 # Shared testthat invocation used by both fast and test targets
-TESTTHAT_CMD = if (!requireNamespace("testthat", quietly=TRUE)) {message("testthat not installed; skipping"); quit(status=0)}; testthat::test_local(reporter="summary", stop_on_failure=TRUE)
+TESTTHAT_CMD = ok_pln <- tryCatch(requireNamespace("PLNmodels", quietly=TRUE), error=function(e) FALSE); ok_hooke <- tryCatch(requireNamespace("hooke", quietly=TRUE), error=function(e) FALSE); if (!isTRUE(ok_pln) || !isTRUE(ok_hooke)) { message("Skipping platt tests: PLNmodels/hooke not available"); quit(status=0) }; if (!requireNamespace("testthat", quietly=TRUE)) {message("testthat not installed; skipping"); quit(status=0)}; testthat::test_local(reporter="summary", stop_on_failure=TRUE)
 
 .PHONY: help fast test check
 
