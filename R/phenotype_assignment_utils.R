@@ -276,6 +276,7 @@ assign_phenotypes <- function(
 
         # Load DEGs for this perturbation
         deg_tbl <- load_deg_file(deg_filename)
+        deg_tbl <- deg_tbl %>% filter(present_above_thresh)
 
         # Use summarized differential cell abundance table
         if (use_summarized_tbl) {
