@@ -269,16 +269,18 @@ geom_richnodelabel <- function(mapping = NULL, data = NULL, position = "identity
 
 #' Layout State Graph
 #'
-#' This function layouts a directed graph with optional node metadata and edge labels.
-#' It ensures the graph is directed, connects isolated nodes, assigns nodes to layers,
-#' and adds hidden head and tail nodes to each component. The function then performs
-#' layout using Rgraphviz and extracts Bezier curve control points for edges.
+#' Layout a directed graph using depth-based ranks and optional clustering.
+#' Nodes are ranked by graph depth from the roots, optionally ordering clusters
+#' left-to-right by their median depth. The function uses Rgraphviz to compute
+#' coordinates and extracts Bezier control points for edges.
 #'
 #' @param G An igraph object representing the directed graph.
 #' @param node_metadata A data frame containing node metadata. Must include columns 'group_nodes_by' and 'id'.
 #' @param edge_labels A named vector of edge labels (optional).
 #' @param num_layers An integer specifying the number of layers for node assignment (default is 1).
 #' @param weighted A logical value indicating whether the graph is weighted (default is FALSE).
+#' @param order_clusters_by_depth Logical; if TRUE, add invisible ordering edges between
+#' clusters (by median depth) to encourage a left-to-right cluster ordering.
 #'
 #' @return A list containing:
 #' \item{gvizl_coords}{A matrix of layout coordinates for the nodes.}
@@ -307,7 +309,11 @@ geom_richnodelabel <- function(mapping = NULL, data = NULL, position = "identity
 #' result <- layout_state_graph(G, node_metadata)
 #'
 #' @export
-layout_state_graph <- function(G, node_metadata, edge_labels = NULL, num_layers = 1, weighted = FALSE) {
+layout_state_graph <- function(G, node_metadata, edge_labels = NULL, num_layers = 1, weighted = FALSE, order_clusters_by_depth = FALSE) {
+  if (!igraph::is_directed(G)) {
+    stop("The graph must be directed.")
+  }
+
   make_subgraphs_for_groups <- function(subgraph_ids, G_nel) {
     sg_nodes <- subgraph_ids %>%
       pull(id) %>%
@@ -317,68 +323,52 @@ layout_state_graph <- function(G, node_metadata, edge_labels = NULL, num_layers 
     return(sg)
   }
 
-  if (!igraph::is_directed(G)) {
-    stop("The graph must be directed.")
-  }
-
   G_orig <- G
-  G <- connect_isolated_nodes(G, node_metadata)
-  components <- igraph::decompose(G)
-  num_components <- length(components)
-  layers <- assign_nodes_to_layers(G, num_layers, node_metadata)
+  # Depth-based ranks
+  roots <- names(which(igraph::degree(G, mode = "in") == 0))
+  if (length(roots) == 0) {
+    roots <- igraph::V(G)$name[1]
+  }
+  G_depth <- G
+  if (length(roots) > 1) {
+    super_root <- "__super_root__"
+    G_depth <- igraph::add_vertices(G_depth, 1, name = super_root)
+    add_pairs <- as.vector(rbind(super_root, roots))
+    G_depth <- igraph::add_edges(G_depth, add_pairs)
+    roots <- super_root
+  }
+  dist_mat <- igraph::distances(G_depth, v = roots, mode = "out", weights = NA)
+  depth <- apply(dist_mat, 2, min, na.rm = TRUE)
+  depth[is.infinite(depth)] <- max(depth[is.finite(depth)], 0) + 1
+  depth <- depth[names(depth) != "__super_root__"]
 
-  G_with_hidden <- G
-  head_nodes <- paste0("head_", seq_len(num_components))
-  tail_nodes <- paste0("tail_", seq_len(num_components))
-
-  hidden_nodes_tibble <- tibble(node_id = character(), component = integer(), group = character())
-
-  for (i in seq_len(num_components)) {
-    comp <- components[[i]]
-    root_nodes <- V(comp)[igraph::degree(comp, mode = "in") == 0]$name
-    if (length(root_nodes) == 0) {
-      root_nodes <- V(comp)[1]$name
+  # Optional cluster ordering by median depth (layout-only)
+  if (order_clusters_by_depth) {
+    group_depth <- node_metadata %>%
+      filter(id %in% names(depth)) %>%
+      group_by(group_nodes_by) %>%
+      summarise(med_depth = stats::median(depth[id]), .groups = "drop") %>%
+      arrange(med_depth)
+    rep_nodes <- node_metadata %>%
+      filter(group_nodes_by %in% group_depth$group_nodes_by) %>%
+      group_by(group_nodes_by) %>%
+      summarise(rep_id = dplyr::first(id), .groups = "drop")
+    ordering_edges <- rep_nodes$rep_id[-nrow(rep_nodes)]
+    ordering_targets <- rep_nodes$rep_id[-1]
+    if (length(ordering_edges) > 0) {
+      ordering_vec <- as.vector(rbind(ordering_edges, ordering_targets))
+      G <- igraph::add_edges(G, ordering_vec, ordering_edge = TRUE)
     }
-    leaf_nodes <- V(comp)[igraph::degree(comp, mode = "out") == 0]$name
-    if (length(leaf_nodes) == 0) {
-      leaf_nodes <- V(comp)[1]$name
-    }
-
-    G_v_names <- igraph::V(G_with_hidden)$name
-    G_with_hidden <- add_vertices(G_with_hidden, 2)
-    igraph::V(G_with_hidden)$name <- c(G_v_names, head_nodes[i], tail_nodes[i])
-
-    for (root in root_nodes) {
-      G_with_hidden <- add_edges(G_with_hidden, edges = c(head_nodes[i], as.character(root)))
-    }
-    for (leaf in leaf_nodes) {
-      G_with_hidden <- add_edges(G_with_hidden, edges = c(as.character(leaf), tail_nodes[i]))
-    }
-
-    # Determine the group for the hidden nodes
-    root_groups <- node_metadata %>%
-      filter(id %in% root_nodes) %>%
-      pull(group_nodes_by)
-    leaf_groups <- node_metadata %>%
-      filter(id %in% leaf_nodes) %>%
-      pull(group_nodes_by)
-
-    head_group <- names(sort(table(root_groups), decreasing = TRUE))[1]
-    tail_group <- names(sort(table(leaf_groups), decreasing = TRUE))[1]
-
-    hidden_nodes_tibble <- hidden_nodes_tibble %>%
-      add_row(node_id = head_nodes[i], component = i, group = head_group) %>%
-      add_row(node_id = tail_nodes[i], component = i, group = tail_group)
   }
 
-  G_with_hidden <- connect_hidden_nodes_for_layers(G_with_hidden, layers)
-
+  # Build graphNEL
   if (weighted) {
-    G_with_hidden_nel <- graph::graphAM(asMatrix = as_adjacency_matrix(G_with_hidden, sparse = FALSE, attr = "weight"), edgemode = "directed") %>% as("graphNEL")
+    G_nel <- graph::graphAM(asMatrix = as_adjacency_matrix(G, sparse = FALSE, attr = "weight"), edgemode = "directed") %>% as("graphNEL")
   } else {
-    G_with_hidden_nel <- graph::graphAM(adjMat = as_adjacency_matrix(G_with_hidden, sparse = FALSE), edgemode = "directed") %>% as("graphNEL")
+    G_nel <- graph::graphAM(adjMat = as_adjacency_matrix(G, sparse = FALSE), edgemode = "directed") %>% as("graphNEL")
   }
 
+  # Subgraphs (clusters) per group
   if (is.null(node_metadata)) {
     subgraphs <- NULL
   } else {
@@ -389,14 +379,87 @@ layout_state_graph <- function(G, node_metadata, edge_labels = NULL, num_layers 
       summarize(subgraph = purrr::map(
         .f = purrr::possibly(make_subgraphs_for_groups, NULL),
         .x = subgraph_ids,
-        G_with_hidden_nel
+        G_nel
       ))
     subgraphs <- subgraph_df$subgraph
     names(subgraphs) <- subgraph_df$group_nodes_by
   }
 
-  gvizl <- Rgraphviz::layoutGraph(G_with_hidden_nel, layoutType = "dot", subGList = subgraphs, recipEdges = "distinct")
+  # Graphviz attributes: depth ranks, cluster packing
+  graph_attrs <- list(
+    graph = list(
+      rankdir = "TB",
+      newrank = "true",
+      ranksep = "1.6",
+      nodesep = "1.0",
+      margin = "0.1,0.1",
+      overlap = "false",
+      splines = "true",
+      pack = "true",
+      packmode = "clust",
+      compound = "true"
+    ),
+    edge = list(
+      minlen = "1.0"
+    ),
+    cluster = list(
+      clusterrank = "local"
+    )
+  )
+
+  node_group_map <- setNames(as.character(node_metadata$group_nodes_by), as.character(node_metadata$id))
+  rank_map <- setNames(paste0("d", depth[names(depth)]), names(depth))
+  rank_map[names(rank_map) %in% names(depth)[depth == min(depth)]] <- "min"
+
+  node_attrs <- list(group = node_group_map, rank = rank_map)
+
+  edge_df <- igraph::as_data_frame(G, what = "edges")
+  if (!"ordering_edge" %in% colnames(edge_df)) {
+    edge_df$ordering_edge <- FALSE
+  }
+  group_lookup <- node_group_map
+  edge_df$from_group <- group_lookup[edge_df$from]
+  edge_df$to_group <- group_lookup[edge_df$to]
+
+  constraint_edges <- rep("true", nrow(edge_df))
+  edge_constraints <- setNames(constraint_edges, paste0(edge_df$from, "~", edge_df$to))
+
+  ltail_attrs <- setNames(
+    ifelse(edge_df$from_group != edge_df$to_group, paste0("cluster_", edge_df$from_group), NA),
+    paste0(edge_df$from, "~", edge_df$to)
+  )
+  lhead_attrs <- setNames(
+    ifelse(edge_df$from_group != edge_df$to_group, paste0("cluster_", edge_df$to_group), NA),
+    paste0(edge_df$from, "~", edge_df$to)
+  )
+
+  ordering_edge_names <- paste0(edge_df$from, "~", edge_df$to)[edge_df$ordering_edge]
+  style_attrs <- rep(NA_character_, nrow(edge_df))
+  style_attrs[edge_df$ordering_edge] <- "invis"
+  style_attrs <- setNames(style_attrs, paste0(edge_df$from, "~", edge_df$to))
+  style_attrs <- style_attrs[!is.na(style_attrs)]
+  weight_attrs <- rep(NA_character_, nrow(edge_df))
+  weight_attrs[edge_df$ordering_edge] <- "10"
+  weight_attrs <- setNames(weight_attrs, paste0(edge_df$from, "~", edge_df$to))
+  weight_attrs <- weight_attrs[!is.na(weight_attrs)]
+
+  gvizl <- Rgraphviz::layoutGraph(
+    G_nel,
+    layoutType = "dot",
+    subGList = subgraphs,
+    recipEdges = "distinct",
+    attrs = graph_attrs,
+    nodeAttrs = node_attrs,
+    edgeAttrs = list(
+      constraint = edge_constraints,
+      ltail = ltail_attrs,
+      lhead = lhead_attrs,
+      style = style_attrs,
+      weight = weight_attrs
+    )
+  )
   gvizl_coords <- cbind(gvizl@renderInfo@nodes$nodeX, gvizl@renderInfo@nodes$nodeY)
+  rownames(gvizl_coords) <- names(gvizl@renderInfo@nodes$nodeX)
 
   beziers <- lapply(gvizl@renderInfo@edges$splines, function(bc) {
     bc_segments <- lapply(bc, Rgraphviz::bezierPoints)
@@ -405,47 +468,39 @@ layout_state_graph <- function(G, node_metadata, edge_labels = NULL, num_layers 
     bezier_cp_df
   })
   bezier_df <- do.call(rbind, beziers)
-  # bezier_df$edge_name = stringr::str_split_fixed(names(gvizl@renderInfo@edges$splines), "\\.", 2)[,1]
   bezier_df$edge_name <- str_split(row.names(bezier_df), "\\.[0-9]+$", simplify = TRUE)[, 1]
-  # bezier_df$edge_name = stringr::str_split_fixed(row.names(bezier_df), "\\.", 2)[,1]
   bezier_df$from <- stringr::str_split_fixed(bezier_df$edge_name, "~", 2)[, 1]
   bezier_df$to <- stringr::str_split_fixed(bezier_df$edge_name, "~", 2)[, 2]
   bezier_df <- left_join(bezier_df, tibble(edge_name = names(gvizl@renderInfo@edges$direction), edge_direction = gvizl@renderInfo@edges$direction))
   bezier_df <- bezier_df %>% dplyr::distinct()
 
-
   bezier_df = left_join(bezier_df, igraph::as_data_frame(G) %>% select(-weight), by = c("from", "to"))
 
+  # Post-process: spread groups horizontally by adding padding to x-coordinates
+  # Keep Graphviz coordinates as-is; do not post-shift groups
+
   if (!is.null(edge_labels)) {
+    edge_ids <- gsub("\\.", "~", names(gvizl@renderInfo@edges$splines))
     label_df <- data.frame(
-      edge_id = gsub("\\.", "~", names(gvizl@renderInfo@edges$splines)),
-      label = unname(edge_labels[edge_names])
+      edge_id = edge_ids,
+      label = unname(edge_labels[edge_ids])
     )
   } else {
     label_df <- NULL
   }
 
-  hidden_nodes <- c(head_nodes, tail_nodes)
-  gvizl_coords_clean <- gvizl_coords[!rownames(gvizl_coords) %in% hidden_nodes, ]
-  gvizl_coords_hidden <- gvizl_coords[rownames(gvizl_coords) %in% hidden_nodes, ]
-
-  hidden_gvizl_coords_tibble <- tibble(
-    x = gvizl_coords_hidden[, 1],
-    y = gvizl_coords_hidden[, 2],
-    name = rownames(gvizl_coords_hidden)
-  )
-  hidden_gvizl_coords_tibble <- hidden_gvizl_coords_tibble %>% left_join(hidden_nodes_tibble, by = c("name" = "node_id"))
+  gvizl_coords_clean <- gvizl_coords
 
   G_orig_edgelist <- igraph::get.edgelist(G_orig)
   colnames(G_orig_edgelist) <- c("from", "to")
   G_orig_edgelist <- G_orig_edgelist %>% as_tibble()
 
   bezier_df_clean <- bezier_df %>%
-    filter(from %in% hidden_nodes == FALSE & to %in% hidden_nodes == FALSE)
+    filter(TRUE)
   bezier_df_clean <- bezier_df_clean %>% inner_join(G_orig_edgelist, by = c("from" = "from", "to" = "to"))
 
   bezier_df_hidden <- bezier_df %>%
-    filter(from %in% hidden_nodes | to %in% hidden_nodes)
+    filter(FALSE)
 
   if (!is.null(label_df)) {
     label_df_clean <- label_df %>%
@@ -465,7 +520,7 @@ layout_state_graph <- function(G, node_metadata, edge_labels = NULL, num_layers 
     bezier_df = bezier_df_clean,
     label_df = label_df_clean,
     grouping_df = grouping_df,
-    hidden_gvizl_coords = hidden_gvizl_coords_tibble,
+    hidden_gvizl_coords = NULL,
     hidden_bezier_df = bezier_df_hidden,
     hidden_label_df = label_df_hidden
   ))

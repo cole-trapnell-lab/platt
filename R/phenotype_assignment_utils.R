@@ -229,7 +229,18 @@ get_phenotype_threads <- function(num_threads = NULL) {
     1L
 }
 
-assign_phenotypes <- function(contrast_tbls, fitness_gene_sets, identity_gene_sets, combined_psg, cell_type_denylist = NULL, num_threads = NULL) {
+assign_phenotypes <- function(
+  contrast_tbls,
+  fitness_gene_sets,
+  identity_gene_sets,
+  combined_psg,
+  cell_type_denylist = NULL,
+  num_threads = NULL,
+  use_summarized_tbl = TRUE,
+  minSize = 10,
+  maxSize = 5000,
+  nperm = 10000
+) {
     # Get all cell types across all perturbations
     all_cell_types <- unique(unlist(
         lapply(seq_len(nrow(contrast_tbls)), function(i) {
@@ -260,17 +271,29 @@ assign_phenotypes <- function(contrast_tbls, fitness_gene_sets, identity_gene_se
         perturb_group <- perturb_record$perturb_group
         perturb_time_window <- perturb_record$perturb_time_window[[1]]
         run <- perturb_record$run
-        dact_tbl <- perturb_record$differential_cell_abundance[[1]]
+
         deg_filename <- perturb_record$differential_expression_filename[[1]]
 
         # Load DEGs for this perturbation
         deg_tbl <- load_deg_file(deg_filename)
-
-        # Optionally filter out denylisted cell types
-        dact_tbl <- filter_denylisted_cell_types(dact_tbl, deg_tbl, cell_type_denylist)
+        deg_tbl <- deg_tbl %>% filter(present_above_thresh)
 
         # Use summarized differential cell abundance table
-        dact_tbl <- perturb_record$summarized_differential_cell_abundance[[1]]
+        if (use_summarized_tbl) {
+            dact_tbl <- perturb_record$summarized_differential_cell_abundance[[1]]
+            dact_tbl <- filter_denylisted_cell_types(dact_tbl, deg_tbl, cell_type_denylist)
+        } else {
+            # Optionally filter out denylisted cell types
+            dact_tbl <- perturb_record$differential_cell_abundance[[1]]
+            dact_tbl <- filter_denylisted_cell_types(dact_tbl, deg_tbl, cell_type_denylist)
+            dact_tbl <- dacts_when_abundant(dact_tbl, percent_max_thresh = 0)
+            # dact_tbl <- dact_tbl %>%
+            #     mutate(timepoint_x = as.numeric(timepoint_x)) %>%
+            #     group_by(cell_group) %>%
+            #     slice_max(percent_max_abund, with_ties = F)
+            dact_tbl <- dact_tbl %>% mutate(change_when_present = delta_log_abund, change_when_present_q_val = delta_q_value)
+        }
+
         log_ts(
             sprintf(
                 "perturbation %s (%d/%d): %d cell types",
@@ -284,7 +307,10 @@ assign_phenotypes <- function(contrast_tbls, fitness_gene_sets, identity_gene_se
             perturb_name, perturb_group, perturb_time_window, run,
             pb = pb, # Pass the progress bar object
             log_fn = log_ts,
-            num_threads = num_threads
+            num_threads = num_threads,
+            minSize = minSize,
+            maxSize = maxSize,
+            nperm = nperm
         )
     })
 }
@@ -298,6 +324,22 @@ filter_denylisted_cell_types <- function(dact_tbl, deg_tbl, cell_type_denylist) 
 }
 
 
+dacts_when_abundant <- function(differential_cell_abundance, percent_max_thresh = 0.10, with_ties = FALSE) {
+    perturb_table_at_when_abundant <- differential_cell_abundance %>%
+        mutate(timepoint_x = as.numeric(timepoint_x)) %>%
+        filter(is.na(delta_log_abund) == FALSE &
+            is.na(present_above_thresh) == FALSE &
+            present_above_thresh) %>%
+        # filter(present_above_thresh) %>%
+        mutate(delta_log_abund = ifelse(percent_max_abund < percent_max_thresh, 0, delta_log_abund)) %>%
+        mutate(delta_q_value = ifelse(delta_log_abund == 0, 1, delta_q_value)) %>%
+        group_by(cell_group) %>%
+        slice_min(delta_q_value, with_ties = with_ties) %>%
+        ungroup()
+
+    return(perturb_table_at_when_abundant)
+}
+
 assign_phenotypes_to_cell_types <- function(
   dact_tbl, deg_tbl, gene_sets,
   identity_gene_sets,
@@ -305,7 +347,10 @@ assign_phenotypes_to_cell_types <- function(
   perturb_name, perturb_group, perturb_time_window, run,
   pb = NULL, # Accept progress bar object
   log_fn = NULL,
-  num_threads = NULL
+  num_threads = NULL,
+  minSize = 10,
+  maxSize = 5000,
+  nperm = 10000
 ) {
     cell_types <- unique(dact_tbl$cell_group)
     num_threads <- get_phenotype_threads(num_threads)
@@ -325,8 +370,8 @@ assign_phenotypes_to_cell_types <- function(
         dact_row <- dact_tbl %>% filter(cell_group == ct)
         abundance_code <- if (nrow(dact_row) > 0) assign_abundance_code(dact_row$change_when_present, dact_row$change_when_present_q_val) else NA_character_
         abundance_severity <- if (nrow(dact_row) > 0) assign_abundance_severity(dact_row$change_when_present, dact_row$change_when_present_q_val) else NA_character_
-        identity_labels <- assign_identity_maturation_labels(deg_tbl, ct, identity_gene_sets, combined_psg)
-        fitness_labels <- assign_fitness_labels(deg_tbl, ct, gene_sets)
+        identity_labels <- assign_identity_maturation_labels(deg_tbl, ct, identity_gene_sets, combined_psg, minSize = minSize, nperm = nperm, maxSize = maxSize)
+        fitness_labels <- assign_fitness_labels(deg_tbl, ct, gene_sets, minSize = minSize, nperm = nperm, maxSize = maxSize)
         if (!is.null(log_fn)) {
             elapsed <- as.numeric(difftime(Sys.time(), ct_start, units = "secs"))
             log_fn(sprintf(
@@ -386,11 +431,14 @@ assign_abundance_severity <- function(change_when_present, change_when_present_q
     )
 }
 
-assign_fitness_labels <- function(deg_tbl, ct, gene_sets) {
+assign_fitness_labels <- function(deg_tbl, ct, gene_sets,
+                                  minSize = 10,
+                                  maxSize = 5000,
+                                  nperm = 10000) {
     degs_this_cell <- deg_tbl %>% filter(cell_group == ct)
     if (nrow(degs_this_cell) > 0) {
         rank_vec <- make_rank(degs_this_cell, gene_col = "gene_short_name", logFC_col = "perturb_to_ctrl_shrunken_lfc")
-        fgsea_res <- run_fgsea_modules(rank_vec, gene_sets)
+        fgsea_res <- run_fgsea_modules(rank_vec, gene_sets, minSize = minSize, maxSize = maxSize, nperm = nperm)
         classify_fitness(fgsea_res)
     } else {
         tibble(label = NA_character_, severity = NA_character_, evidence = NA_character_)
@@ -398,7 +446,10 @@ assign_fitness_labels <- function(deg_tbl, ct, gene_sets) {
 }
 
 assign_identity_maturation_labels <- function(deg_tbl, ct, identity_gene_sets, combined_psg,
-                                              nes_mod = 1.5, nes_sev = 2.0, q_cut = 0.05) {
+                                              nes_mod = 1.5, nes_sev = 2.0, q_cut = 0.05,
+                                              minSize = 10,
+                                              maxSize = 5000,
+                                              nperm = 10000) {
     degs_this_cell <- deg_tbl %>% filter(cell_group == ct)
     if (nrow(degs_this_cell) == 0) {
         return(tibble(identity_label = "I0 Identity intact", evidence = NA_character_))
@@ -409,8 +460,13 @@ assign_identity_maturation_labels <- function(deg_tbl, ct, identity_gene_sets, c
     parents <- get_parents(g, ct)
     descendants <- get_descendants(ct, g)
     roots <- get_roots(ct, g)
-    lineage_tree <- if (length(roots) > 0) {
-        unique(unlist(lapply(roots, function(r) get_descendants(r, g))))
+    # lineage_tree <- if (length(roots) > 0) {
+    #     unique(unlist(lapply(roots, function(r) get_descendants(r, g))))
+    # } else {
+    #     character()
+    # }
+    lineage_tree <- if (length(parents) > 0) {
+        unique(unlist(lapply(parents, function(r) get_descendants(r, g))))
     } else {
         character()
     }
@@ -432,7 +488,7 @@ assign_identity_maturation_labels <- function(deg_tbl, ct, identity_gene_sets, c
 
     # Prepare for fgsea
     rank_vec <- make_rank(degs_this_cell, gene_col = "gene_short_name", logFC_col = "perturb_to_ctrl_shrunken_lfc")
-    fgsea_res <- run_fgsea_modules(rank_vec, gene_sets_list)
+    fgsea_res <- run_fgsea_modules(rank_vec, gene_sets_list, minSize = minSize, maxSize = maxSize, nperm = nperm)
 
     # Annotate each result with its cell type and gene set
     fgsea_res <- fgsea_res %>%
