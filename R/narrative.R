@@ -299,6 +299,9 @@ summarize_cell_type_impact <- function(
   precompute_data <- load_ai_precompute_for_cell_types(cell_types = ct, ai_notes_path = ai_notes_path)
   pathway_background <- precompute_data$pathway_background
   sig_pathways <- precompute_data$sig_pathways[[1]]
+  if (is.null(sig_pathways) || !is.data.frame(sig_pathways)) {
+    sig_pathways <- tibble::tibble(pathway = character())
+  }
   ancestor_specific_pathways <- sig_pathways %>%
     distinct(pathway) %>%
     rename(gs_name = pathway)
