@@ -34,7 +34,6 @@ classify_gene_patterns(
 
 \item{cv_threshold}{Coefficient of variation threshold for filtering.}
 
-
 \item{sig_thresh}{Significance threshold for class assignment.}
 
 \item{cores}{Number of cores for scoring.}

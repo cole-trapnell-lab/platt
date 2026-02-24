@@ -9,7 +9,8 @@ layout_state_graph(
   node_metadata,
   edge_labels = NULL,
   num_layers = 1,
-  weighted = FALSE
+  weighted = FALSE,
+  order_clusters_by_depth = FALSE
 )
 }
 \arguments{
@@ -22,6 +23,9 @@ layout_state_graph(
 \item{num_layers}{An integer specifying the number of layers for node assignment (default is 1).}
 
 \item{weighted}{A logical value indicating whether the graph is weighted (default is FALSE).}
+
+\item{order_clusters_by_depth}{Logical; if TRUE, add invisible ordering edges between
+clusters (by median depth) to encourage a left-to-right cluster ordering.}
 }
 \value{
 A list containing:
@@ -34,10 +38,10 @@ A list containing:
 \item{hidden_label_df}{A data frame of edge labels for edges involving hidden nodes (if provided).}
 }
 \description{
-This function layouts a directed graph with optional node metadata and edge labels.
-It ensures the graph is directed, connects isolated nodes, assigns nodes to layers,
-and adds hidden head and tail nodes to each component. The function then performs
-layout using Rgraphviz and extracts Bezier curve control points for edges.
+Layout a directed graph using depth-based ranks and optional clustering.
+Nodes are ranked by graph depth from the roots, optionally ordering clusters
+left-to-right by their median depth. The function uses Rgraphviz to compute
+coordinates and extracts Bezier control points for edges.
 }
 \examples{
 # Example usage:
