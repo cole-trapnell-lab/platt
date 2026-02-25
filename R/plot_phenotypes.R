@@ -87,7 +87,8 @@ plot_phenotypes_from_impact <- function(cell_state_graph,
 #' @param impact_table A data frame with required columns:
 #'   `cell_type`, `abundance_code`, `abundance_severity`, `identity_label`,
 #'   `fitness_label`. Optional columns include `fitness_evidence`,
-#'   `identity_evidence`, and nested `llm_disrupted_pathways`.
+#'   `identity_evidence`, and nested `disrupted_pathways` (or legacy
+#'   `llm_disrupted_pathways`).
 #' @param sev_map Named numeric vector mapping abundance severity to magnitude.
 #' @param abundance_code_map Named numeric vector mapping abundance class labels
 #'   to signed effect direction/magnitude.
@@ -245,9 +246,17 @@ impact_to_phenos <- function(impact_table,
         paste(tokens_unique, collapse = ", ")
     }
 
-    if ("llm_disrupted_pathways" %in% names(tab)) {
+    pathway_col <- if ("disrupted_pathways" %in% names(tab)) {
+        "disrupted_pathways"
+    } else if ("llm_disrupted_pathways" %in% names(tab)) {
+        "llm_disrupted_pathways"
+    } else {
+        NULL
+    }
+
+    if (!is.null(pathway_col)) {
         gene_tbl <- tab %>%
-            tidyr::unnest(llm_disrupted_pathways) %>%
+            tidyr::unnest(dplyr::all_of(pathway_col)) %>%
             dplyr::select(cell_group = cell_type, dysregulated_genes) %>%
             tidyr::unnest_longer(dysregulated_genes) %>%
             dplyr::mutate(dysregulated_genes = stringr::str_squish(as.character(dysregulated_genes))) %>%
@@ -300,7 +309,8 @@ impact_to_phenos <- function(impact_table,
 #' @param arrow_unit Numeric arrowhead size for edges (points).
 #' @param node_size Base node size scalar.
 #' @param con_colour Edge/node outline color.
-#' @param legend_position Reserved legend position setting.
+#' @param legend_position Legend position passed to `theme(legend.position=...)`
+#'   (e.g. `"right"`, `"bottom"`, `"top"`, `"left"`, or `"none"` to hide).
 #' @param label_cell_types Optional character vector of node names to label, or
 #'   `"all"`.
 #' @param show_node_labels Logical. If `TRUE` and `label_cell_types` is `NULL`,
@@ -429,13 +439,13 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             badge_caption = stringr::str_replace(badge_caption, ",\\s*$", ""),
             # Assign primary phenotype class by new hierarchy, using abundance_code
             primary_phenotype = dplyr::case_when(
-                !is.na(f2) & f2 ~ "death", # 1. Death (apoptosis)
-                !is.na(f4) & f4 ~ "arrest", # 2. Arrest (senescence)
+                !is.na(f2) & f2 ~ "apoptosis", # 1. Death (apoptosis)
+                !is.na(f4) & f4 ~ "senescence", # 2. Arrest (senescence)
                 !is.na(abundance_code) & grepl("^A1|^A4", abundance_code) ~ "abundance_gain", # 3. Abundance gain (A1 Expansion, A4 Ectopic/extra state)
                 !is.na(abundance_code) & grepl("^A2|^A3", abundance_code) ~ "abundance_loss", # 3. Abundance loss (A2 Depletion, A3 Ablation/Loss)
                 !is.na(ident) & !(ident %in% c("I0", "I0 Identity intact", "Identity intact", NA)) ~ "identity", # 4. Identity
                 !is.na(f3) & f3 != 0 ~ "stress", # 5. Stress
-                !is.na(f1_dir) & f1_dir != "" ~ "proliferation", # 6. Proliferation
+                !is.na(f1_dir) & f1_dir != "" ~ "fitness", # 6. Proliferation
                 TRUE ~ "none" # 7. None
             ),
             tooltip = paste0(
@@ -534,8 +544,10 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         ggplot2::scale_fill_manual(
             values = phenotype_colors,
             name = "Primary phenotype",
-            guide = "none"
+            guide = ggplot2::guide_legend(override.aes = list(shape = 21, size = 4, alpha = 1))
         )
+
+    p <- p + ggplot2::theme(legend.position = legend_position)
 
     if (show_node_glyphs) {
         glyph_draw_color <- if (is.null(glyph_color)) g$glyph_col else glyph_color
