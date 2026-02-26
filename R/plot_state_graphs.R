@@ -662,16 +662,16 @@ plot_annotations <- function(cell_state_graph,
                              plot_labels = TRUE,
                              label_size = 3,
                              group_label_size = 1) {
-  # override if defined in arguments, otherwise take csg info or default to cell group
+  # override if defined in arguments, otherwise take cell_state_graph info or default to cell group
   color_nodes_by <- color_nodes_by %||%
-    csg@metadata$color_nodes_by %||%
+    cell_state_graph@metadata$color_nodes_by %||%
     ccs@info$cell_group
 
   label_nodes_by <- label_nodes_by %||%
-    csg@metadata$label_nodes_by %||%
+    cell_state_graph@metadata$label_nodes_by %||%
     ccs@info$cell_group
 
-  group_nodes_by <- csg@metadata$group_nodes_by %||%
+  group_nodes_by <- cell_state_graph@metadata$group_nodes_by %||%
     ccs@info$cell_group
 
   node_metadata <- collect_psg_node_metadata(ccs, color_nodes_by, label_nodes_by, group_nodes_by)
