@@ -364,6 +364,8 @@ get_discordant_loss_pairs <- function(perturbation_ccm,
     newdata = newdata
   )
 
+  assert_power_columns_present(earliest_loss_tbl, context = "discordant-loss pair construction")
+
   lost_cell_groups <- earliest_loss_tbl %>%
     filter(is_lost_at_peak) %>%
     pull(cell_group) %>%
@@ -383,6 +385,15 @@ get_discordant_loss_pairs <- function(perturbation_ccm,
   discordant_loss_pairs <- tidyr::expand_grid(lost_cell_groups, unaffected_cell_groups)
 
   return(discordant_loss_pairs)
+}
+
+#' @noRd
+assert_power_columns_present <- function(tbl, context = "perturbation summary") {
+  power_cols <- colnames(tbl)[stringr::str_detect(colnames(tbl), "power")]
+  if (length(power_cols) == 0) {
+    stop(sprintf("Expected at least one power column in %s, but none were found.", context))
+  }
+  invisible(power_cols)
 }
 
 #' @export
@@ -1508,6 +1519,7 @@ estimate_loss_timing <- function(perturbation_ccm,
       wt_time_present = t1,
       delta_log_abund_when_present = delta_log_abund,
       delta_log_abund_when_present_se = delta_log_abund_se,
+      power_when_present = power,
       log_abund_wt = log_abund_x,
       delta_q_value
     ),
@@ -1538,6 +1550,7 @@ estimate_loss_timing <- function(perturbation_ccm,
     summarize(
       loss_when_present = weighted.mean(delta_log_abund_when_present, percent_max_abund, na.rm = T),
       loss_when_present_se = weighted.mean(delta_log_abund_when_present_se, percent_max_abund, na.rm = T),
+      loss_when_present_power = weighted.mean(power_when_present, percent_max_abund, na.rm = T),
       loss_when_present_tvalue = weighted.mean(delta_log_abund_when_present / delta_log_abund_when_present_se, percent_max_abund, na.rm = T),
       loss_when_present_tvalue_df = df.r,
       loss_when_present_p_value = 2 * pt(-abs(loss_when_present_tvalue), loss_when_present_tvalue_df)
@@ -1550,6 +1563,7 @@ estimate_loss_timing <- function(perturbation_ccm,
     summarize(
       gain_when_present = weighted.mean(delta_log_abund_when_present, percent_max_abund, na.rm = T),
       gain_when_present_se = weighted.mean(delta_log_abund_when_present_se, percent_max_abund, na.rm = T),
+      gain_when_present_power = weighted.mean(power_when_present, percent_max_abund, na.rm = T),
       gain_when_present_tvalue = weighted.mean(delta_log_abund_when_present / delta_log_abund_when_present_se, percent_max_abund, na.rm = T),
       gain_when_present_tvalue_df = df.r,
       gain_when_present_p_value = 2 * pt(-abs(gain_when_present_tvalue), gain_when_present_tvalue_df)
