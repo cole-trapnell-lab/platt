@@ -41,7 +41,7 @@ to use as a constraint in the model.}
 time intervals. Default is "timepoint".}
 
 \item{perturbation_col}{Character. The column name in \code{ccs} that represents
-the perturbation (e.g., gene target). Default is "gene_target".}
+the perturbation (e.g., perturbation). Default is "perturbation".}
 
 \item{batch_col}{Character. The column name in \code{ccs} that represents the
 batch information. Default is "expt".}

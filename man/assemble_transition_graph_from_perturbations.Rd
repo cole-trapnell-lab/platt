@@ -5,7 +5,8 @@
 \title{Assemble a state transition graph from a set of perturbations}
 \usage{
 assemble_transition_graph_from_perturbations(
-  control_timeseries_ccm,
+  ref_ccs,
+  timeseries_graph,
   perturbation_ccm_tbl,
   q_val = 0.01,
   start_time = NULL,
@@ -16,7 +17,7 @@ assemble_transition_graph_from_perturbations(
   max_interval = 24,
   log_abund_detection_thresh = -5,
   min_pathfinding_lfc = 0,
-  links_between_components = c("ctp", "none", "strongest-pcor", "strong-pcor"),
+  links_between_components = c("none", "ctp", "strongest-pcor", "strong-pcor"),
   components = "partition",
   verbose = FALSE,
   edge_allowlist = NULL,

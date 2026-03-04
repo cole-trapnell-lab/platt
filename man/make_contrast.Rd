@@ -2,13 +2,29 @@
 % Please edit documentation in R/assembly_utils.R
 \name{make_contrast}
 \alias{make_contrast}
-\title{wrapper function to easily plot output of fit_genotype_ccm}
+\title{Build WT vs KO contrasts from a fitted CCM}
 \usage{
 make_contrast(ccm, newdata = tibble(), adjust_q_values = FALSE)
 }
 \arguments{
-\item{ccm}{a cell_count_model object}
+\item{ccm}{A fitted cell count model object.}
+
+\item{newdata}{Tibble. Optional covariates to cross-join with knockout status
+before estimating abundances.}
+
+\item{adjust_q_values}{Logical. Whether to adjust q-values in
+\code{compare_abundances()}. Default is FALSE.}
+}
+\value{
+A tibble of contrast results as returned by \code{compare_abundances()}.
 }
 \description{
-wrapper function to easily plot output of fit_genotype_ccm
+Convenience wrapper around \code{estimate_abundances()} and \code{compare_abundances()}
+to compute WT vs KO contrasts for a fitted CCM, optionally across additional
+covariates supplied in \code{newdata}.
+}
+\details{
+When \code{newdata} is provided, this function evaluates contrasts for each
+combination of covariates and knockout status by cross-joining with a
+\code{knockout} column set to FALSE (WT) or TRUE (KO).
 }

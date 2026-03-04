@@ -19,10 +19,8 @@ fit_wt_model(
   batch_col = "expt",
   start_time = NULL,
   stop_time = NULL,
-  interval_step = 2,
   log_abund_detection_thresh = -5,
   keep_ccs = TRUE,
-  q_val = 0.1,
   edge_allowlist = NULL,
   edge_denylist = NULL,
   base_penalty = 1,
@@ -34,6 +32,9 @@ fit_wt_model(
   embryo_size_factors = NULL,
   batches_excluded_from_assembly = c(),
   include_time_in_nuisance = FALSE,
+  min_penalty = 0.01,
+  max_penalty = 1e+06,
+  num_bootstraps = 10,
   ...
 )
 }
@@ -66,13 +67,9 @@ fit_wt_model(
 
 \item{stop_time}{A numeric value specifying the stop time for the model. If \code{NULL}, it is inferred from the data.}
 
-\item{interval_step}{A numeric value specifying the step size for time intervals. Default is 2.}
-
 \item{log_abund_detection_thresh}{A numeric threshold for log abundance detection. Default is -5.}
 
 \item{keep_ccs}{A logical value indicating whether to retain the cell count set (CCS). Default is \code{TRUE}.}
-
-\item{q_val}{A numeric value specifying the q-value threshold for significance. Default is 0.1.}
 
 \item{edge_allowlist}{A vector of edges to allow in the model. Default is \code{NULL}.}
 
@@ -95,6 +92,10 @@ fit_wt_model(
 \item{batches_excluded_from_assembly}{A vector of batch IDs to exclude from assembly. Default is an empty vector.}
 
 \item{...}{Additional arguments passed to the underlying model fitting functions.}
+
+\item{interval_step}{A numeric value specifying the step size for time intervals. Default is 2.}
+
+\item{q_val}{A numeric value specifying the q-value threshold for significance. Default is 0.1.}
 }
 \value{
 A fitted wild type cell count model object, or \code{NULL} if no control cells are available.

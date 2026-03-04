@@ -10,14 +10,14 @@ plot_annotations(
   label_nodes_by = NULL,
   arrow_unit = 7,
   node_size = 2,
-  con_colour = "darkgrey",
+  arrow_color = "darkgrey",
   legend_position = "none",
   min_edge_size = 0.1,
   max_edge_size = 2,
   edge_weights = NULL,
   plot_labels = TRUE,
-  group_label_font_size = 1,
-  node_label_width = 50
+  label_size = 3,
+  group_label_size = 1
 )
 }
 \arguments{
@@ -31,7 +31,7 @@ plot_annotations(
 
 \item{node_size}{Numeric value specifying the size of the nodes. Default is 2.}
 
-\item{con_colour}{A character string specifying the color of the connections. Default is "darkgrey".}
+\item{arrow_color}{A character string specifying the color of the connections. Default is "darkgrey".}
 
 \item{legend_position}{A character string specifying the position of the legend. Default is "none".}
 
@@ -43,9 +43,7 @@ plot_annotations(
 
 \item{plot_labels}{Logical value indicating whether to plot labels. Default is TRUE.}
 
-\item{group_label_font_size}{Numeric value specifying the font size of group labels. Default is 1.}
-
-\item{node_label_width}{Numeric value specifying the width of node labels. Default is 50.}
+\item{group_label_size}{Numeric value specifying the font size of group labels. Default is 1.}
 }
 \value{
 A ggplot object representing the cell state graph with annotations.

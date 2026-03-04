@@ -2,16 +2,17 @@
 % Please edit documentation in R/assembly_utils.R
 \name{assemble_mt_graph}
 \alias{assemble_mt_graph}
-\title{assembles a graph using the perturbation data}
+\title{Assemble mutant transition graph from perturbation models}
 \usage{
 assemble_mt_graph(
-  wt_ccm,
+  ref_ccs,
+  wt_graph,
   perturb_models_tbl,
   interval_col = "timepoint",
   start_time = NULL,
   stop_time = NULL,
   interval_step = 2,
-  links_between_components = "none",
+  links_between_components = c("none", "ctp", "strongest-pcor", "strong-pcor"),
   log_abund_detection_thresh = -5,
   q_val = 0.1,
   newdata = tibble(),
@@ -22,6 +23,47 @@ assemble_mt_graph(
   verbose = FALSE
 )
 }
+\arguments{
+\item{ref_ccs}{Reference CCS object used for WT context.}
+
+\item{wt_graph}{WT transition graph (igraph).}
+
+\item{perturb_models_tbl}{Tibble of perturbation models, typically from
+\code{fit_mt_models()} / \code{assess_perturbation_effects()}.}
+
+\item{interval_col}{Character. Column name in \code{colData(ref_ccs@cds)} with
+time values. Default is "timepoint".}
+
+\item{start_time}{Numeric. Start time for graph assembly; defaults to min
+observed time.}
+
+\item{stop_time}{Numeric. Stop time for graph assembly; defaults to max
+observed time.}
+
+\item{interval_step}{Numeric. Step size for time discretization. Default is 2.}
+
+\item{links_between_components}{Character. Strategy for linking components.}
+
+\item{log_abund_detection_thresh}{Numeric. Log abundance threshold.}
+
+\item{q_val}{Numeric. Q-value threshold for perturbation effects.}
+
+\item{newdata}{Tibble. Optional covariates for effect estimation.}
+
+\item{break_cycles}{Logical. Whether to remove cycles in the assembled graph.}
+
+\item{component_col}{Character. Column name defining components.}
+
+\item{edge_allowlist}{Optional allowlist for edges.}
+
+\item{edge_denylist}{Optional denylist for edges.}
+
+\item{verbose}{Logical. Emit progress messages.}
+}
+\value{
+An igraph mutant supergraph.
+}
 \description{
-assembles a graph using the perturbation data
+Constructs a mutant supergraph by combining a WT graph with perturbation
+models, with optional cycle breaking.
 }

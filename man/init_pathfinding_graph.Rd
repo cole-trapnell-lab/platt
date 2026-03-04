@@ -7,11 +7,12 @@
 init_pathfinding_graph(
   ccm,
   extant_cell_type_df,
-  links_between_components = c("ctp", "none", "strongest-pcor", "strong-pcor"),
+  links_between_components = c("none", "ctp", "strongest-pcor", "strong-pcor"),
   components = "partition",
   weigh_by_pcor = F,
   edge_allowlist = NULL,
-  edge_denylist = NULL
+  edge_denylist = NULL,
+  force_allowlist = FALSE
 )
 }
 \arguments{

@@ -1,5 +1,24 @@
 # function to split genes up
 
+#' Fit per-state GLMs on pseudobulked CCS data
+#'
+#' Builds pseudobulks for the requested cell groups and fits a GLM per gene,
+#' returning coefficient matrices suitable for downstream DEG scoring.
+#'
+#' @param ccs A CCS object to pseudobulk.
+#' @param cell_groups Character vector of cell groups to include.
+#' @param genes_to_test Optional integer indices of genes to keep.
+#' @param group_nodes_by Optional column name to group states by.
+#' @param assembly_group Optional assembly group filter (currently unused).
+#' @param gene_ids Optional character vector of gene IDs to keep.
+#' @param min_samples_detected Minimum number of samples a gene must be detected in.
+#' @param min_cells_per_pseudobulk Minimum cells per pseudobulk to retain.
+#' @param nuisance_model_formula_str Nuisance formula string (without response).
+#' @param abs_expr_thresh Absolute expression threshold for shrinkage.
+#' @param cores Number of cores for model fitting.
+#'
+#' @return A list-like object from `collect_coefficients_for_shrinkage()` that
+#'   includes coefficient and standard error matrices.
 compute_glm <- function(ccs,
                         cell_groups,
                         genes_to_test = NULL,
@@ -63,6 +82,15 @@ compute_glm <- function(ccs,
   return(pb_coeffs)
 }
 
+#' Combine gene model coefficient matrices
+#'
+#' Merges coefficients and unscaled standard errors across multiple model
+#' batches into a single tibble with matrix columns.
+#'
+#' @param gene_model_list List of objects containing `coefficients` and
+#'   `stdev.unscaled` matrices.
+#'
+#' @return A tibble with `coefficients` and `stdev.unscaled` matrix columns.
 combine_gene_models <- function(gene_model_list) {
   
   pb_coeffs <- tibble(
@@ -79,6 +107,23 @@ combine_gene_models <- function(gene_model_list) {
   
 }
 
+#' Classify gene expression patterns across states
+#'
+#' Scores and classifies genes per cell state using a state transition graph
+#' and coefficient matrices from pseudobulk GLMs.
+#'
+#' @param state_graph State transition graph (igraph).
+#' @param pb_coeffs Output from `compute_glm()`, including coefficient matrices.
+#' @param pb_cds Pseudobulked CDS used for model fitting.
+#' @param states_to_assess Optional vector of states to evaluate.
+#' @param state_term Column/term name identifying states in the model.
+#' @param log_fc_thresh Log fold-change threshold for class assignment.
+#' @param abs_expr_thresh Absolute expression threshold for filtering.
+#' @param cv_threshold Coefficient of variation threshold for filtering.
+#' @param sig_thresh Significance threshold for class assignment.
+#' @param cores Number of cores for scoring.
+#'
+#' @return A tibble of per-state gene class scores, nested by cell state.
 classify_gene_patterns <- function(state_graph,
                                    pb_coeffs,
                                    pb_cds,
@@ -87,7 +132,6 @@ classify_gene_patterns <- function(state_graph,
                                    log_fc_thresh = 1,
                                    abs_expr_thresh = 1e-3,
                                    cv_threshold = 100,
-                                   n,
                                    sig_thresh = 0.05,
                                    cores = 1) {
   

@@ -11,14 +11,14 @@ plot_degs(
   facet_group = "term",
   arrow_unit = 7,
   node_size = 1,
-  con_colour = "darkgrey",
+  arrow_color = "darkgrey",
   fract_expr = 0,
   mean_expr = 0,
   legend_position = "none",
   fc_limits = c(-3, 3),
   plot_labels = T,
-  node_label_width = 50,
-  group_label_font_size = 1
+  label_size = 3,
+  group_label_size = 1
 )
 }
 \arguments{
@@ -34,7 +34,7 @@ plot_degs(
 
 \item{node_size}{Numeric value specifying the size of the nodes. Default is 1.}
 
-\item{con_colour}{A string specifying the color of the connections. Default is "darkgrey".}
+\item{arrow_color}{A string specifying the color of the connections. Default is "darkgrey".}
 
 \item{fract_expr}{Numeric value specifying the fraction of expression. Default is 0.0.}
 
@@ -46,9 +46,7 @@ plot_degs(
 
 \item{plot_labels}{Logical value indicating whether to plot labels. Default is TRUE.}
 
-\item{node_label_width}{Numeric value specifying the width of the node labels. Default is 50.}
-
-\item{group_label_font_size}{Numeric value specifying the font size of the group labels. Default is 1.}
+\item{group_label_size}{Numeric value specifying the font size of the group labels. Default is 1.}
 }
 \value{
 A ggplot object representing the cell state graph with DEGs plotted.

@@ -18,12 +18,22 @@ compare_genes_within_state_graph(
   log_fc_thresh = 1,
   abs_expr_thresh = 0.001,
   sig_thresh = 0.05,
-  min_samples_detected = 2,
+  detection_min_samples = 2,
   min_cells_per_pseudobulk = NULL,
   cores = 1,
   write_dir = NULL,
   max_simultaneous_genes = NULL,
   cv_threshold = 100,
+  filter_mode = c("global", "by_background_count"),
+  filter_only = FALSE,
+  min_mean_expr = NULL,
+  background_bottom_frac = 0.25,
+  background_quantile_p = 0.99,
+  background_count_floor = 2,
+  alpha = 0.05,
+  perf_summary_path = NULL,
+  profile = FALSE,
+  profile_out = NULL,
   ...
 )
 }
@@ -54,7 +64,8 @@ compare_genes_within_state_graph(
 
 \item{sig_thresh}{Significance threshold. Default is 0.05.}
 
-\item{min_samples_detected}{Minimum number of samples detected. Default is 2.}
+\item{detection_min_samples}{Minimum number of pseudobulk samples required for a gene to be considered detected
+(interpreted per mode: overall for global; per-arm above background for by_background_count).}
 
 \item{min_cells_per_pseudobulk}{Minimum number of cells per pseudobulk. Default is NULL.}
 
@@ -63,6 +74,14 @@ compare_genes_within_state_graph(
 \item{write_dir}{Directory to write output files. Default is NULL.}
 
 \item{max_simultaneous_genes}{Maximum number of genes to analyze simultaneously. Default is NULL.}
+
+\item{filter_mode}{Gene filtering strategy ("global" uses aggregate detection, "by_background_count" uses per-cell-type background rates).}
+
+\item{perf_summary_path}{Optional path to a TSV where runtime and filtering diagnostics will be appended.}
+
+\item{profile}{Whether to enable Rprof profiling for the DEG run.}
+
+\item{profile_out}{Path for the Rprof output (default derived from write_dir when profile = TRUE).}
 
 \item{...}{Additional arguments.}
 

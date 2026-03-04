@@ -5,7 +5,6 @@
 \title{Assess support for a graph built via perturbations}
 \usage{
 assess_support_for_transition_graph(
-  control_timeseries_ccm,
   perturbation_ccm_tbl,
   perturbation_path_tbl,
   state_transition_graph,

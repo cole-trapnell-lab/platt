@@ -2,12 +2,22 @@
 % Please edit documentation in R/assembly_utils.R
 \name{categorize_genetic_requirements}
 \alias{categorize_genetic_requirements}
-\title{This function looks at the effects of each perturbation to assemble a list
-of genes required by each cell type}
+\title{Categorize genetic requirements by cell group}
 \usage{
 categorize_genetic_requirements(perturb_ccm_tbl, state_graph)
 }
+\arguments{
+\item{perturb_ccm_tbl}{Tibble of perturbation models with a
+\code{perturb_summary_tbl} column.}
+
+\item{state_graph}{State transition graph (igraph) defining relationships
+among cell groups.}
+}
+\value{
+A tibble with per-perturbation lists of directly and indirectly lost
+cell groups.
+}
 \description{
-This function looks at the effects of each perturbation to assemble a list
-of genes required by each cell type
+Summarizes perturbation effects to identify cell groups that are directly or
+indirectly lost for each perturbation, using a state transition graph.
 }
