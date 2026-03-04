@@ -22,6 +22,7 @@ plot_cell_type_control_kinetics(
   color_points_by = NULL,
   size = 0.5,
   alpha = 0.5,
+  linewidth = 1,
   raw_counts = FALSE
 )
 }

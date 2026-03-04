@@ -9,8 +9,8 @@ fit_genotype_ccm(
   ccs,
   prior_state_transition_graph = NULL,
   interval_col = "timepoint",
-  perturbation_col = "gene_target",
-  batch_col = "expt",
+  perturbation_col = "perturbation",
+  batch_col = NULL,
   ctrl_ids = c("ctrl-uninj", "ctrl-inj", "ctrl-noto", "ctrl-mafba", "ctrl-hgfa",
     "ctrl-tbx16", "ctrl-met"),
   contrast_time_start = NULL,
@@ -41,7 +41,7 @@ to use as a constraint in the model.}
 time intervals. Default is "timepoint".}
 
 \item{perturbation_col}{Character. The column name in \code{ccs} that represents
-the perturbation (e.g., gene target). Default is "gene_target".}
+the perturbation (e.g., perturbation). Default is "perturbation".}
 
 \item{batch_col}{Character. The column name in \code{ccs} that represents the
 batch information. Default is "expt".}

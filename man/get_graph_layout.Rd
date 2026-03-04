@@ -12,7 +12,8 @@ get_graph_layout(
   group_nodes_by = NULL,
   hide_unlinked_nodes = TRUE,
   arrow_gap = 0.03,
-  num_layers = 1
+  num_layers = 1,
+  order_clusters_by_depth = FALSE
 )
 }
 \arguments{
@@ -31,6 +32,9 @@ get_graph_layout(
 \item{arrow_gap}{A numeric value specifying the gap for arrows. Default is 0.03.}
 
 \item{num_layers}{An integer specifying the number of layers for the layout. Default is 1.}
+
+\item{order_clusters_by_depth}{Logical; if TRUE, add invisible ordering edges between
+clusters sorted by median depth to encourage consistent cluster ordering.}
 }
 \value{
 A list containing the layout information and the ggnetwork object.

@@ -47,6 +47,7 @@ setClass("cell_state_graph",
 #' @param hide_unlinked_nodes Logical parameter to hide unlinked nodes. Default is FALSE.
 #' @param genetic_requirements A data frame specifying genetic requirements. Default is an empty data frame.
 #' @param num_layers Number of layers for the graph layout. Default is 1.
+#' @param order_clusters_by_depth Logical; if TRUE, order clusters left-to-right by median depth during layout.
 #' @return A new cell_state_graph object.
 #' @export
 new_cell_state_graph <- function(state_graph,
@@ -59,7 +60,8 @@ new_cell_state_graph <- function(state_graph,
                                  max_edge_size = 2,
                                  hide_unlinked_nodes = F,
                                  genetic_requirements = data.frame(),
-                                 num_layers = 1) {
+                                 num_layers = 1,
+                                 order_clusters_by_depth = FALSE) {
   assertthat::assert_that(is(state_graph, "igraph"))
   assertthat::assert_that(is(ccs, "cell_count_set"))
 
@@ -75,7 +77,8 @@ new_cell_state_graph <- function(state_graph,
     label_nodes_by = label_nodes_by,
     group_nodes_by = group_nodes_by,
     hide_unlinked_nodes = hide_unlinked_nodes,
-    num_layers = num_layers
+    num_layers = num_layers,
+    order_clusters_by_depth = order_clusters_by_depth
   )
 
   layout_info <- layout_res$layout_info
@@ -125,6 +128,8 @@ new_cell_state_graph <- function(state_graph,
 #' @param hide_unlinked_nodes A logical value indicating whether to hide unlinked nodes. Default is TRUE.
 #' @param arrow_gap A numeric value specifying the gap for arrows. Default is 0.03.
 #' @param num_layers An integer specifying the number of layers for the layout. Default is 1.
+#' @param order_clusters_by_depth Logical; if TRUE, add invisible ordering edges between
+#' clusters sorted by median depth to encourage consistent cluster ordering.
 #'
 #' @return A list containing the layout information and the ggnetwork object.
 #'
@@ -147,7 +152,8 @@ get_graph_layout <- function(ccs,
                              group_nodes_by = NULL,
                              hide_unlinked_nodes = TRUE,
                              arrow_gap = 0.03,
-                             num_layers = 1) {
+                             num_layers = 1,
+                             order_clusters_by_depth = FALSE) {
   if (is(state_graph, "igraph")) {
     edges <- state_graph %>% igraph::as_data_frame()
   } else {
@@ -172,27 +178,29 @@ get_graph_layout <- function(ccs,
   }
 
   edges <- edges %>% dplyr::ungroup()
-  edges <- edges %>% dplyr::select(from, to)
+  edges <- edges %>%
+    dplyr::select(from, to) %>%
+    dplyr::distinct()
   edges$weight <- 1
   edges <- edges %>% dplyr::filter(from %in% node_metadata$id & to %in% node_metadata$id)
-  
-  bidirectional_edges = find_bidirectional_edges(state_graph)
-  
+
+  bidirectional_edges <- find_bidirectional_edges(state_graph)
+
   reversed_edges <- bidirectional_edges %>%
-    dplyr::rename(temp = from) %>%
-    dplyr::mutate(from = to, to = temp) %>%
+    dplyr::rename(tmp = from) %>%
+    dplyr::mutate(from = to, to = tmp) %>%
     dplyr::select(from, to)
-  reversed_edges$edge = paste0(reversed_edges$from, reversed_edges$to)
-  
+  reversed_edges$edge <- paste0(reversed_edges$from, reversed_edges$to)
+
 
   filtered_edges <- edges %>%
     dplyr::anti_join(bidirectional_edges, by = c("from", "to"))
-  filtered_edges$edge = paste0(filtered_edges$from, filtered_edges$to)
-  
-  
-  filtered_edges$bidirectional = (filtered_edges$edge %in% reversed_edges$edge)
-  filtered_edges$edge = NULL
-  
+  filtered_edges$edge <- paste0(filtered_edges$from, filtered_edges$to)
+
+
+  filtered_edges$bidirectional <- (filtered_edges$edge %in% reversed_edges$edge)
+  filtered_edges$edge <- NULL
+
   G <- filtered_edges %>%
     dplyr::distinct() %>%
     igraph::graph_from_data_frame(directed = TRUE, vertices = node_metadata)
@@ -202,7 +210,8 @@ get_graph_layout <- function(ccs,
     node_metadata,
     edge_labels = NULL,
     weighted = FALSE,
-    num_layers = num_layers
+    num_layers = num_layers,
+    order_clusters_by_depth = order_clusters_by_depth
   )
 
   gvizl_coords <- layout_info$gvizl_coords
@@ -270,20 +279,20 @@ find_bidirectional_edges <- function(graph) {
   if (!igraph::is.directed(graph)) {
     stop("Graph must be directed to find bidirectional edges.")
   }
-  
-  edges <- igraph::as_data_frame(graph, what = "edges")
-  
+
+  edges <- igraph::as_data_frame(graph, what = "edges") %>%
+    dplyr::distinct(from, to)
+
   # Create a pair key to identify reverse duplicates
   edges$pair_key <- paste(pmin(edges$from, edges$to), pmax(edges$from, edges$to), sep = "_")
-  
+
   # Find keys that occur twice (i.e., bidirectional)
   bidir_keys <- edges %>%
     dplyr::group_by(pair_key) %>%
     dplyr::filter(n() == 2) %>%
-    dplyr::slice(1) %>%  # Keep only one of the two directions
+    dplyr::slice(1) %>% # Keep only one of the two directions
     dplyr::ungroup() %>%
     dplyr::select(from, to)
-  
+
   return(bidir_keys)
 }
-

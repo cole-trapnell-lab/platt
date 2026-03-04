@@ -15,7 +15,8 @@ new_cell_state_graph(
   max_edge_size = 2,
   hide_unlinked_nodes = F,
   genetic_requirements = data.frame(),
-  num_layers = 1
+  num_layers = 1,
+  order_clusters_by_depth = FALSE
 )
 }
 \arguments{
@@ -40,6 +41,8 @@ new_cell_state_graph(
 \item{genetic_requirements}{A data frame specifying genetic requirements. Default is an empty data frame.}
 
 \item{num_layers}{Number of layers for the graph layout. Default is 1.}
+
+\item{order_clusters_by_depth}{Logical; if TRUE, order clusters left-to-right by median depth during layout.}
 }
 \value{
 A new cell_state_graph object.

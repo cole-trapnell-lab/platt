@@ -11,7 +11,6 @@ assemble_wt_graph(
   cell_group,
   newdata = tibble(),
   main_model_formula_str = NULL,
-  num_breaks = 4,
   nuisance_model_formula_str = "~1",
   ctrl_ids = NULL,
   mt_ids = NULL,
@@ -22,13 +21,17 @@ assemble_wt_graph(
   start_time = NULL,
   stop_time = NULL,
   interval_step = 2,
-  links_between_components = c("ctp", "none", "strongest-pcor", "strong-pcor"),
+  links_between_components = c("none", "ctp", "strongest-pcor", "strong-pcor"),
   log_abund_detection_thresh = -5,
   q_val = 0.1,
+  min_interval = 4,
+  max_interval = 24,
+  min_pathfinding_lfc = 0,
   break_cycles = TRUE,
   edge_allowlist = NULL,
   edge_denylist = NULL,
   component_col = "partition",
+  force_allowlist = FALSE,
   verbose = FALSE
 )
 }
@@ -44,8 +47,6 @@ assemble_wt_graph(
 \item{newdata}{A tibble containing new data for predictions (default: empty tibble).}
 
 \item{main_model_formula_str}{A string specifying the main model formula (default: NULL).}
-
-\item{num_breaks}{Number of breaks for discretizing continuous variables (default: 4).}
 
 \item{nuisance_model_formula_str}{A string specifying the nuisance model formula (default: "~1").}
 
@@ -83,6 +84,8 @@ assemble_wt_graph(
 \item{component_col}{Column name representing components (default: "partition").}
 
 \item{verbose}{Logical indicating whether to print verbose output (default: FALSE).}
+
+\item{num_time_breaks}{Number of breaks for discretizing continuous variables (default: 4).}
 }
 \value{
 A state transition graph object representing the transitions between

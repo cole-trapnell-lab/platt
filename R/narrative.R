@@ -192,11 +192,6 @@ get_descendants <- function(cell_type, combined_psg) {
     setdiff(cell_type)
 }
 
-# Helper: Get direct parent(s) of a cell type
-get_dir_parents <- function(cell_type, combined_psg) {
-  get_parents(combined_psg, cell_type)
-}
-
 get_roots <- function(ct, combined_psg) {
   g <- coerce_state_graph(combined_psg)
   # Find all vertices in the connected component containing ct
@@ -304,6 +299,9 @@ summarize_cell_type_impact <- function(
   precompute_data <- load_ai_precompute_for_cell_types(cell_types = ct, ai_notes_path = ai_notes_path)
   pathway_background <- precompute_data$pathway_background
   sig_pathways <- precompute_data$sig_pathways[[1]]
+  if (is.null(sig_pathways) || !is.data.frame(sig_pathways)) {
+    sig_pathways <- tibble::tibble(pathway = character())
+  }
   ancestor_specific_pathways <- sig_pathways %>%
     distinct(pathway) %>%
     rename(gs_name = pathway)
@@ -477,6 +475,9 @@ build_lineage_context <- function(ct, parents, results, all_types = NULL) {
 
 # Helper: Convert a list of Python DisruptedPathway objects to a tibble
 py_disrupted_pathways_to_tibble <- function(x) {
+  if (inherits(x, "data.frame")) {
+    return(tibble::as_tibble(x))
+  }
   if (is.null(x) || length(x) == 0) {
     return(tibble::tibble(
       name = character(),
@@ -509,13 +510,22 @@ py_disrupted_pathways_to_tibble <- function(x) {
     if (inherits(el, "python.builtin.object")) reticulate::py_to_r(el) else el
   })
   # If x is a list of lists (the expected case)
-  tibble::tibble(
-    name = purrr::map_chr(x, ~ .x$name %||% NA_character_),
-    description = purrr::map_chr(x, ~ .x$description %||% NA_character_),
-    dysregulated_genes = purrr::map_chr(x, ~ {
-      dg <- .x$dysregulated_genes %||% NA_character_
-      if (is.character(dg) && length(dg) > 1) paste(dg, collapse = ", ") else dg
-    })
+  tryCatch(
+    {
+      tibble::tibble(
+        name = purrr::map_chr(x, ~ .x$name %||% NA_character_),
+        description = purrr::map_chr(x, ~ .x$description %||% NA_character_),
+        dysregulated_genes = purrr::map_chr(x, ~ {
+          dg <- .x$dysregulated_genes %||% NA_character_
+          if (is.character(dg) && length(dg) > 1) paste(dg, collapse = ", ") else dg
+        })
+      )
+    },
+    error = function(e) {
+      preview <- paste(utils::capture.output(str(x, max.level = 2)), collapse = " ")
+      message("LLM disrupted_pathways parse error; structure preview: ", preview)
+      stop(e)
+    }
   )
 }
 
@@ -654,6 +664,11 @@ summarize_impact_in_lineage_context <- function(
             NULL
           }
         )
+        if (verbose && !is.null(llm_structured)) {
+          message(sprintf("[DEBUG] LLM structured keys for %s: %s", ct, paste(names(llm_structured), collapse = ", ")))
+          dp <- llm_structured$disrupted_pathways
+          message(sprintf("[DEBUG] LLM disrupted_pathways for %s: %s", ct, paste(utils::capture.output(str(dp, max.level = 2)), collapse = " ")))
+        }
         concise_summary <- if (!is.null(llm_structured) && !is.null(llm_structured$concise_summary)) llm_structured$concise_summary else NA_character_
         disrupted_pathways <- if (!is.null(llm_structured)) llm_structured$disrupted_pathways else NULL
         other_dysregulated_genes <- if (!is.null(llm_structured)) llm_structured$other_dysregulated_genes else NULL
@@ -733,24 +748,6 @@ summarize_impact_in_lineage_context <- function(
   if (!"llm_disrupted_pathways" %in% names(results)) {
     results$llm_disrupted_pathways <- vector("list", nrow(results))
   }
-
-  results <- results %>%
-    mutate(
-      llm_disrupted_pathways = purrr::map(llm_disrupted_pathways, function(x) {
-        tryCatch(
-          py_disrupted_pathways_to_tibble(x),
-          error = function(e) {
-            warning(sprintf("Error processing llm_disrupted_pathways: %s", e$message))
-            tibble::tibble(
-              name = character(),
-              description = character(),
-              dysregulated_genes = character()
-            )
-          }
-        )
-      })
-    )
-  # ...existing code...
 
   results <- results %>%
     mutate(

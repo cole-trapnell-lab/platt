@@ -19,7 +19,7 @@ compare_genes_over_graph(
   min_samples_detected = 2,
   min_cells_per_pseudobulk = 3,
   cores = 1,
-  cv_threshold = 10,
+  cv_threshold = 100,
   ...
 )
 }

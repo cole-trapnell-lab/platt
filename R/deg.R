@@ -537,6 +537,39 @@ get_parents <- function(state_graph, cell_state) {
   }
 }
 
+#' Recursively Get All Ancestor Parents in a State Graph
+#'
+#' This function retrieves all upstream ancestor parents for a given cell state.
+#' It guards against cycles by tracking visited nodes.
+#'
+#' @param state_graph An igraph or cell_state_graph object.
+#' @param cell_state The cell state for which to find all ancestor parents.
+#' @param visited Internal recursion accumulator of visited nodes.
+#'
+#' @return A character vector of unique ancestor parent node names.
+#' @export
+get_all_parents <- function(state_graph, cell_state, visited = character()) {
+  if (cell_state %in% visited) {
+    return(character())
+  }
+
+  direct_parents <- get_parents(state_graph, cell_state)
+  if (length(direct_parents) == 0 || all(is.na(direct_parents))) {
+    return(character())
+  }
+
+  direct_parents <- unique(stats::na.omit(direct_parents))
+  ancestor_parents <- unlist(
+    lapply(
+      direct_parents,
+      function(parent_node) get_all_parents(state_graph, parent_node, c(visited, cell_state))
+    ),
+    use.names = FALSE
+  )
+
+  unique(c(direct_parents, ancestor_parents))
+}
+
 #' Get Children of a Cell State in a State Graph
 #'
 #' This function retrieves the children of a given cell state in a state graph.
@@ -1194,9 +1227,9 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
 
 #' Compare Gene Expression Within State Graph
 #'
-#' This function compares gene expression within a state graph for a given cell cluster set (ccs).
+#' This function compares gene expression within a state graph for a given cell count set (ccs).
 #'
-#' @param ccs A cell cluster set object.
+#' @param ccs A cell count set object.
 #' @param perturbation_col The column name in the cell data set that contains perturbation information. Default is "perturbation".
 #' @param control_ids A vector of control IDs. Default is c("Control").
 #' @param nuisance_model_formula_str A string representing the nuisance model formula. Default is "0".

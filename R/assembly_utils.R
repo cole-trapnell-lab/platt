@@ -1,3 +1,16 @@
+#' Get perturbation time window from a CCS object
+#'
+#' Returns the start and stop times (based on `interval_col`) for samples
+#' matching a perturbation or genotype within a cell count dataset.
+#'
+#' @param genotype Character or character vector. Perturbation/genotype IDs to match.
+#' @param ccs A cell count set object with sample metadata in `colData(ccs)`.
+#' @param interval_col Character. Column name in `colData(ccs)` with time values.
+#' @param perturbation_col Character. Column name in `colData(ccs)` with
+#'   perturbation/genotype labels. Default is "perturbation".
+#'
+#' @return A tibble with `start_time` and `stop_time` columns.
+#'
 #' @export
 get_time_window <- function(genotype, ccs, interval_col, perturbation_col = "perturbation") {
   subset_ccs <- ccs[, replace_na(colData(ccs)[[perturbation_col]] %in% genotype, F)]
@@ -7,6 +20,22 @@ get_time_window <- function(genotype, ccs, interval_col, perturbation_col = "per
   return(tibble(start_time = knockout_time_start, stop_time = knockout_time_stop))
 }
 
+#' Summarize perturbation effects across timepoints
+#'
+#' Builds a tidy table of perturbation effects by combining per-timepoint
+#' contrasts from a fitted CCM.
+#'
+#' @param ccm A fitted CCM object with `ccs` and model information.
+#' @param interval_col Character. Column name in `colData(ccm@ccs)` that defines
+#'   timepoints. Default is "timepoint".
+#' @param newdata Tibble. Optional metadata to cross-join with timepoints before
+#'   computing contrasts.
+#' @param adjust_q_values Logical. Whether to adjust q-values in the contrast
+#'   calculation. Default is FALSE.
+#'
+#' @return A tibble with one row per timepoint (and any `newdata` combinations)
+#'   plus contrast results.
+#'
 #' @export
 get_perturbation_effects <- function(ccm, interval_col = "timepoint", newdata = tibble(), adjust_q_values = FALSE) {
   timepoints <- colData(ccm@ccs)[[interval_col]] %>% unique()
@@ -270,8 +299,25 @@ fit_genotype_ccm <- function(genotype,
   return(genotype_ccm)
 }
 
-#' wrapper function to easily plot output of fit_genotype_ccm
-#' @param ccm a cell_count_model object
+#' Build WT vs KO contrasts from a fitted CCM
+#'
+#' Convenience wrapper around `estimate_abundances()` and `compare_abundances()`
+#' to compute WT vs KO contrasts for a fitted CCM, optionally across additional
+#' covariates supplied in `newdata`.
+#'
+#' @param ccm A fitted cell count model object.
+#' @param newdata Tibble. Optional covariates to cross-join with knockout status
+#'   before estimating abundances.
+#' @param adjust_q_values Logical. Whether to adjust q-values in
+#'   `compare_abundances()`. Default is FALSE.
+#'
+#' @return A tibble of contrast results as returned by `compare_abundances()`.
+#'
+#' @details
+#' When `newdata` is provided, this function evaluates contrasts for each
+#' combination of covariates and knockout status by cross-joining with a
+#' `knockout` column set to FALSE (WT) or TRUE (KO).
+#'
 #' @export
 make_contrast <- function(ccm, newdata = tibble(), adjust_q_values = FALSE) {
   if (nrow(newdata) > 0) {
@@ -287,372 +333,6 @@ make_contrast <- function(ccm, newdata = tibble(), adjust_q_values = FALSE) {
   tbl <- compare_abundances(ccm, wt_cond, mt_cond, adjust_q_values = adjust_q_values)
   return(tbl)
 }
-
-#' Assemble Partition
-#'
-#' This function assembles a partition for a given cell dataset (CDS) by fitting wild-type (WT)
-#' and mutant (MT) models, constructing state transition graphs, and assessing perturbation effects.
-#'
-#' @param cds A cell dataset object.
-#' @param sample_group A string specifying the sample group column in the CDS.
-#' @param cell_group A string specifying the cell group column in the CDS.
-#' @param partition_name A string specifying the name of the partition (default: NULL).
-#' @param main_model_formula_str A string specifying the main model formula (default: NULL).
-#' @param start_time Numeric value specifying the start time for the analysis (default: 18).
-#' @param stop_time Numeric value specifying the stop time for the analysis (default: 72).
-#' @param interval_col A string specifying the column for time intervals (default: "timepoint").
-#' @param nuisance_model_formula_str A string specifying the nuisance model formula (default: "~1").
-#' @param ctrl_ids A vector of control IDs (default: NULL).
-#' @param mt_ids A vector of mutant IDs (default: NULL).
-#' @param sparsity_factor Numeric value specifying the sparsity factor (default: 0.01).
-#' @param perturbation_col A string specifying the perturbation column (default: "gene_target").
-#' @param batch_col A string specifying the batch column (default: "expt").
-#' @param max_num_cells Numeric value specifying the maximum number of cells to include (default: NULL).
-#' @param verbose Logical indicating whether to print verbose messages (default: FALSE).
-#' @param keep_ccs Logical indicating whether to keep connected components (default: TRUE).
-#' @param num_threads Numeric value specifying the number of threads to use (default: 1).
-#' @param backend A string specifying the backend to use for optimization (default: "nlopt").
-#' @param q_val Numeric value specifying the q-value threshold for perturbation effects (default: 0.1).
-#' @param vhat_method A string specifying the method for variance estimation (default: "bootstrap").
-#' @param num_bootstraps Numeric value specifying the number of bootstraps for variance estimation (default: 10).
-#' @param newdata A tibble containing new data for predictions (default: tibble()).
-#' @param edge_allowlist A list of edges to allow in the graph (default: NULL).
-#' @param min_lfc Numeric value specifying the minimum log fold change for perturbation effects (default: 0).
-#' @param links_between_components A character vector specifying the type of links between components
-#'        (default: c("ctp", "none", "strongest-pcor", "strong-pcor")).
-#' @param log_abund_detection_thresh Numeric value specifying the log abundance detection threshold (default: -5).
-#' @param batches_excluded_from_assembly A vector of batch names to exclude from assembly (default: c()).
-#' @param component_col A string specifying the column for components (default: "partition").
-#' @param embryo_size_factors A vector of size factors for embryos (default: NULL).
-#'
-#' @return A tibble containing the results of the partition assembly, including WT and MT graphs,
-#'         perturbation effects, and state graph plots.
-#'
-#' @details
-#' The function performs the following steps:
-#' - Prepares the CDS by adding subassembly group and cell state information.
-#' - Fits a wild-type model and assembles a WT state transition graph.
-#' - Fits mutant models and assembles MT state transition graphs.
-#' - Assesses perturbation effects and constructs annotated graphs.
-#' - Handles errors gracefully and returns NA for failed steps.
-#'
-#' @examples
-#' # Example usage:
-#' results <- assemble_partition(
-#'   cds = my_cds,
-#'   sample_group = "sample",
-#'   cell_group = "cell_type",
-#'   partition_name = "partition_1",
-#'   main_model_formula_str = "~timepoint",
-#'   start_time = 18,
-#'   stop_time = 72
-#' )
-#'
-#' @export
-assemble_partition <- function(cds,
-                               sample_group,
-                               cell_group,
-                               partition_name = NULL,
-                               main_model_formula_str = NULL,
-                               start_time = 18,
-                               stop_time = 72,
-                               interval_col = "timepoint",
-                               nuisance_model_formula_str = "~1",
-                               ctrl_ids = NULL,
-                               mt_ids = NULL,
-                               sparsity_factor = 0.01,
-                               perturbation_col = "perturbation",
-                               batch_col = "expt",
-                               max_num_cells = NULL,
-                               verbose = FALSE,
-                               keep_ccs = TRUE,
-                               num_threads = 1,
-                               backend = "nlopt",
-                               q_val = 0.1,
-                               vhat_method = "bootstrap",
-                               num_bootstraps = 10,
-                               newdata = tibble(),
-                               edge_allowlist = NULL,
-                               min_lfc = 0,
-                               links_between_components = c("none", "ctp", "strongest-pcor", "strong-pcor"),
-                               log_abund_detection_thresh = -5,
-                               batches_excluded_from_assembly = c(),
-                               component_col = "partition",
-                               embryo_size_factors = NULL,
-                               force_allowlist = FALSE) {
-  colData(cds)$subassembly_group <- stringr::str_c(partition_name, colData(cds)[, cell_group], sep = "-")
-  colData(cds)[["cell_state"]] <- as.character(colData(cds)[[cell_group]])
-  # selected_colData = selected_colData %>% mutate(cell_state = paste0(partition_name, cell_state))
-  selected_colData <- colData(cds) %>%
-    as_tibble() %>%
-    dplyr::select(cell, !!sym(sample_group), cluster, !!sym(cell_group), subassembly_group)
-
-  selected_colData$cds_row_id <- colData(cds) %>%
-    as.data.frame() %>%
-    row.names()
-
-  partition_results <- selected_colData %>% tidyr::nest(data = c(cds_row_id, cell, !!sym(sample_group), cluster, !!sym(cell_group), subassembly_group))
-
-  # partition_results$cell_plot_state = list(plot_cells(cds, color_cells_by="cell_state"))
-  # partition_results$cell_plot_time = list(plot_cells(cds, color_cells_by=interval_col))
-  # partition_results$cell_plot_type = list(plot_cells(cds, color_cells_by="cell_type_sub"))
-
-  if (length(unique(selected_colData[["cell_state"]])) <= 1) {
-    partition_results$wt_graph <- list(NA)
-    partition_results$mt_graph <- list(NA)
-    partition_results$perturbation_effects <- list(NA)
-    partition_results$wt_state_graph_plot <- list(NA)
-    partition_results$mt_state_graph_plot <- list(NA)
-    return(partition_results)
-  }
-
-  # Exclude user-specified experiments prior to assembly but after iterative UMAP & clustering:
-  cds <- cds[, colData(cds)[[batch_col]] %in% batches_excluded_from_assembly == FALSE]
-
-  tryCatch(
-    {
-      message("Starting wild-type fit...")
-      wt_ccm <- suppressWarnings(fit_wt_model(cds,
-        sample_group = sample_group,
-        cell_group = cell_group,
-        main_model_formula_str = main_model_formula_str,
-        start_time = start_time,
-        stop_time = stop_time,
-        interval_col = interval_col,
-        nuisance_model_formula_str = nuisance_model_formula_str,
-        ctrl_ids = ctrl_ids,
-        sparsity_factor = sparsity_factor,
-        perturbation_col = perturbation_col,
-        batch_col = batch_col,
-        keep_ccs = keep_ccs,
-        verbose = verbose,
-        num_threads = num_threads,
-        backend = backend,
-        vhat_method = vhat_method,
-        edge_allowlist = edge_allowlist,
-        num_bootstraps = num_bootstraps,
-        embryo_size_factors = embryo_size_factors
-      ))
-
-      if (is.null(wt_ccm) || is.na(wt_ccm)) {
-        partition_results$wt_graph <- list(NA)
-        partition_results$mt_graph <- list(NA)
-        partition_results$perturbation_effects <- list(NA)
-        partition_results$wt_state_graph_plot <- list(NA)
-        partition_results$mt_state_graph_plot <- list(NA)
-        # stop("Error: fit_wt_model() failed")
-        return(partition_results)
-        # return(partition_results)
-      }
-
-      # FIXME: probably need to pass additional args here sometimes:
-      wt_extant_cell_type_df <- get_extant_cell_types(wt_ccm, start_time, stop_time, interval_col = interval_col, newdata = newdata)
-
-      message("Assembling wild-type graph...")
-      wt_graph <- assemble_wt_graph(cds,
-        wt_ccm,
-        sample_group = sample_group,
-        cell_group = cell_group,
-        main_model_formula_str = main_model_formula_str,
-        start_time = start_time,
-        stop_time = stop_time,
-        interval_col = interval_col,
-        newdata = newdata,
-        num_time_breaks = num_time_breaks,
-        # nuisance_model_formula_str = "~expt",
-        links_between_components = links_between_components,
-        ctrl_ids = ctrl_ids,
-        edge_allowlist = edge_allowlist,
-        sparsity_factor = sparsity_factor,
-        perturbation_col = perturbation_col,
-        component_col = component_col,
-        verbose = verbose,
-        force_allowlist = force_allowlist
-      )
-
-      if (is.null(wt_graph) == FALSE) {
-        # partition_results$wt_ccm = list(wt_ccm)
-        igraph::E(wt_graph)$assembly_group <- partition_name
-        if (cell_group == "cell_state") {
-          igraph::V(wt_graph)$name <- stringr::str_c(partition_name, igraph::V(wt_graph)$name, sep = "-")
-        } else {
-          igraph::V(wt_graph)$name <- igraph::V(wt_graph)$name
-        }
-        partition_results$wt_graph <- list(wt_graph)
-
-        # partition_results$wt_state_graph_plot = list(plot_state_graph_annotations(wt_ccm, wt_graph,
-        #                                                                           color_nodes_by = "timepoint",
-        #                                                                           group_nodes_by="cell_type_sub",
-        #                                                                           edge_weights = "support",
-        #                                                                           hide_unlinked_nodes = FALSE))
-      } else {
-        partition_results$wt_graph <- list(NA)
-        partition_results$wt_state_graph_plot <- list(NA)
-      }
-
-      message("Starting mutant fits...")
-      perturb_models_tbl <- suppressWarnings(fit_mt_models(cds,
-        sample_group = sample_group,
-        cell_group = cell_group,
-        main_model_formula_str = main_model_formula_str,
-        nuisance_model_formula_str = nuisance_model_formula_str,
-        start_time = start_time,
-        stop_time = stop_time,
-        interval_col = interval_col,
-        ctrl_ids = ctrl_ids,
-        mt_ids = mt_ids,
-        sparsity_factor = sparsity_factor,
-        perturbation_col = perturbation_col,
-        verbose = verbose,
-        num_threads = num_threads,
-        backend = backend,
-        keep_ccs = keep_ccs,
-        batch_col = batch_col,
-        # edge_allowlist = edge_allowlist,
-        vhat_method = vhat_method,
-        num_bootstraps = num_bootstraps,
-        embryo_size_factors = embryo_size_factors
-      ))
-
-      perturb_models_tbl <- perturb_models_tbl %>% filter(!is.na(perturb_ccm))
-
-      if (is.null(perturb_models_tbl)) {
-        partition_results$wt_graph <- list(NA)
-        partition_results$mt_graph <- list(NA)
-        partition_results$perturbation_effects <- list(NA)
-        partition_results$wt_state_graph_plot <- list(NA)
-        partition_results$mt_state_graph_plot <- list(NA)
-        return(partition_results)
-        # stop("Error: fit_mt_models() failed")
-      }
-
-      perturb_models_tbl <- assess_perturbation_effects(perturb_models_tbl,
-        q_val = q_val,
-        start_time = start_time,
-        stop_time = stop_time,
-        # perturbation_col = perturbation_col,
-        interval_col = interval_col,
-        log_abund_detection_thresh = log_abund_detection_thresh,
-        min_lfc = min_lfc,
-        verbose = verbose,
-        newdata = newdata
-      )
-
-      # this makes a prediction for every measured timepoint
-      # this is for useful to save for plotting later
-      perturb_models_tbl <- perturb_models_tbl %>%
-        mutate(perturbation_table = purrr::map(
-          .f = purrr::possibly(get_perturbation_effects),
-          .x = perturb_ccm,
-          interval_col = interval_col,
-          newdata = newdata
-        ))
-
-
-      message("Assembling mutant graphs...")
-      mt_graph <- assemble_mt_graph(ref_ccs,
-        wt_graph,
-        perturb_models_tbl,
-        newdata = newdata,
-        start_time = start_time,
-        stop_time = stop_time,
-        interval_col = interval_col,
-        links_between_components = links_between_components,
-        # perturbation_col = perturbation_col,
-        # edge_allowlist = edge_allowlist,
-        component_col = component_col,
-        verbose = verbose
-      )
-
-      # partition_results$wt_ccm = list(wt_ccm)
-      if (is.null(mt_graph) == FALSE) {
-        igraph::E(mt_graph)$assembly_group <- partition_name
-
-        if (cell_group == "cell_state") {
-          igraph::V(mt_graph)$name <- stringr::str_c(partition_name, igraph::V(mt_graph)$name, sep = "-")
-        } else {
-          igraph::V(mt_graph)$name <- igraph::V(mt_graph)$name
-        }
-        merge_wt_graph_edges <- igraph::as_data_frame(wt_graph)
-        merge_mt_graph_edges <- igraph::as_data_frame(mt_graph)
-
-        merge_wt_graph_edges <- merge_wt_graph_edges %>% filter(to %in% merge_mt_graph_edges$to == FALSE) # exclude WT edges to nodes that have at least one mutant-supported parent
-
-        merge_wt_graph_nodes <- igraph::as_data_frame(wt_graph, what = "vertices")
-        merge_mt_graph_nodes <- igraph::as_data_frame(mt_graph, what = "vertices")
-
-        if (cell_group == "cell_state") {
-          merge_annotated_graph_nodes <- data.frame(name = stringr::str_c(partition_name, row.names(wt_ccm@ccs), sep = "-"))
-        } else {
-          merge_annotated_graph_nodes <- data.frame(name = row.names(wt_ccm@ccs))
-        }
-
-        merge_annotated_graph_nodes <- left_join(merge_annotated_graph_nodes, merge_mt_graph_nodes)
-
-        mt_only <- setdiff(merge_mt_graph_edges %>% select(from, to), merge_wt_graph_edges %>%
-          select(from, to)) %>% as.data.frame()
-
-
-        # merge_wt_graph_edges doesn't have the assembly group name
-        merge_graph_annotated <- left_join(merge_wt_graph_edges, merge_mt_graph_edges, by = c("from", "to", "assembly_group"))
-        merge_graph_annotated <- merge_graph_annotated %>% select(-support)
-
-        # BREAK
-        merge_graph_annotated <- rbind(
-          merge_graph_annotated,
-          merge_mt_graph_edges %>% inner_join(mt_only)
-        )
-        merge_graph_annotated <- igraph::graph_from_data_frame(merge_graph_annotated, vertices = merge_annotated_graph_nodes)
-        merge_graph_annotated <- platt:::break_cycles_in_state_transition_graph(merge_graph_annotated, "total_perturb_path_score_supporting")
-
-        mt_graph <- merge_graph_annotated
-
-        partition_results$mt_graph <- list(mt_graph)
-        perturbation_effects <- perturb_models_tbl %>%
-          dplyr::select(perturb_name, perturb_summary_tbl) %>%
-          tidyr::unnest(perturb_summary_tbl)
-
-        perturbation_effects$cell_group <- stringr::str_c(partition_name, perturbation_effects$cell_group, sep = "-")
-        perturbation_effects <- perturbation_effects %>% tidyr::nest(perturb_summary_tbl = !perturb_name)
-        partition_results$perturbation_effects <- list(perturbation_effects)
-
-        perturbation_table <- perturb_models_tbl %>%
-          dplyr::select(perturb_name, perturbation_table) %>%
-          tidyr::unnest(perturbation_table)
-        partition_results$perturbation_table <- list(perturbation_table)
-
-        # this is failing because cell state is not matching
-        # partition_results$mt_state_graph_plot = list(plot_state_graph_annotations(wt_ccm@ccs,
-        #                                                                         mt_graph,
-        #                                                                         label_nodes_by="global_cell_state",
-        #                                                                         #color_nodes_by = "timepoint",
-        #                                                                         group_nodes_by="cell_type_sub",
-        #                                                                         label_edges_by="support_label",
-        #                                                                         edge_weights = "num_perturbs_supporting",
-        #                                                                         hide_unlinked_nodes = TRUE))
-      } else {
-        partition_results$mt_graph <- list(NA)
-        partition_results$mt_state_graph_plot <- list(NA)
-        partition_results$perturbation_effects <- list(NA)
-        partition_results$perturbation_table <- list(NA)
-      }
-      partition_results$mt_graph_denylist <- list(NA)
-      partition_results$mt_graph_denylist_plot <- list(NA)
-    },
-    error = function(e) {
-      print(e)
-      partition_results$wt_graph <- list(NA)
-      partition_results$mt_graph <- list(NA)
-      partition_results$perturbation_effects <- list(NA)
-      partition_results$wt_state_graph_plot <- list(NA)
-      partition_results$mt_state_graph_plot <- list(NA)
-      return(partition_results)
-    }
-  )
-
-  return(partition_results)
-}
-
 
 #' Fit Wild Type Model
 #'
@@ -987,7 +667,8 @@ assemble_wt_graph <- function(cds,
     edges_to_remove <- igraph::as_data_frame(wt_state_transition_graph, what = "edges") %>%
       inner_join(edge_denylist, by = c("from", "to"))
     if (nrow(edges_to_remove) > 0) {
-      edge_ids <- igraph::get.edge.ids(wt_state_transition_graph, t(as.matrix(edges_to_remove[, c("from", "to")])))
+      vp <- as.vector(t(as.matrix(edges_to_remove[, c("from", "to")])))
+      edge_ids <- igraph::get_edge_ids(wt_state_transition_graph, vp)
       wt_state_transition_graph <- igraph::delete_edges(wt_state_transition_graph, edge_ids)
     }
   }
@@ -1157,7 +838,34 @@ fit_mt_models <- function(cds,
   return(perturb_models_tbl)
 }
 
-#' assembles a graph using the perturbation data
+#' Assemble mutant transition graph from perturbation models
+#'
+#' Constructs a mutant supergraph by combining a WT graph with perturbation
+#' models, with optional cycle breaking.
+#'
+#' @param ref_ccs Reference CCS object used for WT context.
+#' @param wt_graph WT transition graph (igraph).
+#' @param perturb_models_tbl Tibble of perturbation models, typically from
+#'   `fit_mt_models()` / `assess_perturbation_effects()`.
+#' @param interval_col Character. Column name in `colData(ref_ccs@cds)` with
+#'   time values. Default is "timepoint".
+#' @param start_time Numeric. Start time for graph assembly; defaults to min
+#'   observed time.
+#' @param stop_time Numeric. Stop time for graph assembly; defaults to max
+#'   observed time.
+#' @param interval_step Numeric. Step size for time discretization. Default is 2.
+#' @param links_between_components Character. Strategy for linking components.
+#' @param log_abund_detection_thresh Numeric. Log abundance threshold.
+#' @param q_val Numeric. Q-value threshold for perturbation effects.
+#' @param newdata Tibble. Optional covariates for effect estimation.
+#' @param break_cycles Logical. Whether to remove cycles in the assembled graph.
+#' @param component_col Character. Column name defining components.
+#' @param edge_allowlist Optional allowlist for edges.
+#' @param edge_denylist Optional denylist for edges.
+#' @param verbose Logical. Emit progress messages.
+#'
+#' @return An igraph mutant supergraph.
+#'
 #' @export
 assemble_mt_graph <- function(ref_ccs,
                               wt_graph,
@@ -1230,358 +938,19 @@ assemble_mt_graph <- function(ref_ccs,
 }
 
 
-default_resolution_fun <- function(num_cells, min_res = 5e-6, max_res = 1e-5, max_num_cells = NULL) {
-  if (is.null(max_num_cells)) {
-    max_num_cells <- num_cells
-  }
-  resolution <- approxfun(c(0, log10(max_num_cells)), c(min_res, max_res))(log10(num_cells))
-  reflected_resolution <- (max_res - resolution) + min_res
-  return(reflected_resolution)
-}
-
-
-#' @export
-subcluster_cds <- function(cds,
-                           recursive_subcluster = FALSE,
-                           partition_name = NULL,
-                           num_dim = NULL,
-                           max_components = 3,
-                           resolution_fun = NULL,
-                           max_num_cells = NULL,
-                           min_res = 5e-6,
-                           max_res = 1e-5,
-                           cluster_k = 20,
-                           num_threads = 1) {
-  message("Clustering all cells")
-
-  if (is.null(max_num_cells)) {
-    max_num_cells <- ncol(cds)
-  }
-
-  if (is.null(resolution_fun)) {
-    resolution_fun <- function(num_cells) {
-      resolution <- approxfun(c(0, log10(max_num_cells)), c(min_res, max_res))(log10(num_cells))
-      reflected_resolution <- (max_res - resolution) + min_res
-      return(reflected_resolution)
-    }
-    # resolution_fun(min_res)
-  }
-
-  partition_resolution <- resolution_fun(ncol(cds))
-  message(paste("Clustering", ncol(cds), "cells at resolution =", partition_resolution))
-  cds <- monocle3::cluster_cells(cds, resolution = partition_resolution, k = cluster_k)
-  colData(cds)$cluster <- monocle3::clusters(cds)
-  colData(cds)$res <- partition_resolution
-  partitions <- unique(monocle3::partitions(cds))
-
-  # if (length(partitions) > 1) {
-  #   message(paste0("This could be split up further into more partitions. Num partitions = ", length(partitions)))
-  # }
-
-  # if we want to recursively subcluster
-  if (length(partitions) > 1 & recursive_subcluster) {
-    partition_res <- lapply(partitions, function(partition) {
-      if (is.null(partition_name)) {
-        next_partition_name <- partition
-      } else {
-        next_partition_name <- paste0(partition_name, "_", partition)
-      }
-      print(next_partition_name)
-      message(paste("Constructing sub-UMAP for partition", next_partition_name))
-      cds <- cds[, monocle3::partitions(cds) == partition]
-
-      RhpcBLASctl::blas_set_num_threads(num_threads)
-      RhpcBLASctl::omp_set_num_threads(num_threads)
-
-      cds <- suppressMessages(suppressWarnings(preprocess_cds(cds))) %>%
-        align_cds(residual_model_formula_str = "~log.n.umi") %>%
-        suppressMessages(suppressWarnings(reduce_dimension(
-          max_components = max_components,
-          preprocess_method = "Aligned",
-          umap.fast_sgd = TRUE,
-          cores = num_threads
-        )))
-
-      RhpcBLASctl::blas_set_num_threads(1)
-      RhpcBLASctl::omp_set_num_threads(1)
-
-      cds <- subcluster_cds(cds,
-        partition_name = next_partition_name,
-        recursive_subcluster = recursive_subcluster,
-        num_dim = num_dim,
-        max_components = max_components,
-        resolution_fun = resolution_fun,
-        max_num_cells = max_num_cells,
-        min_res = min_res,
-        max_res = max_res,
-        cluster_k = cluster_k
-      )
-
-      # otherwise sometimes the matrix columns dim don't match when
-      # trying to keep the reduced dims in the combine
-      reducedDims(cds)$PCA <- NULL
-      reducedDims(cds)$Aligned <- NULL
-      cds
-    })
-    # undebug(combine_cds)
-
-    cds <- combine_cds(partition_res, keep_reduced_dims = T)
-  } else {
-    # save the umap coordinates
-    partion_umap_coords <- reducedDims(cds)[["UMAP"]]
-    num_components <- dim(partion_umap_coords)[[2]]
-    for (i in 1:num_components) {
-      name <- paste0("partition_umap", num_components, "d_", i)
-      colData(cds)[[name]] <- reducedDims(cds)[["UMAP"]][, i]
-    }
-
-    # if it doesn't have an error, then it hasn't gone through combine cds
-    has_partitions <- tryCatch(monocle3::partitions(cds),
-      error = function(e) {
-        NULL
-      }
-    )
-
-    if (!is.null(has_partitions)) {
-      if (is.null(partition_name)) {
-        colData(cds)$partition <- monocle3::partitions(cds)
-        colData(cds)$cluster <- monocle3::clusters(cds)
-        colData(cds)$cell_state <- monocle3::clusters(cds)
-      } else {
-        colData(cds)$partition <- as.character(partition_name) #
-        # colData(cds)$partition = paste0(partition_name, "_",  monocle3::partitions(cds))
-        colData(cds)$cluster <- monocle3::clusters(cds)
-        colData(cds)$cell_state <- paste0(partition_name, "-", monocle3::clusters(cds))
-      }
-    }
-  }
-
-  return(cds)
-}
-
-
-# Need to convert the cluster IDs in each graph to cell_state IDs (which are what we'll use in the final model)
-convert_graph_ids <- function(state_graph, partition, cluster_to_state_id_tbl, support_col = "support") {
-  if (is.null(state_graph)) {
-    return(NA)
-  }
-  # if (is.na(state_graph))
-  #  return (NA)
-  if (igraph::is.igraph(state_graph) == FALSE) {
-    return(NA)
-  }
-
-  # cluster_to_state_id_tbl = cluster_to_state_id_tbl %>% filter(grepl(paste("^",partition,"-", sep=""), cell_state))
-
-  # cluster_to_state_id_tbl = colData(cds)[,c("cluster", "cell_state")] %>% as_tibble() %>% distinct()
-  state_graph <- igraph::as_data_frame(state_graph)
-  state_graph$to <- as.character(state_graph$to)
-  state_graph$from <- as.character(state_graph$from)
-  state_graph <- left_join(state_graph, cluster_to_state_id_tbl, by = c("from" = "cluster")) %>%
-    dplyr::select(-from) %>%
-    dplyr::rename(from = cell_state)
-  state_graph <- left_join(state_graph, cluster_to_state_id_tbl, by = c("to" = "cluster")) %>%
-    dplyr::select(-to) %>%
-    dplyr::rename(to = cell_state)
-  state_graph <- state_graph[, c("from", "to", support_col)]
-  state_graph <- igraph::graph_from_data_frame(state_graph, directed = TRUE)
-}
-
-# if you have saved partition coords, can reconstruct sub cdss
-# still need to cluster them
-
-get_partition_cds <- function(cds,
-                              partition_id,
-                              partition_col = "pcor_cluster",
-                              umap_prefix = "partition_umap3d_") {
-  coldata <- colData(cds) %>% as.data.frame()
-  cell_ids <- rownames(coldata %>% filter(!!sym(partition_col) == partition_id))
-  # subset to just that partition
-  partition_cds <- cds[, cell_ids]
-  # change to sub umap coords
-  curr_umap_matrix <- reducedDim(partition_cds, type = "UMAP")
-  umap_dims <- dim(curr_umap_matrix)[2]
-  umap_names <- paste0(umap_prefix, 1:umap_dims)
-
-  new_umap_matrix <- coldata %>%
-    select(all_of(umap_names)) %>%
-    as.matrix()
-  reducedDims(partition_cds)[["UMAP"]] <- new_umap_matrix[rownames(curr_umap_matrix), ]
-
-
-  return(partition_cds)
-}
-
-
-adjust_time_stage <- function(cds) {
-  staging_df <- colData(cds) %>%
-    as.data.frame() %>%
-    select(cell, embryo, expt, timepoint, mean_nn_time) %>%
-    as_tibble()
-  staging_df <- staging_df %>% mutate(timepoint = as.numeric(timepoint))
-
-  staging_model <- lm(mean_nn_time ~ as.numeric(timepoint) * expt, data = staging_df)
-  staging_df$predicted_timepoint <- predict(staging_model, newdata = staging_df)
-
-  colData(cds)$adjusted_timepoint <- staging_df$predicted_timepoint
-  return(cds)
-}
-
-assign_cell_states <- function(comb_res) {
-  cell_state_assignments <- comb_res %>%
-    select(data) %>%
-    tidyr::unnest(data)
-  cell_state_assignments$cluster <- as.character(cell_state_assignments$cluster)
-  cell_state_assignments <- cell_state_assignments %>%
-    distinct() %>%
-    as.data.frame(stringsAsFactors = FALSE)
-  # row.names(cell_state_assignments) = cell_state_assignments$cell
-  # comb_res = sub_partition_cds(comb_sample_cds)
-
-  cell_state_assignments <- cell_state_assignments %>% mutate(partition = stringr::str_split_fixed(cell_state, "-", n = 2)[, 1])
-  row.names(cell_state_assignments) <- cell_state_assignments$cds_row_id
-
-  return(cell_state_assignments)
-}
-
-# this cds was clustered/has partitions, but i only want to run assembly on 1
-# partition
-# wrapper function for purrr use cases
-run_assembly <- function(cds,
-                         partition_group,
-                         interval_col = "timepoint",
-                         recluster = FALSE,
-                         recursive_subcluster = FALSE,
-                         ...) {
-  part_cds <- get_partition_cds(cds, partition_group)
-  partition_results <- assemble_partition(part_cds,
-    recluster = recluster,
-    recursive_subcluster = recursive_subcluster,
-    interval_col = interval_col,
-    partition_name = partition_group,
-    ...
-  )
-  return(partition_results)
-}
-
-
-
-# wrapper function to split it up
-# because i can't hold comb_cds in memory
-
-run_partition_assembly <- function(wt_cds,
-                                   mt_cds,
-                                   partition,
-                                   coemb = FALSE,
-                                   resolution_fun = NULL,
-                                   max_num_cells = NULL,
-                                   min_res = 5e-6,
-                                   max_res = 1e-5,
-                                   ...) {
-  wt_i_cds <- wt_cds[, colData(wt_cds)$partition == partition]
-  mt_i_cds <- mt_cds[, replace_na(colData(mt_cds)$partition == partition, F)]
-
-  # my mt cds is wrong
-
-  comb_i_cds <- combine_cds(list(wt_i_cds, mt_i_cds), keep_reduced_dims = T)
-
-  if (coemb) {
-    comb_i_cds <- comb_i_cds %>%
-      preprocess_cds(num_dim = 50) %>%
-      align_cds(residual_model_formula_str = "~log.n.umi") %>%
-      reduce_dimension(max_components = 3)
-  } else {
-    comb_i_cds <- get_partition_cds(comb_i_cds, partition)
-  }
-
-  # remove outliers
-  # comb_i_cds = drop_outlier_cells(comb_i_cds)
-
-  # recursively sub cluster
-  comb_i_cds <- subcluster_cds(comb_i_cds,
-    recursive_subcluster = T,
-    partition_name = partition,
-    num_dim = NULL,
-    max_components = 3,
-    resolution_fun = resolution_fun,
-    max_num_cells = max_num_cells,
-    min_res = min_res,
-    max_res = max_res
-  )
-
-  partitions <- unique(colData(comb_i_cds)$partition)
-
-  comb_res <- lapply(partitions, function(p) {
-    comb_p_cds <- get_partition_cds(comb_i_cds, p)
-
-    partition_results <- assemble_partition(comb_p_cds,
-      recluster = T,
-      recursive_subcluster = F,
-      interval_col = "timepoint",
-      partition_name = p,
-      max_num_cells = max_num_cells,
-      min_res = min_res,
-      max_res = max_res,
-      ...
-    )
-    partition_results
-  })
-
-  comb_res <- bind_rows(comb_res)
-
-  return(comb_res)
-}
-
-
-run_cds_assembly <- function(cds,
-                             resolution_fun = NULL,
-                             max_num_cells = NULL,
-                             min_res = 5e-6,
-                             max_res = 1e-5,
-                             recluster = TRUE,
-                             ...) {
-  partitions <- unique(colData(cds)$partition)
-
-  comb_res <- lapply(partitions, function(p) {
-    comb_p_cds <- get_partition_cds(cds, p)
-
-    partition_results <- assemble_partition(comb_p_cds,
-      recluster = recluster,
-      recursive_subcluster = F,
-      interval_col = "timepoint",
-      cell_group = "cell_state",
-      partition_name = p,
-      max_num_cells = max_num_cells,
-      min_res = min_res,
-      max_res = max_res,
-      ...
-    )
-    partition_results
-  })
-
-  comb_res <- bind_rows(comb_res)
-
-  return(comb_res)
-}
-
+#' Categorize genetic requirements by cell group
 #'
-#' @export
-collect_genotype_effects <- function(ccm, newdata = tibble()) {
-  if (nrow(newdata) > 0) {
-    newdata_wt <- cross_join(tibble(knockout = FALSE), newdata)
-    newdata_mt <- cross_join(tibble(knockout = FALSE), newdata)
-  } else {
-    newdata_mt <- newdata_wt <- tibble(knockout = FALSE)
-  }
-
-  control_abund <- estimate_abundances(ccm, newdata_wt)
-  knockout_abund <- estimate_abundances(ccm, newdata_mt)
-  genotype_comparison_tbl <- compare_abundances(ccm, control_abund, knockout_abund)
-}
-
-
-#' This function looks at the effects of each perturbation to assemble a list
-#' of genes required by each cell type
+#' Summarizes perturbation effects to identify cell groups that are directly or
+#' indirectly lost for each perturbation, using a state transition graph.
+#'
+#' @param perturb_ccm_tbl Tibble of perturbation models with a
+#'   `perturb_summary_tbl` column.
+#' @param state_graph State transition graph (igraph) defining relationships
+#'   among cell groups.
+#'
+#' @return A tibble with per-perturbation lists of directly and indirectly lost
+#'   cell groups.
+#'
 #' @export
 categorize_genetic_requirements <- function(perturb_ccm_tbl, state_graph) {
   lost_cell_groups <- perturb_ccm_tbl %>%
@@ -1649,18 +1018,6 @@ categorize_genetic_requirements <- function(perturb_ccm_tbl, state_graph) {
 # debug(categorize_genetic_requirements)
 
 
-#' extract a single ccm from perturb_models_tbl
-#' @param perturb_models_tbl tibble of perturbation results
-#' @param perturb_name which perturbation to select out
-get_perturb_ccm <- function(perturb_models_tbl, perturb_name) {
-  perturb_ccm <- perturb_models_tbl %>%
-    filter(perturb_name == perturb_name) %>%
-    pull(perturb_ccm)
-  perturb_ccm <- perturb_ccm[[1]]
-  return(perturb_ccm)
-}
-
-
 #' Fit a Subset of Genotype Cell Cycle Models (CCM)
 #'
 #' This function fits a subset of genotype cell cycle models (CCM) based on the
@@ -1714,67 +1071,106 @@ fit_subset_genotype_ccm <- function(ccm, umap_space = NULL, ...) {
 }
 
 
-
-
-
-construct_platt_graph <- function(cds,
-                                  partition_name,
-                                  sample_group,
-                                  comb_cds,
-                                  perturbation_col = "perturbation",
+#' Return a dataframe that describes which cell types are present in a time interval
+#'
+#' @export
+get_extant_cell_types <- function(ccm,
+                                  start,
+                                  stop,
                                   interval_col = "timepoint",
-                                  component_col = "assembly_group",
-                                  ctrl_ids = c(),
-                                  num_threads = 6,
-                                  k = 15,
-                                  resolution = NULL,
-                                  edge_allowlist = NULL,
-                                  batch_col = "expt",
-                                  newdata = tibble(),
-                                  batches_excluded_from_assembly = c()) {
-  cds <- cluster_cells(cds, random_seed = 42, res = resolution, k = k)
-  colData(cds)$cell_state <- monocle3:::clusters(cds)
-
-  res_cluster <- assemble_partition(cds,
-    partition_name = partition_name,
-    sample_group = sample_group,
-    cell_group = cell_group,
-    interval_col = interval_col,
-    component_col = component_col,
-    perturbation_col = perturbation_col,
-    ctrl_ids = ctrl_ids,
-    num_threads = num_threads,
-    batch_col = batch_col,
-    newdata = newdata,
-    batches_excluded_from_assembly = batches_excluded_from_assembly
+                                  interval_step = 2,
+                                  log_abund_detection_thresh = 0,
+                                  pct_dynamic_range = 0.25,
+                                  pct_range_detection_thresh = pct_dynamic_range,
+                                  min_cell_range = 2,
+                                  newdata = tibble()) {
+  timepoint_pred_df <- estimate_abundances_over_interval(ccm, start, stop,
+    interval_col = interval_col, interval_step = interval_step, newdata = newdata
   )
 
-  contract_graph <- platt::contract_state_graph(ccs,
-    mt_graph = res_cluster$mt_graph[[1]],
-    group_nodes_by = "cell_type"
+  norm_mat <- normalized_counts(ccm@ccs, "size_only")
+  norm_mat[norm_mat == 0] <- NA
+  count_quantiles <- sparseMatrixStats::rowQuantiles(norm_mat, probs = seq(from = 0, to = 1, by = pct_range_detection_thresh), na.rm = T)
+  count_ranges <- sparseMatrixStats::rowRanges(norm_mat, na.rm = T)
+  row.names(count_ranges) <- row.names(count_quantiles)
+
+  cell_type_thresh_df <- tibble(
+    cell_group = timepoint_pred_df %>% pull(cell_group) %>% unique(),
+    cell_group_pct_range_detection_thresh = count_quantiles[cell_group, 2],
+    min_count = count_ranges[cell_group, 1],
+    max_count = count_ranges[cell_group, 2]
   )
 
-  global_wt_graph_edge_allowlist <- igraph::as_data_frame(contract_graph)
-  global_wt_graph_edge_allowlist <- global_wt_graph_edge_allowlist %>%
-    select(from, to) %>%
-    distinct()
+  timepoint_pred_df <- timepoint_pred_df %>% left_join(cell_type_thresh_df)
 
-  res_cell_type <- assemble_partition(cds,
-    partition_name = partition_name,
-    sample_group = sample_group,
-    cell_group = cell_group,
-    interval_col = interval_col,
-    component_col = component_col,
-    perturbation_col = perturbation_col,
-    ctrl_ids = ctrl_ids,
-    num_threads = num_threads,
-    batch_col = batch_col,
-    newdata = newdata,
-    batches_excluded_from_assembly = batches_excluded_from_assembly,
-    edge_allowlist = global_wt_graph_edge_allowlist
-  )
+  if (is.null(log_abund_detection_thresh)) {
+    log_abund_detection_thresh <- abund_range[1] + pct_dynamic_range * dynamic_range
+  }
 
+  timepoint_pred_df <- timepoint_pred_df %>%
+    group_by(cell_group) %>%
+    mutate(
+      max_abundance = max(exp(log_abund)),
+      percent_max_abund = exp(log_abund) / max_abundance,
+      cell_type_prediction_range = max(log_abund) - (min(log_abund)),
+      percent_cell_type_range = (log_abund - min(log_abund)) / cell_type_prediction_range,
+      # above_log_abund_thresh = (log_abund - 2*log_abund_se > log_abund_detection_thresh & log_abund - 2*log_abund_se > log(cell_group_pct_range_detection_thresh)) | cell_type_prediction_range < min_cell_range,
+      above_log_abund_thresh = log_abund > log_abund_detection_thresh,
+      present_flag = ifelse(above_log_abund_thresh, TRUE, NA)
+    ) %>%
+    ungroup()
 
+  longest_present_interval <- function(tps_df) {
+    tryCatch(
+      {
+        delta_t <- as.numeric(tps_df[2, 1] - tps_df[1, 1])
+        ts_la <- ts(tps_df$present_flag,
+          start = min(tps_df[, 1]),
+          # end=max(tps_df[,1]),
+          deltat = delta_t
+        )
+        longest_contig <- na.contiguous(ts_la)
+        return(tibble(longest_contig_start = start(longest_contig)[1], longest_contig_end = end(longest_contig)[1]))
+      },
+      error = function(e) {
+        return(tibble(longest_contig_start = NA, longest_contig_end = NA))
+      }
+    )
+  }
 
-  return(res_cell_type)
+  # undebug(longest_present_interval)
+  nested_timepoints_df <- timepoint_pred_df %>%
+    select(cell_group, !!sym(interval_col), present_flag) %>%
+    group_by(cell_group)
+
+  nested_timepoints_df <- nested_timepoints_df %>%
+    group_modify(~ longest_present_interval(.x))
+  # mutate(cg_ts = purrr:::map2(.f=purrr::possibly(longest_present_interval, NA_real_),
+  #                            .x=!!sym(interval_col),
+  #                            .y=present_flag))
+
+  timepoint_pred_df <- left_join(timepoint_pred_df, nested_timepoints_df)
+
+  timepoint_pred_df <- timepoint_pred_df %>%
+    mutate(
+      present_above_thresh = !!sym(interval_col) >= longest_contig_start & !!sym(interval_col) <= longest_contig_end,
+      present_above_thresh = ifelse(is.na(present_above_thresh), FALSE, present_above_thresh)
+    )
+
+  extant_cell_type_df <- timepoint_pred_df %>%
+    select(
+      !!sym(interval_col),
+      cell_group,
+      log_abund,
+      max_abundance,
+      percent_max_abund,
+      percent_cell_type_range,
+      longest_contig_start,
+      longest_contig_end,
+      present_above_thresh
+    )
+  return(extant_cell_type_df)
 }
+# undebug(get_extant_cell_types)
+# get_extant_cell_types(wt_ccm_wl, 72, 96) %>% filter(cell_group == "21")
+

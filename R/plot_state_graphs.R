@@ -1,3 +1,624 @@
+#' Connect Isolated Nodes in a Graph
+#'
+#' This function takes a graph and node metadata, and connects isolated nodes within each group specified in the metadata.
+#'
+#' @param G An igraph object representing the graph.
+#' @param node_metadata A data frame containing node metadata. It must have columns "id" and "group_nodes_by".
+#'
+#' @return An igraph object with isolated nodes connected within each group.
+#'
+#' @details
+#' The function performs the following steps:
+#' \itemize{
+#'   \item Checks if the node metadata contains the required columns "id" and "group_nodes_by".
+#'   \item Creates a mapping from node id to group.
+#'   \item Iterates over each group and identifies isolated nodes within the group.
+#'   \item Connects isolated nodes in a grid-like structure within each group.
+#' }
+#'
+#' @examples
+#' \dontrun{
+#' library(igraph)
+#'
+#' # Create a sample graph
+#' G <- make_empty_graph(n = 10, directed = FALSE)
+#'
+#' # Create sample node metadata
+#' node_metadata <- data.frame(
+#'   id = 1:10,
+#'   group_nodes_by = rep(1:2, each = 5)
+#' )
+#'
+#' # Connect isolated nodes
+#' G_aug <- connect_isolated_nodes(G, node_metadata)
+#'
+#' # Plot the augmented graph
+#' plot(G_aug)
+#' }
+#'
+#' @import igraph
+#' @import dplyr
+connect_isolated_nodes <- function(G, node_metadata) {
+  # Ensure node_metadata has columns "id" and "group_nodes_by"
+  if (!all(c("id", "group_nodes_by") %in% colnames(node_metadata))) {
+    stop("node_metadata must have 'id' and 'group_nodes_by' columns.")
+  }
+
+  # Create a mapping from node id to group
+  node_group_map <- node_metadata %>%
+    setNames(c("node", "group")) %>%
+    as.list()
+
+  # Get the list of groups
+  groups <- unique(node_metadata$group_nodes_by)
+
+  G_aug <- G
+
+  for (group in groups) {
+    # Extract nodes belonging to the current group
+    group_nodes <- node_metadata %>%
+      filter(group_nodes_by == group) %>%
+      pull(id)
+
+    # Induce subgraph for the current group
+    G_sub <- igraph::induced_subgraph(G_aug, v = group_nodes)
+
+    # Identify isolated nodes in the subgraph
+    isolated_nodes <- igraph::V(G_sub)[igraph::degree(G_sub) == 0]$name
+
+    if (length(isolated_nodes) > 1) {
+      # Find connected components in the subgraph
+      components <- igraph::decompose.graph(G_sub)
+
+      # Calculate the number of rows and columns for the grid
+      num_nodes <- length(isolated_nodes)
+
+      # Determine the height of the grid based on the tallest connected component
+      max_component_size <- max(sapply(components, igraph::diameter))
+      if (max_component_size == 0) {
+        num_rows <- floor(sqrt(num_nodes))
+      } else {
+        num_rows <- ceiling(num_nodes / max_component_size)
+      }
+
+      num_cols <- max(1, num_nodes %/% num_rows)
+
+      # Create a grid structure to connect isolated nodes
+      for (i in seq_len(num_nodes - 1)) {
+        row_i <- (i %/% num_cols) + 1
+        col_i <- (i %% num_cols) + 1
+
+        row_j <- ((i + 1) %/% num_cols) + 1
+        col_j <- ((i + 1) %% num_cols) + 1
+
+        if (row_i == row_j && col_j == col_i + 1) {
+          G_aug <- igraph::add_edges(G_aug, edges = c(isolated_nodes[i], isolated_nodes[i + 1]))
+        } else if (row_i == row_j + 1 && col_j == col_i) {
+          G_aug <- igraph::add_edges(G_aug, edges = c(isolated_nodes[i], isolated_nodes[i + 1]))
+        }
+      }
+    }
+  }
+
+  return(G_aug)
+}
+
+assign_nodes_to_layers <- function(G, num_layers, node_metadata) {
+  # Ensure node_metadata has columns "id" and "group_nodes_by"
+  if (!all(c("id", "group_nodes_by") %in% colnames(node_metadata))) {
+    stop("node_metadata must have 'id' and 'group_nodes_by' columns.")
+  }
+
+  # Create a mapping from node id to group
+  node_group_map <- setNames(node_metadata$group_nodes_by, node_metadata$id)
+
+  # Get the list of groups
+  groups <- unique(node_metadata$group_nodes_by)
+
+  # Create a list to hold nodes for each group
+  group_nodes <- vector("list", length(groups))
+  names(group_nodes) <- groups
+
+  # Populate the group_nodes list with nodes from node_metadata
+  for (group in groups) {
+    group_nodes[[group]] <- node_metadata %>%
+      filter(group_nodes_by == group) %>%
+      pull(id)
+  }
+
+  # Calculate the total number of nodes
+  total_nodes <- vcount(G)
+
+  # Calculate the target number of nodes per layer
+  target_nodes_per_layer <- ceiling(total_nodes / num_layers)
+
+  # Create a list to hold layers
+  layers <- vector("list", num_layers)
+
+  current_layer <- 1
+  node_count_in_current_layer <- 0
+
+  for (group in groups) {
+    group_node_ids <- unlist(group_nodes[[group]])
+
+    # Check if adding this group would exceed the target number of nodes per layer
+    if (node_count_in_current_layer + length(group_node_ids) > target_nodes_per_layer && current_layer < num_layers) {
+      current_layer <- current_layer + 1
+      node_count_in_current_layer <- 0
+    }
+
+    # Add the group to the current layer
+    layers[[current_layer]] <- c(layers[[current_layer]], group_node_ids)
+    node_count_in_current_layer <- node_count_in_current_layer + length(group_node_ids)
+  }
+
+  return(layers)
+}
+
+#'
+#' @examples
+#' # Example usage:
+#' # G_with_hidden <- igraph::make_graph(...)
+#' ##' Connect Hidden Nodes for Layers
+#'
+#' This function connects hidden nodes between layers in a given graph.
+#'
+#' @param G_with_hidden An igraph object representing the graph with hidden nodes.
+#' @param layers A list of vectors, where each vector contains the node IDs for a specific layer.
+#'
+#' @return An igraph object with added connections between hidden nodes of consecutive layers.
+#'
+#' @details
+#' The function iterates through the layers and connects the tail nodes of the current layer to the head nodes of the next layer.
+#' It uses the `make_ego_graph` function to get the subgraph for each layer and its hidden nodes.
+#' The tail nodes are identified by the prefix "tail_" and the head nodes by the prefix "head_".
+#' The function ensures that each tail node is connected to a subset of head nodes in a round-robin fashion.
+#'
+connect_hidden_nodes_for_layers <- function(G_with_hidden, layers) {
+  connected_G_with_hidden <- G_with_hidden
+  num_layers <- length(layers)
+
+  # Add connections between tail nodes of one layer and head nodes of the next layer
+  for (i in seq_len(num_layers - 1)) {
+    # current_layer_subgraph <- igraph::induced_subgraph(graph = connected_G_with_hidden, vids = layers[[i]])
+    current_layer_subgraph <- igraph::make_ego_graph(connected_G_with_hidden, order = 1, nodes = layers[[i]], mode = "out") # get current layer plus its hidden tail nodes
+    current_layer_subgraph <- do.call(igraph::union, current_layer_subgraph)
+    current_layer_tail_nodes <- igraph::V(current_layer_subgraph)[igraph::degree(current_layer_subgraph, mode = "out") == 0]$name
+    current_layer_tail_nodes <- current_layer_tail_nodes[grepl("^tail_", current_layer_tail_nodes)] # select only the hidden tail nodes
+
+    # next_layer_subgraph <- igraph::induced_subgraph(graph = connected_G_with_hidden, vids = layers[[i + 1]])
+    next_layer_subgraph <- igraph::make_ego_graph(connected_G_with_hidden, order = 1, nodes = layers[[i + 1]], mode = "in") # get current layer plus its hidden tail nodes
+    next_layer_subgraph <- do.call(igraph::union, next_layer_subgraph)
+    next_layer_head_nodes <- igraph::V(next_layer_subgraph)[igraph::degree(next_layer_subgraph, mode = "in") == 0]$name
+    next_layer_head_nodes <- next_layer_head_nodes[grepl("^head_", next_layer_head_nodes)] # select only the hidden head nodes
+
+    # Convert vertex sequences to numeric IDs
+    # current_layer_tail_ids <- as.numeric(current_layer_tail_nodes)
+    # next_layer_head_ids <- as.numeric(next_layer_head_nodes)
+
+    num_heads <- length(next_layer_head_nodes)
+
+    for (j in seq_along(current_layer_tail_nodes)) {
+      tail_n <- current_layer_tail_nodes[j]
+
+      # Determine the indices of head nodes to connect
+      start_idx <- ((j - 1) %% num_heads) + 1
+      end_idx <- min(start_idx + 5, num_heads)
+
+      selected_heads <- next_layer_head_nodes[start_idx:end_idx]
+
+      for (head_n in selected_heads) {
+        connected_G_with_hidden <- add_edges(connected_G_with_hidden, edges = c(tail_n, head_n))
+      }
+    }
+  }
+
+  return(connected_G_with_hidden)
+}
+
+
+
+
+
+#' geom_richnodelabel
+#'
+#' This function creates a custom ggplot2 layer for rich text node labels in network plots.
+#'
+#' @param mapping Set of aesthetic mappings created by `aes()` or `aes_()`. If specified and `inherit.aes = TRUE` (the default), it is combined with the default mapping at the top level of the plot. You must supply `mapping` if there is no plot mapping.
+#' @param data The data to be displayed in this layer. There are three options:
+#'   - If `NULL`, the default, the data is inherited from the plot data as specified in the call to `ggplot()`.
+#'   - A `data.frame`, or other object, will override the plot data. All objects will be fortified to produce a data frame. See `fortify()` for which variables will be created.
+#'   - A `function` will be called with a single argument, the plot data. The return value must be a `data.frame`, and will be used as the layer data.
+#' @param position Position adjustment, either as a string, or the result of a call to a position adjustment function.
+#' @param ... Other arguments passed on to `layer()`. These are often aesthetics, used to set an aesthetic to a fixed value, like `color = "red"` or `size = 3`. They may also be parameters to the paired geom/stat.
+#' @param parse If `TRUE`, the labels will be parsed into expressions and displayed as described in `?plotmath`.
+#' @param nudge_x Horizontal adjustment to nudge labels by. Useful for offsetting text from points, particularly on discrete scales.
+#' @param nudge_y Vertical adjustment to nudge labels by. Useful for offsetting text from points, particularly on discrete scales.
+#' @param label.padding Amount of padding around label. Defaults to `unit(0.25, "lines")`.
+#' @param label.r Radius of rounded corners. Defaults to `unit(0.15, "lines")`.
+#' @param label.size Size of label border. Defaults to `0.25`.
+#' @param na.rm If `FALSE`, the default, missing values are removed with a warning. If `TRUE`, missing values are silently removed.
+#' @param show.legend Logical. Should this layer be included in the legends? `NA`, the default, includes if any aesthetics are mapped. `FALSE` never includes, and `TRUE` always includes.
+#' @param inherit.aes If `FALSE`, overrides the default aesthetics, rather than combining with them. This is most useful for helper functions that define both data and aesthetics and shouldn't inherit behaviour from the default plot specification, e.g. `borders()`.
+#'
+#' @return A ggplot2 layer that can be added to a ggplot object.
+geom_richnodelabel <- function(mapping = NULL, data = NULL, position = "identity",
+                               ..., parse = FALSE, nudge_x = 0, nudge_y = 0, label.padding = unit(
+                                 0.25,
+                                 "lines"
+                               ), label.r = unit(0.15, "lines"), label.size = 0.25,
+                               na.rm = FALSE, show.legend = NA, inherit.aes = TRUE) {
+  if (!missing(nudge_x) || !missing(nudge_y)) {
+    if (!missing(position)) {
+      stop("Specify either `position` or `nudge_x`/`nudge_y`",
+        call. = FALSE
+      )
+    }
+    position <- ggplot2::position_nudge(nudge_x, nudge_y)
+  }
+  ggplot2::layer(
+    data = data, mapping = mapping, stat = ggnetwork:::StatNodes,
+    geom = ggtext:::GeomRichtext, position = position, show.legend = show.legend,
+    inherit.aes = inherit.aes, params = list(
+      parse = parse,
+      label.padding = label.padding, label.r = label.r,
+      label.size = label.size, na.rm = na.rm, ...
+    )
+  )
+}
+
+#' Layout State Graph
+#'
+#' Layout a directed graph using depth-based ranks and optional clustering.
+#' Nodes are ranked by graph depth from the roots, optionally ordering clusters
+#' left-to-right by their median depth. The function uses Rgraphviz to compute
+#' coordinates and extracts Bezier control points for edges.
+#'
+#' @param G An igraph object representing the directed graph.
+#' @param node_metadata A data frame containing node metadata. Must include columns 'group_nodes_by' and 'id'.
+#' @param edge_labels A named vector of edge labels (optional).
+#' @param num_layers An integer specifying the number of layers for node assignment (default is 1).
+#' @param weighted A logical value indicating whether the graph is weighted (default is FALSE).
+#' @param order_clusters_by_depth Logical; if TRUE, add invisible ordering edges between
+#' clusters (by median depth) to encourage a left-to-right cluster ordering.
+#'
+#' @return A list containing:
+#' \item{gvizl_coords}{A matrix of layout coordinates for the nodes.}
+#' \item{bezier_df}{A data frame of Bezier curve control points for edges.}
+#' \item{label_df}{A data frame of edge labels (if provided).}
+#' \item{grouping_df}{A data frame of node groupings based on metadata.}
+#' \item{hidden_gvizl_coords}{A matrix of layout coordinates for hidden nodes.}
+#' \item{hidden_bezier_df}{A data frame of Bezier curve control points for edges involving hidden nodes.}
+#' \item{hidden_label_df}{A data frame of edge labels for edges involving hidden nodes (if provided).}
+#'
+#' @import igraph
+#' @import dplyr
+#' @import tidyr
+#' @import purrr
+#' @import Rgraphviz
+#' @importFrom graph subGraph graphAM
+#' @importFrom stringr str_split_fixed
+#' @importFrom tibble tibble
+#' @importFrom stats setNames
+#' @importFrom utils head
+#'
+#' @examples
+#' # Example usage:
+#' G <- igraph::make_ring(10, directed = TRUE)
+#' node_metadata <- data.frame(id = 1:10, group_nodes_by = rep(1:2, each = 5))
+#' result <- layout_state_graph(G, node_metadata)
+#'
+#' @export
+layout_state_graph <- function(G, node_metadata, edge_labels = NULL, num_layers = 1, weighted = FALSE, order_clusters_by_depth = FALSE) {
+  if (!igraph::is_directed(G)) {
+    stop("The graph must be directed.")
+  }
+
+  make_subgraphs_for_groups <- function(subgraph_ids, G_nel) {
+    sg_nodes <- subgraph_ids %>%
+      pull(id) %>%
+      as.character() %>%
+      unique()
+    sg <- list(graph = graph::subGraph(snodes = sg_nodes, graph = G_nel), cluster = TRUE)
+    return(sg)
+  }
+
+  G_orig <- G
+  # Depth-based ranks
+  roots <- names(which(igraph::degree(G, mode = "in") == 0))
+  if (length(roots) == 0) {
+    roots <- igraph::V(G)$name[1]
+  }
+  G_depth <- G
+  if (length(roots) > 1) {
+    super_root <- "__super_root__"
+    G_depth <- igraph::add_vertices(G_depth, 1, name = super_root)
+    add_pairs <- as.vector(rbind(super_root, roots))
+    G_depth <- igraph::add_edges(G_depth, add_pairs)
+    roots <- super_root
+  }
+  dist_mat <- igraph::distances(G_depth, v = roots, mode = "out", weights = NA)
+  depth <- apply(dist_mat, 2, min, na.rm = TRUE)
+  depth[is.infinite(depth)] <- max(depth[is.finite(depth)], 0) + 1
+  depth <- depth[names(depth) != "__super_root__"]
+
+  # Optional cluster ordering by median depth (layout-only)
+  if (order_clusters_by_depth) {
+    group_depth <- node_metadata %>%
+      filter(id %in% names(depth)) %>%
+      group_by(group_nodes_by) %>%
+      summarise(med_depth = stats::median(depth[id]), .groups = "drop") %>%
+      arrange(med_depth)
+    rep_nodes <- node_metadata %>%
+      filter(group_nodes_by %in% group_depth$group_nodes_by) %>%
+      group_by(group_nodes_by) %>%
+      summarise(rep_id = dplyr::first(id), .groups = "drop")
+    ordering_edges <- rep_nodes$rep_id[-nrow(rep_nodes)]
+    ordering_targets <- rep_nodes$rep_id[-1]
+    if (length(ordering_edges) > 0) {
+      ordering_vec <- as.vector(rbind(ordering_edges, ordering_targets))
+      G <- igraph::add_edges(G, ordering_vec, ordering_edge = TRUE)
+    }
+  }
+
+  # Build graphNEL
+  if (weighted) {
+    G_nel <- graph::graphAM(asMatrix = as_adjacency_matrix(G, sparse = FALSE, attr = "weight"), edgemode = "directed") %>% as("graphNEL")
+  } else {
+    G_nel <- graph::graphAM(adjMat = as_adjacency_matrix(G, sparse = FALSE), edgemode = "directed") %>% as("graphNEL")
+  }
+
+  # Subgraphs (clusters) per group
+  if (is.null(node_metadata)) {
+    subgraphs <- NULL
+  } else {
+    subgraph_df <- node_metadata %>%
+      select(group_nodes_by, id) %>%
+      group_by(group_nodes_by) %>%
+      tidyr::nest(subgraph_ids = id) %>%
+      summarize(subgraph = purrr::map(
+        .f = purrr::possibly(make_subgraphs_for_groups, NULL),
+        .x = subgraph_ids,
+        G_nel
+      ))
+    subgraphs <- subgraph_df$subgraph
+    names(subgraphs) <- subgraph_df$group_nodes_by
+  }
+
+  # Graphviz attributes: depth ranks, cluster packing
+  graph_attrs <- list(
+    graph = list(
+      rankdir = "TB",
+      newrank = "true",
+      ranksep = "1.6",
+      nodesep = "1.0",
+      margin = "0.1,0.1",
+      overlap = "false",
+      splines = "true",
+      pack = "true",
+      packmode = "clust",
+      compound = "true"
+    ),
+    edge = list(
+      minlen = "1.0"
+    ),
+    cluster = list(
+      clusterrank = "local"
+    )
+  )
+
+  node_group_map <- setNames(as.character(node_metadata$group_nodes_by), as.character(node_metadata$id))
+  rank_map <- setNames(paste0("d", depth[names(depth)]), names(depth))
+  rank_map[names(rank_map) %in% names(depth)[depth == min(depth)]] <- "min"
+
+  node_attrs <- list(group = node_group_map, rank = rank_map)
+
+  edge_df <- igraph::as_data_frame(G, what = "edges")
+  if (!"ordering_edge" %in% colnames(edge_df)) {
+    edge_df$ordering_edge <- FALSE
+  }
+  group_lookup <- node_group_map
+  edge_df$from_group <- group_lookup[edge_df$from]
+  edge_df$to_group <- group_lookup[edge_df$to]
+
+  constraint_edges <- rep("true", nrow(edge_df))
+  edge_constraints <- setNames(constraint_edges, paste0(edge_df$from, "~", edge_df$to))
+
+  ltail_attrs <- setNames(
+    ifelse(edge_df$from_group != edge_df$to_group, paste0("cluster_", edge_df$from_group), NA),
+    paste0(edge_df$from, "~", edge_df$to)
+  )
+  lhead_attrs <- setNames(
+    ifelse(edge_df$from_group != edge_df$to_group, paste0("cluster_", edge_df$to_group), NA),
+    paste0(edge_df$from, "~", edge_df$to)
+  )
+
+  ordering_edge_names <- paste0(edge_df$from, "~", edge_df$to)[edge_df$ordering_edge]
+  style_attrs <- rep(NA_character_, nrow(edge_df))
+  style_attrs[edge_df$ordering_edge] <- "invis"
+  style_attrs <- setNames(style_attrs, paste0(edge_df$from, "~", edge_df$to))
+  style_attrs <- style_attrs[!is.na(style_attrs)]
+  weight_attrs <- rep(NA_character_, nrow(edge_df))
+  weight_attrs[edge_df$ordering_edge] <- "10"
+  weight_attrs <- setNames(weight_attrs, paste0(edge_df$from, "~", edge_df$to))
+  weight_attrs <- weight_attrs[!is.na(weight_attrs)]
+
+  gvizl <- Rgraphviz::layoutGraph(
+    G_nel,
+    layoutType = "dot",
+    subGList = subgraphs,
+    recipEdges = "distinct",
+    attrs = graph_attrs,
+    nodeAttrs = node_attrs,
+    edgeAttrs = list(
+      constraint = edge_constraints,
+      ltail = ltail_attrs,
+      lhead = lhead_attrs,
+      style = style_attrs,
+      weight = weight_attrs
+    )
+  )
+  gvizl_coords <- cbind(gvizl@renderInfo@nodes$nodeX, gvizl@renderInfo@nodes$nodeY)
+  rownames(gvizl_coords) <- names(gvizl@renderInfo@nodes$nodeX)
+
+  beziers <- lapply(gvizl@renderInfo@edges$splines, function(bc) {
+    bc_segments <- lapply(bc, Rgraphviz::bezierPoints)
+    bezier_cp_df <- do.call(rbind, bc_segments) %>% as.data.frame()
+    colnames(bezier_cp_df) <- c("x", "y")
+    bezier_cp_df
+  })
+  bezier_df <- do.call(rbind, beziers)
+  bezier_df$edge_name <- str_split(row.names(bezier_df), "\\.[0-9]+$", simplify = TRUE)[, 1]
+  bezier_df$from <- stringr::str_split_fixed(bezier_df$edge_name, "~", 2)[, 1]
+  bezier_df$to <- stringr::str_split_fixed(bezier_df$edge_name, "~", 2)[, 2]
+  bezier_df <- left_join(bezier_df, tibble(edge_name = names(gvizl@renderInfo@edges$direction), edge_direction = gvizl@renderInfo@edges$direction))
+  bezier_df <- bezier_df %>% dplyr::distinct()
+
+  bezier_df = left_join(bezier_df, igraph::as_data_frame(G) %>% select(-weight), by = c("from", "to"))
+
+  # Post-process: spread groups horizontally by adding padding to x-coordinates
+  # Keep Graphviz coordinates as-is; do not post-shift groups
+
+  if (!is.null(edge_labels)) {
+    edge_ids <- gsub("\\.", "~", names(gvizl@renderInfo@edges$splines))
+    label_df <- data.frame(
+      edge_id = edge_ids,
+      label = unname(edge_labels[edge_ids])
+    )
+  } else {
+    label_df <- NULL
+  }
+
+  gvizl_coords_clean <- gvizl_coords
+
+  G_orig_edgelist <- igraph::get.edgelist(G_orig)
+  colnames(G_orig_edgelist) <- c("from", "to")
+  G_orig_edgelist <- G_orig_edgelist %>% as_tibble()
+
+  bezier_df_clean <- bezier_df %>%
+    filter(TRUE)
+  bezier_df_clean <- bezier_df_clean %>% inner_join(G_orig_edgelist, by = c("from" = "from", "to" = "to"))
+
+  bezier_df_hidden <- bezier_df %>%
+    filter(FALSE)
+
+  if (!is.null(label_df)) {
+    label_df_clean <- label_df %>%
+      filter(edge_id %in% bezier_df_clean$edge_id)
+    label_df_hidden <- label_df %>%
+      filter(edge_id %in% bezier_df_hidden$edge_id)
+  } else {
+    label_df_clean <- NULL
+    label_df_hidden <- NULL
+  }
+
+  grouping_df <- node_metadata %>%
+    select(group_nodes_by, id)
+
+  return(list(
+    gvizl_coords = gvizl_coords_clean,
+    bezier_df = bezier_df_clean,
+    label_df = label_df_clean,
+    grouping_df = grouping_df,
+    hidden_gvizl_coords = NULL,
+    hidden_bezier_df = bezier_df_hidden,
+    hidden_label_df = label_df_hidden
+  ))
+}
+
+
+#' Collect PSG Node Metadata
+#'
+#' This function collects metadata for nodes in a cell count set (CCS).
+#'
+#' @param ccs A cell count set object containing metadata and column data.
+#' @param color_nodes_by A string specifying the metadata column to color nodes by.
+#' @param label_nodes_by A string specifying the metadata column to label nodes by.
+#' @param group_nodes_by A string specifying the metadata column to group nodes by.
+#'
+#' @return A data frame containing node metadata with columns for node ID, color, group, and label.
+#'
+#' @details
+#' The function extracts unique cell groups from the CCS metadata and constructs a data frame
+#' with node IDs. It then adds metadata columns for coloring, grouping, and labeling nodes based
+#' on the specified parameters. If a parameter is not provided, the corresponding metadata column
+#' is not added. The resulting data frame is returned with distinct rows and node IDs as row names.
+#'
+#' @import dplyr
+#' @import tibble
+#' @importFrom rlang sym
+#'
+#' @examples
+#' \dontrun{
+#' ccs <- load_ccs_data() # Assuming a function to load CCS data
+#' node_metadata <- collect_psg_node_metadata(ccs, "color_column", "label_column", "group_column")
+#' }
+#'
+#' @noRd
+collect_psg_node_metadata <- function(ccs,
+                                      color_nodes_by,
+                                      label_nodes_by,
+                                      group_nodes_by) {
+  cell_groups <- ccs@metadata[["cell_group_assignments"]] %>%
+    pull(cell_group) %>%
+    unique()
+  node_metadata <- tibble(id = cell_groups)
+
+  metadata_cols <- c(
+    color_nodes_by,
+    group_nodes_by
+  )
+  if (is.null(label_nodes_by) == FALSE && label_nodes_by != "cell_group") {
+    metadata_cols <- c(metadata_cols, label_nodes_by)
+  }
+
+  # G = edges %>% select(from, to, n, scaled_weight, distance_from_root)  %>% igraph::graph_from_data_frame(directed = T)
+  cell_group_metadata <- ccs@cds_coldata[, metadata_cols, drop = F] %>%
+    as.data.frame()
+  cell_group_metadata$cell_group <- ccs@metadata[["cell_group_assignments"]] %>% pull(cell_group)
+
+  if (is.null(color_nodes_by) == FALSE) {
+    color_by_metadata <- cell_group_metadata[, c("cell_group", color_nodes_by)] %>%
+      as.data.frame() %>%
+      dplyr::count(cell_group, !!sym(color_nodes_by)) %>%
+      group_by(cell_group) %>%
+      slice_max(n, with_ties = FALSE) %>%
+      dplyr::select(-n)
+    colnames(color_by_metadata) <- c("cell_group", "color_nodes_by")
+    node_metadata <- left_join(node_metadata, color_by_metadata, by = c("id" = "cell_group"))
+  }
+  if (is.null(group_nodes_by) == FALSE) {
+    group_by_metadata <- cell_group_metadata[, c("cell_group", group_nodes_by)] %>%
+      as.data.frame() %>%
+      dplyr::count(cell_group, !!sym(group_nodes_by)) %>%
+      group_by(cell_group) %>%
+      slice_max(n, with_ties = FALSE) %>%
+      dplyr::select(-n)
+    colnames(group_by_metadata) <- c("cell_group", "group_nodes_by")
+    node_metadata <- left_join(node_metadata, group_by_metadata, by = c("id" = "cell_group"))
+  }
+  if (is.null(label_nodes_by) == FALSE) {
+    label_by_metadata <- cell_group_metadata[, c("cell_group", label_nodes_by), drop = F]
+    colnames(label_by_metadata) <- c("cell_group", "label_nodes_by")
+    label_by_metadata <- label_by_metadata %>%
+      as.data.frame() %>%
+      dplyr::count(cell_group, label_nodes_by) %>%
+      group_by(cell_group) %>%
+      slice_max(n, with_ties = FALSE) %>%
+      dplyr::select(-n)
+    node_metadata <- left_join(node_metadata, label_by_metadata, by = c("id" = "cell_group"))
+  } else {
+    node_metadata$label_nodes_by <- node_metadata$id
+  }
+
+  node_metadata <- node_metadata %>%
+    distinct() %>%
+    as.data.frame(stringsAsFactor = FALSE)
+  row.names(node_metadata) <- node_metadata$id
+
+  return(node_metadata)
+}
+
 #' Plot Annotations for Cell State Graph
 #'
 #' This function generates a plot of cell state graphs with various customization options.
@@ -7,14 +628,13 @@
 #' @param label_nodes_by A character string specifying the attribute to label nodes by. Default is NULL.
 #' @param arrow_unit Numeric value specifying the size of the arrows. Default is 7.
 #' @param node_size Numeric value specifying the size of the nodes. Default is 2.
-#' @param con_colour A character string specifying the color of the connections. Default is "darkgrey".
+#' @param arrow_color A character string specifying the color of the connections. Default is "darkgrey".
 #' @param legend_position A character string specifying the position of the legend. Default is "none".
 #' @param min_edge_size Numeric value specifying the minimum edge size. Default is 0.1.
 #' @param max_edge_size Numeric value specifying the maximum edge size. Default is 2.
 #' @param edge_weights A numeric vector specifying the weights of the edges. Default is NULL.
 #' @param plot_labels Logical value indicating whether to plot labels. Default is TRUE.
-#' @param group_label_font_size Numeric value specifying the font size of group labels. Default is 1.
-#' @param node_label_width Numeric value specifying the width of node labels. Default is 50.
+#' @param group_label_size Numeric value specifying the font size of group labels. Default is 1.
 #'
 #' @return A ggplot object representing the cell state graph with annotations.
 #'
@@ -34,22 +654,33 @@ plot_annotations <- function(cell_state_graph,
                              label_nodes_by = NULL,
                              arrow_unit = 7,
                              node_size = 2,
-                             con_colour = "darkgrey",
+                             arrow_color = "darkgrey",
                              legend_position = "none",
                              min_edge_size = 0.1,
                              max_edge_size = 2,
                              edge_weights = NULL,
                              plot_labels = TRUE,
                              label_size = 3,
-                             group_label_font_size = 1,
-                             node_label_width = 50) {
-  if (is.null(color_nodes_by)) {
-    color_nodes_by <- cell_state_graph@ccs@info$cell_group
-  } else {
-    cell_state_graph@g[["color_nodes_by"]] <- color_nodes_by
-  }
+                             group_label_size = 1) {
+  # override if defined in arguments, otherwise take cell_state_graph info or default to cell group
+  color_nodes_by <- color_nodes_by %||%
+    cell_state_graph@metadata$color_nodes_by %||%
+    ccs@info$cell_group
 
-  group_nodes_by <- cell_state_graph@metadata$group_nodes_by
+  label_nodes_by <- label_nodes_by %||%
+    cell_state_graph@metadata$label_nodes_by %||%
+    ccs@info$cell_group
+
+  group_nodes_by <- cell_state_graph@metadata$group_nodes_by %||%
+    ccs@info$cell_group
+
+  node_metadata <- collect_psg_node_metadata(ccs, color_nodes_by, label_nodes_by, group_nodes_by)
+
+  cell_state_graph@g[["color_nodes_by"]] <- NULL
+  cell_state_graph@g[["label_nodes_by"]] <- NULL
+  cell_state_graph@g[["group_nodes_by"]] <- NULL
+
+  cell_state_graph@g <- dplyr::left_join(cell_state_graph@g, node_metadata, by = c("name" = "id"))
 
   g <- cell_state_graph@g
 
@@ -57,6 +688,7 @@ plot_annotations <- function(cell_state_graph,
   grouping_df <- cell_state_graph@layout_info$grouping_df
 
   y_plot_range <- max(g$y)
+
   group_label_position_df <- g %>%
     dplyr::select(x, y, group_nodes_by) %>%
     dplyr::distinct() %>%
@@ -65,11 +697,11 @@ plot_annotations <- function(cell_state_graph,
 
   p <- ggplot(aes(x, y), data = g) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(bidirectional)
     ) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(!bidirectional),
       arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
       linejoin = "mitre"
@@ -89,7 +721,7 @@ plot_annotations <- function(cell_state_graph,
       data = g
     )
 
-    p <- p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_font_size)
+    p <- p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_size)
     plot_labels <- FALSE
     color_nodes_by <- group_nodes_by
   }
@@ -108,13 +740,13 @@ plot_annotations <- function(cell_state_graph,
 
   if (plot_labels) {
     p <- p + ggrepel::geom_text_repel(
-      data = g %>% select(x, y, name) %>% distinct(),
-      aes(x, y, label = name, size=label_size),
+      data = g %>% select(x, y, label_nodes_by) %>% distinct(),
+      aes(x, y, label = label_nodes_by),
+      size = label_size,
       color = I("black"),
       box.padding = 0.5
     )
   }
-
 
   num.colors <- cell_state_graph@g[["color_nodes_by"]] %>%
     unique() %>%
@@ -137,6 +769,81 @@ plot_annotations <- function(cell_state_graph,
   return(p)
 }
 
+#' Deprecated: use plot_annotations()
+#'
+#' @inheritParams plot_annotations
+#' @export
+plot_state_graph_annotations <- function(...) {
+  warning("plot_state_graph_annotations is deprecated; use plot_annotations instead.", call. = FALSE)
+  plot_annotations(...)
+}
+
+#' @noRd
+num_extract <- function(string, as_char = TRUE) {
+  if (as_char) {
+    stringr::str_trim(
+      format(stringr::str_extract(string, "\\-*\\d+\\.*\\d*"),
+        scientific = FALSE,
+        trim = TRUE
+      )
+    )
+  } else {
+    as.numeric(
+      stringr::str_trim(
+        format(stringr::str_extract(string, "\\-*\\d+\\.*\\d*"),
+          scientific = FALSE,
+          trim = TRUE
+        )
+      )
+    )
+  }
+}
+
+#' @noRd
+calc_sig_ind <- function(p_value, html = TRUE) {
+  # p_value <- suppressWarnings(
+  #  num_extract(p_value, as_char = FALSE)
+  # )
+
+  if (html) {
+    dplyr::case_when(
+      p_value <= 0 ~ "",
+      p_value <= 0.001 ~ "\\***",
+      p_value <= 0.01 ~ "\\**",
+      p_value <= 0.05 ~ "\\*",
+      p_value <= 0.1 ~ ".",
+      p_value <= 1 ~ "",
+      TRUE ~ ""
+    )
+  } else {
+    dplyr::case_when(
+      p_value <= 0 ~ "",
+      p_value <= 0.001 ~ "***",
+      p_value <= 0.01 ~ "**",
+      p_value <= 0.05 ~ "*",
+      p_value <= 0.1 ~ ".",
+      p_value <= 1 ~ "",
+      TRUE ~ ""
+    )
+  }
+}
+
+#' @noRd
+calc_sig_rank <- function(p_value) {
+  # p_value <- suppressWarnings(
+  #  num_extract(p_value, as_char = FALSE)
+  # )
+  dplyr::case_when(
+    p_value <= 0 ~ 2,
+    p_value <= 0.001 ~ 2,
+    p_value <= 0.01 ~ 1,
+    p_value <= 0.05 ~ 1,
+    p_value <= 0.1 ~ 0.5,
+    p_value <= 1 ~ 0.5,
+    TRUE ~ 1
+  )
+}
+
 #' Plot Abundance Changes
 #'
 #' This function generates a plot to visualize changes in cell state abundances.
@@ -149,10 +856,9 @@ plot_annotations <- function(cell_state_graph,
 #' @param arrow_unit Numeric, the size of the arrows in the plot.
 #' @param node_size Numeric, the size of the nodes in the plot.
 #' @param node_scale Numeric, the scaling factor for node sizes.
-#' @param con_colour Character, the color of the connections between nodes.
+#' @param arrow_color Character, the color of the connections between nodes.
 #' @param legend_position Character, the position of the legend in the plot.
-#' @param node_label_width Numeric, the width of the node labels.
-#' @param group_label_font_size Numeric, the font size of the group labels.
+#' @param group_label_size Numeric, the font size of the group labels.
 #' @param fc_limits Numeric vector of length 2, the limits for the fold change color scale.
 #'
 #' @return A ggplot object representing the abundance changes.
@@ -175,13 +881,13 @@ plot_abundance_changes <- function(cell_state_graph,
                                    facet_group = NULL,
                                    scale_node = FALSE,
                                    plot_labels = TRUE,
-                                   arrow_unit = 7,
+                                   label_size = 3,
                                    node_size = 2,
                                    node_scale = 1,
-                                   con_colour = "darkgrey",
+                                   arrow_unit = 7,
+                                   arrow_color = "darkgrey",
                                    legend_position = "right",
-                                   node_label_width = 50,
-                                   group_label_font_size = 1,
+                                   group_label_size = 1,
                                    fc_limits = c(-3, 3)) {
   g <- cell_state_graph@g
   bezier_df <- cell_state_graph@layout_info$bezier_df
@@ -214,11 +920,11 @@ plot_abundance_changes <- function(cell_state_graph,
 
   p <- ggplot(aes(x, y), data = g) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(bidirectional)
     ) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(!bidirectional),
       arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
       linejoin = "mitre"
@@ -239,7 +945,7 @@ plot_abundance_changes <- function(cell_state_graph,
       data = g
     )
 
-    p <- p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_font_size)
+    p <- p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_size)
     plot_labels <- F
     scale_node <- T
   }
@@ -297,6 +1003,7 @@ plot_abundance_changes <- function(cell_state_graph,
     p <- p + ggrepel::geom_text_repel(
       data = g %>% select(x, y, name) %>% distinct(),
       aes(x, y, label = name),
+      size = label_size,
       color = I("black")
     )
   }
@@ -318,6 +1025,15 @@ plot_abundance_changes <- function(cell_state_graph,
   return(p)
 }
 
+#' Deprecated: use plot_abundance_changes()
+#'
+#' @inheritParams plot_abundance_changes
+#' @export
+plot_state_abundance_changes <- function(...) {
+  warning("plot_state_abundance_changes is deprecated; use plot_abundance_changes instead.", call. = FALSE)
+  plot_abundance_changes(...)
+}
+
 #' Plot Gene Expression on Cell State Graph
 #'
 #' This function plots gene expression data on a cell state graph.
@@ -325,7 +1041,7 @@ plot_abundance_changes <- function(cell_state_graph,
 #' @param cell_state_graph An object containing the cell state graph data.
 #' @param genes A vector of gene names to plot.
 #' @param arrow_unit Numeric value for the size of the arrows in the plot. Default is 7.
-#' @param con_colour Colour for the connections in the plot. Default is "lightgrey".
+#' @param arrow_color Colour for the connections in the plot. Default is "lightgrey".
 #' @param fract_expr Minimum fraction of cells expressing the gene to be considered. Default is 0.0.
 #' @param mean_expr Minimum mean expression level to be considered. Default is 0.0.
 #' @param legend_position Position of the legend in the plot. Default is "right".
@@ -337,14 +1053,13 @@ plot_abundance_changes <- function(cell_state_graph,
 #' @param log_expr If TRUE, the expression values will be log-transformed
 #' @param pseudocount Pseudocount to add when log-transforming expression data. Default is 1e-5.
 #' @param expr_limits Numeric vector of length 2 specifying the limits for expression values. Default is NULL.
-#' @param node_label_width Numeric value for the width of node labels. Default is 50.
-#' @param group_label_font_size Numeric value for the font size of group labels. Default is 1.
+#' @param group_label_size Numeric value for the font size of group labels. Default is 1.
 #'
 #' @return A ggplot2 object representing the gene expression on the cell state graph.
 #'
 #' @examples
 #' # Example usage:
-#' # plot_gene_expr(cell_state_graph, genes = c("Gene1", "Gene2"))
+#' # plot_gene_expression(cell_state_graph, genes = c("Gene1", "Gene2"))
 #'
 #' @import dplyr
 #' @import ggplot2
@@ -356,22 +1071,22 @@ plot_abundance_changes <- function(cell_state_graph,
 #' @importFrom stats ave
 #' @importFrom utils head tail
 #' @export
-plot_gene_expr <- function(cell_state_graph,
-                           genes,
-                           arrow_unit = 7,
-                           node_size = 2,
-                           con_colour = "lightgrey",
-                           fract_expr = 0.0,
-                           mean_expr = 0.0,
-                           legend_position = "right",
-                           plot_labels = TRUE,
-                           aggregate = FALSE,
-                           scale_to_range = FALSE,
-                           log_expr = FALSE,
-                           pseudocount = 1e-5,
-                           expr_limits = NULL,
-                           node_label_width = 50,
-                           group_label_font_size = 1) {
+plot_gene_expression <- function(cell_state_graph,
+                                 genes,
+                                 arrow_unit = 7,
+                                 node_size = 2,
+                                 arrow_color = "lightgrey",
+                                 fract_expr = 0.0,
+                                 mean_expr = 0.0,
+                                 legend_position = "right",
+                                 plot_labels = TRUE,
+                                 label_size = 3,
+                                 aggregate = FALSE,
+                                 scale_to_range = FALSE,
+                                 log_expr = FALSE,
+                                 pseudocount = 1e-5,
+                                 expr_limits = NULL,
+                                 group_label_size = 1) {
   if (scale_to_range && aggregate) {
     message("Warning: scale_to_range is not compatible with aggregate. Setting scale_to_range to FALSE.")
     scale_to_range <- FALSE
@@ -383,6 +1098,7 @@ plot_gene_expr <- function(cell_state_graph,
   grouping_df <- cell_state_graph@layout_info$grouping_df
 
   y_plot_range <- max(g$y)
+
   group_label_position_df <- g %>%
     dplyr::select(x, y, group_nodes_by) %>%
     dplyr::distinct() %>%
@@ -460,11 +1176,11 @@ plot_gene_expr <- function(cell_state_graph,
 
   p <- ggplot(aes(x, y), data = g) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(bidirectional)
     ) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(!bidirectional),
       arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
       linejoin = "mitre"
@@ -485,7 +1201,7 @@ plot_gene_expr <- function(cell_state_graph,
       data = g
     )
 
-    p <- p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_font_size)
+    p <- p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_size)
     plot_labels <- FALSE
   }
 
@@ -497,7 +1213,7 @@ plot_gene_expr <- function(cell_state_graph,
         # size = fraction_max,
       ),
       shape = "circle filled",
-      fill = I(con_colour),
+      fill = I(arrow_color),
       color = I("black")
     ) +
     ggnewscale::new_scale_fill() +
@@ -520,6 +1236,7 @@ plot_gene_expr <- function(cell_state_graph,
     p <- p + ggrepel::geom_text_repel(
       data = g %>% select(x, y, name) %>% distinct(),
       aes(x, y, label = name),
+      size = label_size,
       color = I("black")
     )
   }
@@ -540,13 +1257,22 @@ plot_gene_expr <- function(cell_state_graph,
   return(p)
 }
 
+#' Deprecated: use plot_gene_expression()
+#'
+#' @inheritParams plot_gene_expression
+#' @export
+plot_gene_expr <- function(...) {
+  warning("plot_gene_expr is deprecated; use plot_gene_expression instead.", call. = FALSE)
+  plot_gene_expression(...)
+}
+
 
 plot_deviation_plot <- function(cell_state_graph,
                                 deviation_table,
                                 facet_group = NULL,
                                 arrow_unit = 7,
                                 node_size = 2,
-                                con_colour = "darkgrey",
+                                arrow_color = "darkgrey",
                                 fract_expr = 0.0,
                                 mean_expr = 0.0,
                                 legend_position = "none",
@@ -564,11 +1290,11 @@ plot_deviation_plot <- function(cell_state_graph,
 
   p <- ggplot(aes(x, y), data = g) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(bidirectional)
     ) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(!bidirectional),
       arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
       linejoin = "mitre"
@@ -631,7 +1357,7 @@ plot_deg_change <- function(cell_state_graph,
                             facet_group = "term",
                             arrow_unit = 7,
                             node_size = 2,
-                            con_colour = "darkgrey",
+                            arrow_color = "darkgrey",
                             fract_expr = 0.0,
                             mean_expr = 0.0,
                             legend_position = "none",
@@ -648,11 +1374,11 @@ plot_deg_change <- function(cell_state_graph,
 
   p <- ggplot(aes(x, y), data = g) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(bidirectional)
     ) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(!bidirectional),
       arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
       linejoin = "mitre"
@@ -697,14 +1423,13 @@ plot_deg_change <- function(cell_state_graph,
 #' @param facet_group A string specifying the facet group. Default is "term".
 #' @param arrow_unit Numeric value specifying the size of the arrows. Default is 7.
 #' @param node_size Numeric value specifying the size of the nodes. Default is 1.
-#' @param con_colour A string specifying the color of the connections. Default is "darkgrey".
+#' @param arrow_color A string specifying the color of the connections. Default is "darkgrey".
 #' @param fract_expr Numeric value specifying the fraction of expression. Default is 0.0.
 #' @param mean_expr Numeric value specifying the mean expression. Default is 0.0.
 #' @param legend_position A string specifying the position of the legend. Default is "none".
 #' @param fc_limits A numeric vector specifying the limits for the fold change scale. Default is c(-3, 3).
 #' @param plot_labels Logical value indicating whether to plot labels. Default is TRUE.
-#' @param node_label_width Numeric value specifying the width of the node labels. Default is 50.
-#' @param group_label_font_size Numeric value specifying the font size of the group labels. Default is 1.
+#' @param group_label_size Numeric value specifying the font size of the group labels. Default is 1.
 #'
 #' @return A ggplot object representing the cell state graph with DEGs plotted.
 #'
@@ -726,14 +1451,14 @@ plot_degs <- function(cell_state_graph,
                       facet_group = "term",
                       arrow_unit = 7,
                       node_size = 1,
-                      con_colour = "darkgrey",
+                      arrow_color = "darkgrey",
                       fract_expr = 0.0,
                       mean_expr = 0.0,
                       legend_position = "none",
                       fc_limits = c(-3, 3),
                       plot_labels = T,
-                      node_label_width = 50,
-                      group_label_font_size = 1) {
+                      label_size = 3,
+                      group_label_size = 1) {
   g <- cell_state_graph@g
   bezier_df <- cell_state_graph@layout_info$bezier_df
 
@@ -778,11 +1503,11 @@ plot_degs <- function(cell_state_graph,
 
   p <- ggplot(aes(x, y), data = g) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(bidirectional)
     ) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(!bidirectional),
       arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
       linejoin = "mitre"
@@ -802,7 +1527,7 @@ plot_degs <- function(cell_state_graph,
       data = g
     )
 
-    p <- p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_font_size)
+    p <- p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_size)
     plot_labels <- FALSE
   }
 
@@ -858,6 +1583,7 @@ plot_degs <- function(cell_state_graph,
       data = g %>% select(x, y, name) %>% distinct(),
       aes(x, y, label = name),
       color = I("black"),
+      size = label_size,
       box.padding = 0.5
     )
   }
@@ -878,7 +1604,7 @@ plot_perturb_effects <- function(cell_state_graph,
                                  num_top_genes = 3,
                                  arrow_unit = 7,
                                  node_size = 2,
-                                 con_colour = "darkgrey",
+                                 arrow_color = "darkgrey",
                                  fract_expr = 0.0,
                                  mean_expr = 0.0,
                                  legend_position = "none",
@@ -916,11 +1642,11 @@ plot_perturb_effects <- function(cell_state_graph,
 
   p <- ggplot(aes(x, y), data = g) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(bidirectional)
     ) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(!bidirectional),
       arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
       linejoin = "mitre"
@@ -983,14 +1709,13 @@ plot_perturb_effects <- function(cell_state_graph,
 #' @param label_nodes_by A string specifying the column name in `node_table` to label nodes by. Default is NULL.
 #' @param arrow_unit Numeric value specifying the length of the arrows in the plot. Default is 7.
 #' @param node_size Numeric value specifying the size of the nodes in the plot. Default is 2.
-#' @param con_colour A string specifying the color of the connections between nodes. Default is "darkgrey".
+#' @param arrow_color A string specifying the color of the connections between nodes. Default is "darkgrey".
 #' @param legend_position A string specifying the position of the legend in the plot. Default is "none".
 #' @param min_edge_size Numeric value specifying the minimum size of the edges. Default is 0.1.
 #' @param max_edge_size Numeric value specifying the maximum size of the edges. Default is 2.
 #' @param edge_weights A vector specifying the weights of the edges. Default is NULL.
 #' @param plot_labels Logical value indicating whether to plot labels for the nodes. Default is TRUE.
-#' @param node_label_width Numeric value specifying the width of the node labels. Default is 50.
-#' @param group_label_font_size Numeric value specifying the font size of the group labels. Default is 1.
+#' @param group_label_size Numeric value specifying the font size of the group labels. Default is 1.
 #'
 #' @return A ggplot object representing the cell state graph.
 #'
@@ -1011,14 +1736,14 @@ plot_by_table <- function(cell_state_graph,
                           label_nodes_by = NULL,
                           arrow_unit = 7,
                           node_size = 2,
-                          con_colour = "darkgrey",
+                          arrow_color = "darkgrey",
                           legend_position = "none",
                           min_edge_size = 0.1,
                           max_edge_size = 2,
                           edge_weights = NULL,
                           plot_labels = T,
-                          node_label_width = 50,
-                          group_label_font_size = 1) {
+                          label_size = 3,
+                          group_label_size = 1) {
   group_nodes_by <- cell_state_graph@metadata$group_nodes_by
 
   g <- cell_state_graph@g
@@ -1040,11 +1765,11 @@ plot_by_table <- function(cell_state_graph,
 
   p <- ggplot(aes(x, y), data = g) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(bidirectional)
     ) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      colour = con_colour,
+      colour = arrow_color,
       data = bezier_df %>% distinct() %>% filter(!bidirectional),
       arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
       linejoin = "mitre"
@@ -1064,7 +1789,7 @@ plot_by_table <- function(cell_state_graph,
       data = g
     )
 
-    p <- p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_font_size)
+    p <- p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_size)
     plot_labels <- FALSE
   }
 
@@ -1089,6 +1814,7 @@ plot_by_table <- function(cell_state_graph,
     p <- p + ggrepel::geom_text_repel(
       data = g %>% select(x, y, name) %>% distinct(),
       aes(x, y, label = name),
+      size = label_size,
       color = I("black"),
       box.padding = 0.5
     )
@@ -1128,14 +1854,13 @@ plot_by_table <- function(cell_state_graph,
 #' @param label_nodes_by A string specifying the column name to label the nodes by. Default is NULL.
 #' @param arrow_unit Numeric value specifying the length of the arrow units. Default is 7.
 #' @param node_size Numeric value specifying the size of the nodes. Default is 2.
-#' @param con_colour A string specifying the color of the edges when `color_edges_by` is NA. Default is "lightgrey".
+#' @param arrow_color A string specifying the color of the edges when `color_edges_by` is NA. Default is "lightgrey".
 #' @param legend_position A string specifying the position of the legend. Default is "none".
 #' @param min_edge_size Numeric value specifying the minimum edge size. Default is 0.1.
 #' @param max_edge_size Numeric value specifying the maximum edge size. Default is 2.
 #' @param edge_weights A vector specifying the weights of the edges. Default is NULL.
 #' @param plot_labels Logical value indicating whether to plot labels for the nodes. Default is TRUE.
-#' @param node_label_width Numeric value specifying the width of the node labels. Default is 50.
-#' @param group_label_font_size Numeric value specifying the font size of the group labels. Default is 1.
+#' @param group_label_size Numeric value specifying the font size of the group labels. Default is 1.
 #'
 #' @return A ggplot object representing the cell state graph.
 #'
@@ -1156,14 +1881,14 @@ plot_by_support <- function(cell_state_graph,
                             label_nodes_by = NULL,
                             arrow_unit = 7,
                             node_size = 2,
-                            con_colour = "lightgrey",
+                            arrow_color = "lightgrey",
                             legend_position = "none",
                             min_edge_size = 0.1,
                             max_edge_size = 2,
                             edge_weights = NULL,
                             plot_labels = T,
-                            node_label_width = 50,
-                            group_label_font_size = 1) {
+                            label_size = 3,
+                            group_label_size = 1) {
   group_nodes_by <- cell_state_graph@metadata$group_nodes_by
 
   g <- cell_state_graph@g
@@ -1190,7 +1915,7 @@ plot_by_support <- function(cell_state_graph,
       data = bezier_df %>% distinct() %>% filter(!is.na(color_edges_by_col)) %>% filter(bidirectional)
     ) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      color = con_colour,
+      color = arrow_color,
       data = bezier_df %>% distinct() %>% filter(is.na(color_edges_by_col)) %>% filter(bidirectional)
     ) +
     ggplot2::geom_path(
@@ -1203,7 +1928,7 @@ plot_by_support <- function(cell_state_graph,
       linejoin = "mitre"
     ) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
-      color = con_colour,
+      color = arrow_color,
       data = bezier_df %>% distinct() %>% filter(is.na(color_edges_by_col)) %>% filter(!bidirectional),
       arrow = arrow(angle = 30, length = unit(arrow_unit, "pt"), type = "closed"),
       linejoin = "mitre"
@@ -1226,7 +1951,7 @@ plot_by_support <- function(cell_state_graph,
       data = g
     )
 
-    p <- p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_font_size)
+    p <- p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_size)
     plot_labels <- FALSE
   }
 
@@ -1247,6 +1972,7 @@ plot_by_support <- function(cell_state_graph,
       data = g %>% select(x, y, name) %>% distinct(),
       aes(x, y, label = name),
       color = I("black"),
+      size = label_size,
       box.padding = 0.5
     )
   }
