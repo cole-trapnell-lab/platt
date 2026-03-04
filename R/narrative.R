@@ -485,8 +485,13 @@ py_disrupted_pathways_to_tibble <- function(x) {
       dysregulated_genes = character()
     ))
   }
-  if (is.list(x) && length(x) > 0 && all(vapply(x, inherits, logical(1), "data.frame"))) {
-    return(dplyr::bind_rows(lapply(x, tibble::as_tibble)))
+  # If reticulate hands back a python object (not yet converted), coerce again
+  if (inherits(x, "python.builtin.object")) {
+    x <- reticulate::py_to_r(x)
+  }
+  # If a data.frame/tibble already, just return it
+  if (is.data.frame(x)) {
+    return(tibble::as_tibble(x))
   }
   # If x is a character vector, not a list of lists
   if (is.atomic(x) && !is.list(x)) {
@@ -496,6 +501,14 @@ py_disrupted_pathways_to_tibble <- function(x) {
       dysregulated_genes = NA_character_
     ))
   }
+  # If x is a single object with named fields, wrap it in a list
+  if (!is.list(x)) {
+    x <- list(x)
+  }
+  # Normalize any python objects inside the list
+  x <- purrr::map(x, function(el) {
+    if (inherits(el, "python.builtin.object")) reticulate::py_to_r(el) else el
+  })
   # If x is a list of lists (the expected case)
   tryCatch(
     {
@@ -629,7 +642,7 @@ summarize_impact_in_lineage_context <- function(
         llm_structured <- tryCatch(
           {
             if (!is.null(llm_fun)) {
-              reticulate::py_to_r(
+              llm_res <- reticulate::py_to_r(
                 llm_fun(
                   cell_type = ct,
                   cell_impact_text = cell_impact_text,
@@ -637,6 +650,11 @@ summarize_impact_in_lineage_context <- function(
                   ...
                 )
               )
+              if (verbose) {
+                message(sprintf("[DEBUG] LLM structured payload for %s:", ct))
+                utils::str(llm_res, max.level = 2)
+              }
+              llm_res
             } else {
               NULL
             }
