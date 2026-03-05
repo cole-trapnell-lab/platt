@@ -231,7 +231,7 @@ summarize_cell_type_impact <- function(
   top_n_pathways = 5,
   abundance_phenotypes = NULL,
   fitness_phenotypes = NULL,
-  identity_phenotypes = NULL # <-- NEW ARGUMENT
+  identity_phenotypes = NULL
 ) {
   # 1. Abundance change (from abundance_phenotypes if available)
   abundance_row <- if (!is.null(abundance_phenotypes)) {
