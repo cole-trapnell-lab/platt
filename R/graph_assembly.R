@@ -308,6 +308,7 @@ get_discordant_loss_pairs <- function(perturbation_ccm,
                                       q_val,
                                       model_for_pcors = "reduced",
                                       min_pathfinding_lfc = 0,
+                                      power_threshold = 0,
                                       newdata = tibble()) {
   # print ("getting perturbation paths")
   # print (time_window)
@@ -366,23 +367,11 @@ get_discordant_loss_pairs <- function(perturbation_ccm,
 
   assert_power_columns_present(earliest_loss_tbl, context = "discordant-loss pair construction")
 
-  lost_cell_groups <- earliest_loss_tbl %>%
-    filter(is_lost_at_peak) %>%
-    pull(cell_group) %>%
-    unique()
-
-  cell_groups_that_peak_within_perturb_window <- earliest_loss_tbl %>%
-    filter(peak_time_in_ctrl_within_perturb_time_range) %>%
-    pull(cell_group) %>%
-    unique()
-
-  unaffected_cell_groups <- setdiff(cell_groups_that_peak_within_perturb_window, lost_cell_groups)
-
-  # Exclude states that peak outside the window of this perturbation experiment,
-  # as we may simply have not yet seen their loss.
-  unaffected_cell_groups <- setdiff(unaffected_cell_groups, peak_outside_perturbation_window)
-
-  discordant_loss_pairs <- tidyr::expand_grid(lost_cell_groups, unaffected_cell_groups)
+  discordant_loss_pairs <- compute_discordant_loss_pairs(
+    earliest_loss_tbl = earliest_loss_tbl,
+    peak_outside_perturbation_window = peak_outside_perturbation_window,
+    power_threshold = power_threshold
+  )
 
   return(discordant_loss_pairs)
 }
@@ -394,6 +383,51 @@ assert_power_columns_present <- function(tbl, context = "perturbation summary") 
     stop(sprintf("Expected at least one power column in %s, but none were found.", context))
   }
   invisible(power_cols)
+}
+
+#' @noRd
+compute_discordant_loss_pairs <- function(earliest_loss_tbl,
+                                          peak_outside_perturbation_window = character(),
+                                          power_threshold = 0) {
+  lost_cell_groups <- earliest_loss_tbl %>%
+    dplyr::filter(is_lost_at_peak) %>%
+    dplyr::pull(cell_group) %>%
+    unique()
+
+  unaffected_cell_groups <- earliest_loss_tbl %>%
+    dplyr::filter(peak_time_in_ctrl_within_perturb_time_range) %>%
+    dplyr::pull(cell_group) %>%
+    unique()
+  unaffected_cell_groups <- setdiff(unaffected_cell_groups, lost_cell_groups)
+
+  # Exclude states that peak outside the window of this perturbation experiment,
+  # as we may simply have not yet seen their loss.
+  unaffected_cell_groups <- setdiff(unaffected_cell_groups, peak_outside_perturbation_window)
+
+  if (power_threshold > 0) {
+    power_cols <- assert_power_columns_present(earliest_loss_tbl, context = "discordant-loss pair construction")
+
+    cell_group_power_tbl <- earliest_loss_tbl %>%
+      dplyr::select(cell_group, dplyr::all_of(power_cols)) %>%
+      tidyr::pivot_longer(
+        cols = dplyr::all_of(power_cols),
+        names_to = "power_metric",
+        values_to = "power_value"
+      ) %>%
+      dplyr::group_by(cell_group) %>%
+      dplyr::summarize(
+        max_power = ifelse(all(is.na(power_value)), NA_real_, max(power_value, na.rm = TRUE)),
+        .groups = "drop"
+      )
+
+    powered_unaffected_cell_groups <- cell_group_power_tbl %>%
+      dplyr::filter(!is.na(max_power), max_power >= power_threshold) %>%
+      dplyr::pull(cell_group)
+
+    unaffected_cell_groups <- intersect(unaffected_cell_groups, powered_unaffected_cell_groups)
+  }
+
+  tidyr::expand_grid(lost_cell_groups = lost_cell_groups, unaffected_cell_groups = unaffected_cell_groups)
 }
 
 #' @export
