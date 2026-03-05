@@ -883,6 +883,10 @@ assemble_mt_graph <- function(ref_ccs,
                               component_col = "partition",
                               edge_allowlist = NULL,
                               edge_denylist = NULL,
+                              discordant_pruning_mode = c("none", "greedy"),
+                              discordant_pruning_k = 1,
+                              discordant_pruning_power_threshold = 0,
+                              discordant_pruning_cost_attr = "total_path_score_supporting",
                               verbose = FALSE) {
   # if (is.null(wt_ccm) || is.na(wt_ccm)) {
   #   stop("No control timeseries cell count model. Skipping.")
@@ -926,6 +930,10 @@ assemble_mt_graph <- function(ref_ccs,
     links_between_components = links_between_components,
     edge_allowlist = edge_allowlist,
     edge_denylist = edge_denylist,
+    discordant_pruning_mode = discordant_pruning_mode,
+    discordant_pruning_k = discordant_pruning_k,
+    discordant_pruning_power_threshold = discordant_pruning_power_threshold,
+    discordant_pruning_cost_attr = discordant_pruning_cost_attr,
     components = component_col,
     verbose = verbose
   )
@@ -1173,4 +1181,3 @@ get_extant_cell_types <- function(ccm,
 }
 # undebug(get_extant_cell_types)
 # get_extant_cell_types(wt_ccm_wl, 72, 96) %>% filter(cell_group == "21")
-

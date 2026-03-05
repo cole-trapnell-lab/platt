@@ -544,6 +544,213 @@ compute_edge_discordance_penalty <- function(perturbation_ccm_tbl,
     )
 }
 
+#' Build discordant source-target pairs from perturbation summaries
+#' @noRd
+collect_discordant_pairs_from_perturbation_summaries <- function(perturbation_ccm_tbl,
+                                                                 power_threshold = 0) {
+  perturb_summaries <- perturbation_ccm_tbl %>%
+    dplyr::filter(!is.na(perturb_summary_tbl)) %>%
+    dplyr::select(perturb_name, perturb_summary_tbl) %>%
+    tidyr::unnest(cols = c(perturb_summary_tbl))
+
+  if (nrow(perturb_summaries) == 0) {
+    return(tibble::tibble(from = character(), to = character(), pair_weight = numeric()))
+  }
+
+  power_cols <- colnames(perturb_summaries)[stringr::str_detect(colnames(perturb_summaries), "power")]
+  if (length(power_cols) > 0) {
+    perturb_cell_power <- perturb_summaries %>%
+      dplyr::select(perturb_name, cell_group, dplyr::all_of(power_cols)) %>%
+      tidyr::pivot_longer(
+        cols = dplyr::all_of(power_cols),
+        names_to = "power_metric",
+        values_to = "power_value"
+      ) %>%
+      dplyr::group_by(perturb_name, cell_group) %>%
+      dplyr::summarize(
+        max_power = ifelse(all(is.na(power_value)), NA_real_, max(power_value, na.rm = TRUE)),
+        .groups = "drop"
+      )
+  } else {
+    perturb_cell_power <- perturb_summaries %>%
+      dplyr::select(perturb_name, cell_group) %>%
+      dplyr::distinct() %>%
+      dplyr::mutate(max_power = 1)
+  }
+
+  lost_states <- perturb_summaries %>%
+    dplyr::filter(is_lost_when_present) %>%
+    dplyr::select(perturb_name, from = cell_group) %>%
+    dplyr::distinct()
+
+  unaffected_states <- perturb_summaries %>%
+    dplyr::filter(!is_lost_when_present) %>%
+    dplyr::select(perturb_name, to = cell_group) %>%
+    dplyr::distinct() %>%
+    dplyr::left_join(perturb_cell_power, by = c("perturb_name", "to" = "cell_group")) %>%
+    dplyr::filter(!is.na(max_power), max_power >= power_threshold)
+
+  discordant_pairs <- lost_states %>%
+    dplyr::inner_join(unaffected_states, by = "perturb_name", relationship = "many-to-many") %>%
+    dplyr::filter(from != to) %>%
+    dplyr::transmute(from, to, pair_weight = max_power) %>%
+    dplyr::distinct()
+
+  return(discordant_pairs)
+}
+
+#' Break forbidden source-target paths by greedy edge removals
+#'
+#' Greedy objective: pick the edge with highest
+#' (total broken forbidden-path weight) / (edge deletion cost),
+#' where forbidden paths are up to `k_paths` shortest paths for each discordant pair.
+#'
+#' @param state_graph Directed igraph to prune.
+#' @param discordant_pairs Tibble with at least `from` and `to`; optional `pair_weight`.
+#' @param k_paths Integer. Number of candidate shortest paths to consider per pair.
+#' @param deletion_cost_attr Edge attribute used as deletion cost.
+#' @param traversal_weight_attr Edge attribute used to rank shortest paths.
+#'
+#' @return A list with `graph` (pruned igraph) and `removed_edges` tibble.
+#' @noRd
+prune_discordant_paths_greedily <- function(state_graph,
+                                            discordant_pairs,
+                                            k_paths = 1,
+                                            deletion_cost_attr = "total_path_score_supporting",
+                                            traversal_weight_attr = "weight") {
+  if (is.null(state_graph) || igraph::gsize(state_graph) == 0 || nrow(discordant_pairs) == 0) {
+    return(list(
+      graph = state_graph,
+      removed_edges = tibble::tibble(iteration = integer(), from = character(), to = character(), score_ratio = numeric())
+    ))
+  }
+
+  k_paths <- max(1, as.integer(k_paths))
+
+  if (!"pair_weight" %in% colnames(discordant_pairs)) {
+    discordant_pairs <- discordant_pairs %>% dplyr::mutate(pair_weight = 1)
+  }
+
+  graph <- state_graph
+  removed_edges <- tibble::tibble(iteration = integer(), from = character(), to = character(), score_ratio = numeric())
+  max_iters <- igraph::gsize(graph)
+
+  collect_forbidden_paths <- function(g, pairs_tbl, k, weight_attr) {
+    edge_df <- igraph::as_data_frame(g, what = "edges") %>% dplyr::select(from, to)
+    edge_df$edge_key <- paste(edge_df$from, edge_df$to, sep = "||")
+    edge_weights <- igraph::edge_attr(g, weight_attr)
+    if (is.null(edge_weights)) {
+      edge_df$edge_weight <- 1
+    } else {
+      edge_df$edge_weight <- edge_weights
+      edge_df$edge_weight[is.na(edge_df$edge_weight)] <- 1
+    }
+
+    pair_path_rows <- lapply(seq_len(nrow(pairs_tbl)), function(i) {
+      p <- pairs_tbl[i, ]
+      from_node <- as.character(p$from[[1]])
+      to_node <- as.character(p$to[[1]])
+      pair_weight <- as.numeric(p$pair_weight[[1]])
+      if (!(from_node %in% igraph::V(g)$name && to_node %in% igraph::V(g)$name)) {
+        return(NULL)
+      }
+      all_paths <- igraph::all_simple_paths(g, from = from_node, to = to_node, mode = "out")
+      if (length(all_paths) == 0) {
+        return(NULL)
+      }
+      path_tbl <- tibble::tibble(path_vertices = all_paths) %>%
+        dplyr::mutate(
+          path_vertices = lapply(path_vertices, names),
+          path_edges = lapply(path_vertices, function(vs) {
+            if (length(vs) < 2) {
+              return(tibble::tibble(from = character(), to = character()))
+            }
+            tibble::tibble(from = head(vs, -1), to = tail(vs, -1))
+          }),
+          path_hops = vapply(path_edges, nrow, integer(1)),
+          path_weight_total = vapply(path_edges, function(pe) {
+            if (nrow(pe) == 0) {
+              return(0)
+            }
+            edge_df %>%
+              dplyr::inner_join(pe, by = c("from", "to")) %>%
+              dplyr::summarize(w = sum(edge_weight, na.rm = TRUE)) %>%
+              dplyr::pull(w) %>%
+              as.numeric()
+          }, numeric(1))
+        ) %>%
+        dplyr::arrange(path_weight_total, path_hops) %>%
+        dplyr::slice_head(n = k) %>%
+        dplyr::mutate(
+          pair_from = from_node,
+          pair_to = to_node,
+          pair_weight = pair_weight,
+          path_score = pair_weight,
+          edge_keys = lapply(path_edges, function(pe) paste(pe$from, pe$to, sep = "||"))
+        ) %>%
+        dplyr::select(pair_from, pair_to, path_score, edge_keys)
+      return(path_tbl)
+    })
+
+    path_tbl <- dplyr::bind_rows(pair_path_rows)
+    if (nrow(path_tbl) == 0) {
+      return(path_tbl)
+    }
+    return(path_tbl %>% dplyr::mutate(path_id = dplyr::row_number()))
+  }
+
+  for (iter in seq_len(max_iters)) {
+    forbidden_paths <- collect_forbidden_paths(graph, discordant_pairs, k_paths, traversal_weight_attr)
+    if (nrow(forbidden_paths) == 0) {
+      break
+    }
+
+    edge_scores <- forbidden_paths %>%
+      dplyr::select(path_id, path_score, edge_keys) %>%
+      tidyr::unnest(edge_keys) %>%
+      dplyr::group_by(edge_keys) %>%
+      dplyr::summarize(broken_path_weight = sum(path_score, na.rm = TRUE), .groups = "drop")
+
+    curr_edges <- igraph::as_data_frame(graph, what = "edges") %>% dplyr::select(from, to)
+    curr_edges$edge_key <- paste(curr_edges$from, curr_edges$to, sep = "||")
+    deletion_cost <- igraph::edge_attr(graph, deletion_cost_attr)
+    if (is.null(deletion_cost)) {
+      curr_edges$deletion_cost <- 1
+    } else {
+      curr_edges$deletion_cost <- deletion_cost
+      curr_edges$deletion_cost[is.na(curr_edges$deletion_cost)] <- 1
+      curr_edges$deletion_cost <- pmax(abs(curr_edges$deletion_cost), 1e-8)
+    }
+
+    candidate_edges <- curr_edges %>%
+      dplyr::inner_join(edge_scores, by = c("edge_key" = "edge_keys")) %>%
+      dplyr::mutate(score_ratio = broken_path_weight / deletion_cost) %>%
+      dplyr::arrange(dplyr::desc(score_ratio), deletion_cost)
+
+    if (nrow(candidate_edges) == 0) {
+      break
+    }
+
+    edge_to_remove <- candidate_edges[1, ]
+    graph <- igraph::delete_edges(
+      graph,
+      igraph::E(graph)[.from(edge_to_remove$from[[1]]) & .to(edge_to_remove$to[[1]])]
+    )
+
+    removed_edges <- dplyr::bind_rows(
+      removed_edges,
+      tibble::tibble(
+        iteration = iter,
+        from = edge_to_remove$from[[1]],
+        to = edge_to_remove$to[[1]],
+        score_ratio = edge_to_remove$score_ratio[[1]]
+      )
+    )
+  }
+
+  return(list(graph = graph, removed_edges = removed_edges))
+}
+
 #' @export
 get_perturbation_paths <- function(perturbation_ccm,
                                    perturb_summary_tbl,
@@ -2083,12 +2290,18 @@ assemble_transition_graph_from_perturbations <- function(ref_ccs,
                                                          verbose = FALSE,
                                                          edge_allowlist = NULL,
                                                          edge_denylist = NULL,
+                                                         discordant_pruning_mode = c("none", "greedy"),
+                                                         discordant_pruning_k = 1,
+                                                         discordant_pruning_power_threshold = 0,
+                                                         discordant_pruning_cost_attr = "total_path_score_supporting",
                                                          newdata = tibble()) {
   # Temporarily set the number of threads OpenMP & the BLAS library can use to be 1
   # old_omp_num_threads = single_thread_omp()
   # old_blas_num_threads = single_thread_blas()
 
   tryCatch({
+    discordant_pruning_mode <- match.arg(discordant_pruning_mode)
+
     # Get a table of the cell types that are in the control
     # FIXME: "knockout" is hard coded and should be a user-defined term in the model
 
@@ -2226,6 +2439,23 @@ assemble_transition_graph_from_perturbations <- function(ref_ccs,
       max_interval,
       log_abund_detection_thresh
     )
+
+    if (discordant_pruning_mode == "greedy") {
+      discordant_pairs <- collect_discordant_pairs_from_perturbation_summaries(
+        perturbation_ccm_tbl = perturbation_ccm_tbl,
+        power_threshold = discordant_pruning_power_threshold
+      )
+      pruning_res <- prune_discordant_paths_greedily(
+        state_graph = G,
+        discordant_pairs = discordant_pairs,
+        k_paths = discordant_pruning_k,
+        deletion_cost_attr = discordant_pruning_cost_attr,
+        traversal_weight_attr = "weight"
+      )
+      G <- pruning_res$graph
+      igraph::graph_attr(G, "discordant_pruning_removed_edges") <- list(pruning_res$removed_edges)
+      igraph::graph_attr(G, "discordant_pruning_mode") <- discordant_pruning_mode
+    }
 
 
     # FIXME: this is gross and there is probably a cleaner way, but what we're doing here
