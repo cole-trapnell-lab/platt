@@ -862,6 +862,8 @@ fit_mt_models <- function(cds,
 #' @param component_col Character. Column name defining components.
 #' @param edge_allowlist Optional allowlist for edges.
 #' @param edge_denylist Optional denylist for edges.
+#' @param discordant_config Optional list controlling discordant pruning with
+#'   keys `power_threshold`, `prune_mode`, `K_paths`, and `lambda_edge`.
 #' @param verbose Logical. Emit progress messages.
 #'
 #' @return An igraph mutant supergraph.
@@ -883,10 +885,12 @@ assemble_mt_graph <- function(ref_ccs,
                               component_col = "partition",
                               edge_allowlist = NULL,
                               edge_denylist = NULL,
+                              discordant_config = NULL,
                               discordant_pruning_mode = c("none", "greedy"),
                               discordant_pruning_k = 1,
                               discordant_pruning_power_threshold = 0,
                               discordant_pruning_cost_attr = "total_path_score_supporting",
+                              discordant_pruning_lambda_edge = 0,
                               verbose = FALSE) {
   # if (is.null(wt_ccm) || is.na(wt_ccm)) {
   #   stop("No control timeseries cell count model. Skipping.")
@@ -930,10 +934,12 @@ assemble_mt_graph <- function(ref_ccs,
     links_between_components = links_between_components,
     edge_allowlist = edge_allowlist,
     edge_denylist = edge_denylist,
+    discordant_config = discordant_config,
     discordant_pruning_mode = discordant_pruning_mode,
     discordant_pruning_k = discordant_pruning_k,
     discordant_pruning_power_threshold = discordant_pruning_power_threshold,
     discordant_pruning_cost_attr = discordant_pruning_cost_attr,
+    discordant_pruning_lambda_edge = discordant_pruning_lambda_edge,
     components = component_col,
     verbose = verbose
   )

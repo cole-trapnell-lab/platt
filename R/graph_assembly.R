@@ -617,7 +617,8 @@ prune_discordant_paths_greedily <- function(state_graph,
                                             discordant_pairs,
                                             k_paths = 1,
                                             deletion_cost_attr = "total_path_score_supporting",
-                                            traversal_weight_attr = "weight") {
+                                            traversal_weight_attr = "weight",
+                                            lambda_edge = 0) {
   if (is.null(state_graph) || igraph::gsize(state_graph) == 0 || nrow(discordant_pairs) == 0) {
     return(list(
       graph = state_graph,
@@ -724,7 +725,7 @@ prune_discordant_paths_greedily <- function(state_graph,
 
     candidate_edges <- curr_edges %>%
       dplyr::inner_join(edge_scores, by = c("edge_key" = "edge_keys")) %>%
-      dplyr::mutate(score_ratio = broken_path_weight / deletion_cost) %>%
+      dplyr::mutate(score_ratio = broken_path_weight / (deletion_cost + max(0, lambda_edge))) %>%
       dplyr::arrange(dplyr::desc(score_ratio), deletion_cost)
 
     if (nrow(candidate_edges) == 0) {
@@ -749,6 +750,42 @@ prune_discordant_paths_greedily <- function(state_graph,
   }
 
   return(list(graph = graph, removed_edges = removed_edges))
+}
+
+#' Normalize discordant pruning configuration
+#'
+#' Supported config keys:
+#' - `power_threshold`
+#' - `prune_mode` ("existing" or "greedy")
+#' - `K_paths`
+#' - `lambda_edge`
+#'
+#' @noRd
+normalize_discordant_pruning_config <- function(discordant_config = NULL,
+                                                discordant_pruning_mode = "none",
+                                                discordant_pruning_k = 1,
+                                                discordant_pruning_power_threshold = 0,
+                                                discordant_pruning_lambda_edge = 0) {
+  cfg <- list(
+    power_threshold = discordant_pruning_power_threshold,
+    prune_mode = ifelse(identical(discordant_pruning_mode, "greedy"), "greedy", "existing"),
+    K_paths = discordant_pruning_k,
+    lambda_edge = discordant_pruning_lambda_edge
+  )
+
+  if (!is.null(discordant_config)) {
+    if (!is.list(discordant_config)) {
+      stop("discordant_config must be a list when provided.")
+    }
+    cfg[names(discordant_config)] <- discordant_config
+  }
+
+  cfg$prune_mode <- match.arg(as.character(cfg$prune_mode), c("existing", "greedy"))
+  cfg$K_paths <- max(1, as.integer(cfg$K_paths))
+  cfg$power_threshold <- as.numeric(cfg$power_threshold)
+  cfg$lambda_edge <- as.numeric(cfg$lambda_edge)
+
+  return(cfg)
 }
 
 #' @export
@@ -2271,6 +2308,9 @@ assess_perturbation_effects <- function(perturbation_ccm_tbl,
 #' must have a perturbation model with a unique name.
 #'
 #' The function returns a state graph with edges annotated by the level of support from the perturbations.
+#' @param discordant_config Optional list with keys `power_threshold`,
+#'   `prune_mode` (`"existing"` or `"greedy"`), `K_paths`, and `lambda_edge`.
+#'   Defaults preserve existing behavior (`prune_mode = "existing"`).
 #' @export
 assemble_transition_graph_from_perturbations <- function(ref_ccs,
                                                          timeseries_graph,
@@ -2290,10 +2330,12 @@ assemble_transition_graph_from_perturbations <- function(ref_ccs,
                                                          verbose = FALSE,
                                                          edge_allowlist = NULL,
                                                          edge_denylist = NULL,
+                                                         discordant_config = NULL,
                                                          discordant_pruning_mode = c("none", "greedy"),
                                                          discordant_pruning_k = 1,
                                                          discordant_pruning_power_threshold = 0,
                                                          discordant_pruning_cost_attr = "total_path_score_supporting",
+                                                         discordant_pruning_lambda_edge = 0,
                                                          newdata = tibble()) {
   # Temporarily set the number of threads OpenMP & the BLAS library can use to be 1
   # old_omp_num_threads = single_thread_omp()
@@ -2301,6 +2343,13 @@ assemble_transition_graph_from_perturbations <- function(ref_ccs,
 
   tryCatch({
     discordant_pruning_mode <- match.arg(discordant_pruning_mode)
+    discordant_cfg <- normalize_discordant_pruning_config(
+      discordant_config = discordant_config,
+      discordant_pruning_mode = discordant_pruning_mode,
+      discordant_pruning_k = discordant_pruning_k,
+      discordant_pruning_power_threshold = discordant_pruning_power_threshold,
+      discordant_pruning_lambda_edge = discordant_pruning_lambda_edge
+    )
 
     # Get a table of the cell types that are in the control
     # FIXME: "knockout" is hard coded and should be a user-defined term in the model
@@ -2440,21 +2489,22 @@ assemble_transition_graph_from_perturbations <- function(ref_ccs,
       log_abund_detection_thresh
     )
 
-    if (discordant_pruning_mode == "greedy") {
+    if (discordant_cfg$prune_mode == "greedy") {
       discordant_pairs <- collect_discordant_pairs_from_perturbation_summaries(
         perturbation_ccm_tbl = perturbation_ccm_tbl,
-        power_threshold = discordant_pruning_power_threshold
+        power_threshold = discordant_cfg$power_threshold
       )
       pruning_res <- prune_discordant_paths_greedily(
         state_graph = G,
         discordant_pairs = discordant_pairs,
-        k_paths = discordant_pruning_k,
+        k_paths = discordant_cfg$K_paths,
         deletion_cost_attr = discordant_pruning_cost_attr,
-        traversal_weight_attr = "weight"
+        traversal_weight_attr = "weight",
+        lambda_edge = discordant_cfg$lambda_edge
       )
       G <- pruning_res$graph
       igraph::graph_attr(G, "discordant_pruning_removed_edges") <- list(pruning_res$removed_edges)
-      igraph::graph_attr(G, "discordant_pruning_mode") <- discordant_pruning_mode
+      igraph::graph_attr(G, "discordant_pruning_mode") <- discordant_cfg$prune_mode
     }
 
 

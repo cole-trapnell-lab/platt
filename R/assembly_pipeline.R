@@ -227,6 +227,8 @@ run_wildtype_assembly <- function(cds,
 #' @param min_lfc Minimum log-fold-change for perturbation effects.
 #' @param links_between_components Strategy for linking graph components.
 #' @param log_abund_detection_thresh Log abundance detection threshold.
+#' @param discordant_config Optional list controlling discordant pruning with
+#'   keys `power_threshold`, `prune_mode`, `K_paths`, and `lambda_edge`.
 #' @param batches_excluded_from_assembly Vector of batches to exclude.
 #' @param component_col Column name for component labels.
 #' @param embryo_size_factors Optional size factors for embryo data.
@@ -261,10 +263,12 @@ run_perturbation_assembly <- function(cds,
                                       min_lfc = 0,
                                       links_between_components = c("none", "ctp", "strongest-pcor", "strong-pcor"),
                                       log_abund_detection_thresh = -5,
+                                      discordant_config = NULL,
                                       discordant_pruning_mode = c("none", "greedy"),
                                       discordant_pruning_k = 1,
                                       discordant_pruning_power_threshold = 0,
                                       discordant_pruning_cost_attr = "total_path_score_supporting",
+                                      discordant_pruning_lambda_edge = 0,
                                       batches_excluded_from_assembly = c(),
                                       component_col = "partition",
                                       embryo_size_factors = NULL) {
@@ -339,10 +343,12 @@ run_perturbation_assembly <- function(cds,
         q_val = q_val,
         log_abund_detection_thresh = log_abund_detection_thresh,
         links_between_components = links_between_components,
+        discordant_config = discordant_config,
         discordant_pruning_mode = discordant_pruning_mode,
         discordant_pruning_k = discordant_pruning_k,
         discordant_pruning_power_threshold = discordant_pruning_power_threshold,
         discordant_pruning_cost_attr = discordant_pruning_cost_attr,
+        discordant_pruning_lambda_edge = discordant_pruning_lambda_edge,
         component_col = component_col,
         verbose = verbose
     )

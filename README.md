@@ -32,3 +32,17 @@ Finally, install the Platt package as follows:
 ```r
 devtools::install_github("cole-trapnell-lab/platt")
 ```
+
+## Discordant Pruning Config
+
+`run_perturbation_assembly()` and downstream graph assembly entry points accept a
+single optional `discordant_config` list:
+
+```r
+discordant_config <- list(
+  power_threshold = 0,      # default preserves current behavior
+  prune_mode = "existing",  # "existing" (default) or "greedy"
+  K_paths = 1,              # candidate paths per discordant pair
+  lambda_edge = 0           # edge-cost regularization for greedy mode
+)
+```
