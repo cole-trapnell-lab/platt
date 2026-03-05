@@ -788,6 +788,187 @@ normalize_discordant_pruning_config <- function(discordant_config = NULL,
   return(cfg)
 }
 
+#' Count remaining discordant reachability violations in a graph
+#' @noRd
+count_discordant_reachability_violations <- function(state_graph, discordant_pairs) {
+  if (is.null(state_graph) || igraph::gsize(state_graph) == 0 || nrow(discordant_pairs) == 0) {
+    return(0L)
+  }
+
+  sum(vapply(seq_len(nrow(discordant_pairs)), function(i) {
+    from_node <- as.character(discordant_pairs$from[[i]])
+    to_node <- as.character(discordant_pairs$to[[i]])
+    if (!(from_node %in% igraph::V(state_graph)$name && to_node %in% igraph::V(state_graph)$name)) {
+      return(FALSE)
+    }
+    d <- igraph::distances(state_graph, v = from_node, to = to_node, mode = "out")
+    is.finite(d[1, 1])
+  }, logical(1)))
+}
+
+#' Summarize edge support-related distributions for a graph
+#' @noRd
+summarize_edge_support_distributions <- function(state_graph, mode_label = "graph") {
+  if (is.null(state_graph) || igraph::gsize(state_graph) == 0) {
+    return(tibble::tibble(
+      mode = character(),
+      metric = character(),
+      n_edges = integer(),
+      mean = numeric(),
+      median = numeric(),
+      p90 = numeric(),
+      max = numeric()
+    ))
+  }
+
+  edge_tbl <- igraph::as_data_frame(state_graph, what = "edges")
+  numeric_support_cols <- names(edge_tbl)[vapply(edge_tbl, is.numeric, logical(1))]
+  numeric_support_cols <- numeric_support_cols[grepl("support|penalty", numeric_support_cols)]
+
+  if (length(numeric_support_cols) == 0) {
+    return(tibble::tibble(
+      mode = mode_label,
+      metric = "none",
+      n_edges = nrow(edge_tbl),
+      mean = NA_real_,
+      median = NA_real_,
+      p90 = NA_real_,
+      max = NA_real_
+    ))
+  }
+
+  purrr::map_dfr(numeric_support_cols, function(col_nm) {
+    vals <- edge_tbl[[col_nm]]
+    tibble::tibble(
+      mode = mode_label,
+      metric = col_nm,
+      n_edges = length(vals),
+      mean = mean(vals, na.rm = TRUE),
+      median = stats::median(vals, na.rm = TRUE),
+      p90 = as.numeric(stats::quantile(vals, probs = 0.9, na.rm = TRUE, names = FALSE)),
+      max = max(vals, na.rm = TRUE)
+    )
+  })
+}
+
+#' Compare existing vs greedy discordant pruning modes
+#'
+#' Runs perturbation graph assembly twice with the same inputs:
+#' - existing mode (`prune_mode = "existing"`)
+#' - greedy mode (`prune_mode = "greedy"`)
+#'
+#' Returns edge-change counts/tables, remaining discordant reachability
+#' violations, and support distribution summaries.
+#'
+#' @noRd
+compare_discordant_pruning_modes <- function(ref_ccs,
+                                             timeseries_graph,
+                                             perturbation_ccm_tbl,
+                                             discordant_config = list(),
+                                             q_val = 0.01,
+                                             start_time = NULL,
+                                             stop_time = NULL,
+                                             interval_col = "timepoint",
+                                             interval_step = 2,
+                                             min_interval = 4,
+                                             max_interval = 24,
+                                             log_abund_detection_thresh = -5,
+                                             min_pathfinding_lfc = 0,
+                                             links_between_components = c("none", "ctp", "strongest-pcor", "strong-pcor"),
+                                             components = "partition",
+                                             verbose = FALSE,
+                                             edge_allowlist = NULL,
+                                             edge_denylist = NULL,
+                                             discordant_pruning_cost_attr = "total_path_score_supporting",
+                                             newdata = tibble()) {
+  base_cfg <- normalize_discordant_pruning_config(discordant_config = discordant_config)
+  existing_cfg <- base_cfg
+  existing_cfg$prune_mode <- "existing"
+  greedy_cfg <- base_cfg
+  greedy_cfg$prune_mode <- "greedy"
+
+  g_existing <- assemble_transition_graph_from_perturbations(
+    ref_ccs = ref_ccs,
+    timeseries_graph = timeseries_graph,
+    perturbation_ccm_tbl = perturbation_ccm_tbl,
+    q_val = q_val,
+    start_time = start_time,
+    stop_time = stop_time,
+    interval_col = interval_col,
+    interval_step = interval_step,
+    min_interval = min_interval,
+    max_interval = max_interval,
+    log_abund_detection_thresh = log_abund_detection_thresh,
+    min_pathfinding_lfc = min_pathfinding_lfc,
+    links_between_components = links_between_components,
+    components = components,
+    verbose = verbose,
+    edge_allowlist = edge_allowlist,
+    edge_denylist = edge_denylist,
+    discordant_config = existing_cfg,
+    discordant_pruning_cost_attr = discordant_pruning_cost_attr,
+    newdata = newdata
+  )
+
+  g_greedy <- assemble_transition_graph_from_perturbations(
+    ref_ccs = ref_ccs,
+    timeseries_graph = timeseries_graph,
+    perturbation_ccm_tbl = perturbation_ccm_tbl,
+    q_val = q_val,
+    start_time = start_time,
+    stop_time = stop_time,
+    interval_col = interval_col,
+    interval_step = interval_step,
+    min_interval = min_interval,
+    max_interval = max_interval,
+    log_abund_detection_thresh = log_abund_detection_thresh,
+    min_pathfinding_lfc = min_pathfinding_lfc,
+    links_between_components = links_between_components,
+    components = components,
+    verbose = verbose,
+    edge_allowlist = edge_allowlist,
+    edge_denylist = edge_denylist,
+    discordant_config = greedy_cfg,
+    discordant_pruning_cost_attr = discordant_pruning_cost_attr,
+    newdata = newdata
+  )
+
+  edges_existing <- igraph::as_data_frame(g_existing, what = "edges") %>% dplyr::select(from, to) %>% dplyr::distinct()
+  edges_greedy <- igraph::as_data_frame(g_greedy, what = "edges") %>% dplyr::select(from, to) %>% dplyr::distinct()
+
+  edges_removed <- dplyr::anti_join(edges_existing, edges_greedy, by = c("from", "to"))
+  edges_added <- dplyr::anti_join(edges_greedy, edges_existing, by = c("from", "to"))
+
+  discordant_pairs <- collect_discordant_pairs_from_perturbation_summaries(
+    perturbation_ccm_tbl = perturbation_ccm_tbl,
+    power_threshold = base_cfg$power_threshold
+  ) %>% dplyr::select(from, to, pair_weight) %>% dplyr::distinct()
+
+  violations_existing <- count_discordant_reachability_violations(g_existing, discordant_pairs)
+  violations_greedy <- count_discordant_reachability_violations(g_greedy, discordant_pairs)
+
+  support_summary <- dplyr::bind_rows(
+    summarize_edge_support_distributions(g_existing, "existing"),
+    summarize_edge_support_distributions(g_greedy, "greedy")
+  )
+
+  list(
+    config = base_cfg,
+    edge_changes = list(
+      n_removed = nrow(edges_removed),
+      n_added = nrow(edges_added),
+      removed = edges_removed,
+      added = edges_added
+    ),
+    discordant_violations = tibble::tibble(
+      mode = c("existing", "greedy"),
+      n_remaining = c(violations_existing, violations_greedy)
+    ),
+    support_summary = support_summary,
+    graphs = list(existing = g_existing, greedy = g_greedy)
+  )
+}
+
 #' @export
 get_perturbation_paths <- function(perturbation_ccm,
                                    perturb_summary_tbl,

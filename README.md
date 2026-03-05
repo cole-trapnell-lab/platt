@@ -46,3 +46,10 @@ discordant_config <- list(
   lambda_edge = 0           # edge-cost regularization for greedy mode
 )
 ```
+
+For lightweight local comparison of existing vs greedy pruning on prepared RDS
+inputs, run:
+
+```bash
+Rscript dev/compare_prune_modes.R ref_ccs.rds timeseries_graph.rds perturbation_ccm_tbl.rds
+```
