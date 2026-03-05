@@ -430,6 +430,120 @@ compute_discordant_loss_pairs <- function(earliest_loss_tbl,
   tidyr::expand_grid(lost_cell_groups = lost_cell_groups, unaffected_cell_groups = unaffected_cell_groups)
 }
 
+#' Compute edge discordance penalties from perturbation summaries
+#'
+#' Aggregates discordant evidence for each directed edge in a state graph across
+#' perturbations, weighted by downstream-state power.
+#'
+#' @param perturbation_ccm_tbl Tibble with `perturb_name` and nested
+#'   `perturb_summary_tbl` columns.
+#' @param state_transition_graph Directed igraph whose edges are scored.
+#' @param power_threshold Numeric. Minimum downstream power required for
+#'   unaffected states to contribute discordant evidence.
+#'
+#' @return Tibble with one row per edge, including `discordance_penalty` and
+#'   summary columns; existing edge-support columns can be preserved by joining
+#'   this table on `from`/`to`.
+#' @noRd
+compute_edge_discordance_penalty <- function(perturbation_ccm_tbl,
+                                             state_transition_graph,
+                                             power_threshold = 0) {
+  edge_tbl <- igraph::as_data_frame(state_transition_graph, what = "edges") %>%
+    dplyr::select(from, to) %>%
+    dplyr::distinct()
+
+  if (nrow(edge_tbl) == 0) {
+    return(tibble::tibble(
+      from = character(),
+      to = character(),
+      discordance_penalty = numeric(),
+      num_discordant_perturbs = integer(),
+      mean_discordant_power = numeric()
+    ))
+  }
+
+  perturb_summaries <- perturbation_ccm_tbl %>%
+    dplyr::filter(!is.na(perturb_summary_tbl)) %>%
+    dplyr::select(perturb_name, perturb_summary_tbl) %>%
+    tidyr::unnest(cols = c(perturb_summary_tbl))
+
+  if (nrow(perturb_summaries) == 0) {
+    return(edge_tbl %>%
+      dplyr::mutate(
+        discordance_penalty = 0,
+        num_discordant_perturbs = 0L,
+        mean_discordant_power = 0
+      ))
+  }
+
+  power_cols <- colnames(perturb_summaries)[stringr::str_detect(colnames(perturb_summaries), "power")]
+  if (length(power_cols) > 0) {
+    perturb_cell_power <- perturb_summaries %>%
+      dplyr::select(perturb_name, cell_group, dplyr::all_of(power_cols)) %>%
+      tidyr::pivot_longer(
+        cols = dplyr::all_of(power_cols),
+        names_to = "power_metric",
+        values_to = "power_value"
+      ) %>%
+      dplyr::group_by(perturb_name, cell_group) %>%
+      dplyr::summarize(
+        max_power = ifelse(all(is.na(power_value)), NA_real_, max(power_value, na.rm = TRUE)),
+        .groups = "drop"
+      )
+  } else {
+    perturb_cell_power <- perturb_summaries %>%
+      dplyr::select(perturb_name, cell_group) %>%
+      dplyr::distinct() %>%
+      dplyr::mutate(max_power = 1)
+  }
+
+  lost_states <- perturb_summaries %>%
+    dplyr::filter(is_lost_when_present) %>%
+    dplyr::transmute(
+      perturb_name,
+      from = cell_group,
+      loss_effect = pmax(-loss_when_present, 0)
+    )
+
+  unaffected_powered_states <- perturb_summaries %>%
+    dplyr::filter(!is_lost_when_present) %>%
+    dplyr::select(perturb_name, to = cell_group) %>%
+    dplyr::left_join(perturb_cell_power, by = c("perturb_name", "to" = "cell_group")) %>%
+    dplyr::filter(!is.na(max_power), max_power >= power_threshold)
+
+  edge_discordant_evidence <- edge_tbl %>%
+    dplyr::inner_join(lost_states, by = "from", relationship = "many-to-many") %>%
+    dplyr::inner_join(unaffected_powered_states, by = c("perturb_name", "to"), relationship = "many-to-many")
+
+  if (nrow(edge_discordant_evidence) == 0) {
+    return(edge_tbl %>%
+      dplyr::mutate(
+        discordance_penalty = 0,
+        num_discordant_perturbs = 0L,
+        mean_discordant_power = 0
+      ))
+  }
+
+  # Formula: discordance_penalty(edge) = sum_over_perturbations(max_power_to * max(0, -loss_when_present_from))
+  discordance_tbl <- edge_discordant_evidence %>%
+    dplyr::mutate(discordant_weight = max_power * loss_effect) %>%
+    dplyr::group_by(from, to) %>%
+    dplyr::summarize(
+      discordance_penalty = sum(discordant_weight, na.rm = TRUE),
+      num_discordant_perturbs = dplyr::n_distinct(perturb_name),
+      mean_discordant_power = mean(max_power, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  edge_tbl %>%
+    dplyr::left_join(discordance_tbl, by = c("from", "to")) %>%
+    dplyr::mutate(
+      discordance_penalty = ifelse(is.na(discordance_penalty), 0, discordance_penalty),
+      num_discordant_perturbs = ifelse(is.na(num_discordant_perturbs), 0L, as.integer(num_discordant_perturbs)),
+      mean_discordant_power = ifelse(is.na(mean_discordant_power), 0, mean_discordant_power)
+    )
+}
+
 #' @export
 get_perturbation_paths <- function(perturbation_ccm,
                                    perturb_summary_tbl,
@@ -2292,6 +2406,11 @@ assess_support_for_transition_graph <- function(perturbation_ccm_tbl,
   # print (edge_support_labels)
   edge_support_summary <- edge_support_summary %>% left_join(edge_support_labels)
   edge_support_summary <- edge_support_summary %>% left_join(edge_support_perturbs)
+  edge_discordance_penalty <- compute_edge_discordance_penalty(
+    perturbation_ccm_tbl = perturbation_ccm_tbl,
+    state_transition_graph = state_transition_graph
+  )
+  edge_support_summary <- edge_support_summary %>% left_join(edge_discordance_penalty, by = c("from", "to"))
 
   # edge_support_summary = edge_support_summary %>% mutate(support_weight = ifelse(is.na(support_weight), 0, support_weight))
   edge_support_summary <- edge_support_summary %>% dplyr::distinct()
