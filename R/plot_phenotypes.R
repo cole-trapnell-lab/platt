@@ -311,7 +311,8 @@ impact_to_phenos <- function(impact_table,
 #' @param arrow_unit Numeric arrowhead size for edges (points).
 #' @param node_size Base node size scalar.
 #' @param con_colour Edge/node outline color.
-#' @param legend_position Legend position passed to `theme(legend.position=...)`
+#' @param legend_position Legend position passed to `theme(legend.position=...)`.
+#'   Default is `"none"` to preserve historical no-legend behavior.
 #'   (e.g. `"right"`, `"bottom"`, `"top"`, `"left"`, or `"none"` to hide).
 #' @param label_cell_types Optional character vector of node names to label, or
 #'   `"all"`.
@@ -351,7 +352,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                                    arrow_unit = 3,
                                    node_size = 2.2,
                                    con_colour = "darkgrey",
-                                   legend_position = "bottom",
+                                   legend_position = "none",
                                    label_cell_types = NULL,
                                    show_node_labels = FALSE,
                                    label_font_size = 3,
@@ -543,6 +544,9 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     node_wedges <- g %>%
         dplyr::select(name, x, y, tooltip, active_phenotypes) %>%
         tidyr::unnest_longer(active_phenotypes, values_to = "phenotype_class") %>%
+        # Avoid extra slices when input has multiple rows per node with the
+        # same phenotype class.
+        dplyr::distinct(name, x, y, tooltip, phenotype_class) %>%
         dplyr::group_by(name) %>%
         dplyr::mutate(
             phenotype_class = factor(phenotype_class, levels = active_pheno_levels),
@@ -624,6 +628,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             color = "transparent",
             stroke = 0,
             alpha = 0,
+            hover_css = "fill:transparent;stroke:transparent;",
+            selected_css = "fill:transparent;stroke:transparent;",
             inherit.aes = FALSE
         ) +
         ggplot2::scale_fill_manual(
@@ -632,7 +638,9 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             guide = ggplot2::guide_legend(override.aes = list(shape = 21, size = 4, alpha = 1))
         )
 
-    p <- p + ggplot2::theme(legend.position = legend_position)
+    p <- p +
+        ggplot2::coord_equal() +
+        ggplot2::theme(legend.position = legend_position)
 
     if (show_node_glyphs) {
         glyph_draw_color <- if (is.null(glyph_color)) g$glyph_col else glyph_color

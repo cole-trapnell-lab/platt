@@ -21,7 +21,7 @@ plot_phenotypes_glyphs(
   arrow_unit = 3,
   node_size = 2.2,
   con_colour = "darkgrey",
-  legend_position = "bottom",
+  legend_position = "none",
   label_cell_types = NULL,
   show_node_labels = FALSE,
   label_font_size = 3,
