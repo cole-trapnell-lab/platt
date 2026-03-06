@@ -647,7 +647,14 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 dx = c(0.00, 0.00, -0.23, 0.23, 0.00),
                 dy = c(0.27, -0.27, 0.00, 0.00, 0.36)
             )
-            base <- df %>% dplyr::select(name, x, y, node_size_plot, f1_dir, f2, f3, f4, f3_alpha)
+            base <- df %>% dplyr::select(dplyr::any_of(c("name", "x", "y", "node_size_plot", "node_size", "f1_dir", "f2", "f3", "f4", "f3_alpha")))
+            if (!("node_size_plot" %in% names(base))) {
+                if ("node_size" %in% names(base)) {
+                    base <- base %>% dplyr::mutate(node_size_plot = node_size * 3.2)
+                } else {
+                    base <- base %>% dplyr::mutate(node_size_plot = 3.2)
+                }
+            }
             b1u <- base %>%
                 dplyr::filter(f1_dir == "increase") %>%
                 dplyr::mutate(badge = "F1_up")
