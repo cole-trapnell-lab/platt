@@ -555,6 +555,9 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         ) %>%
         dplyr::ungroup()
 
+    # Scalar used by interactive hitbox layer.
+    node_size_plot <- node_size * 3.2
+
     p <- ggplot2::ggplot(ggplot2::aes(x, y), data = g) +
         ggplot2::geom_path(
             ggplot2::aes(x, y, group = edge_name),
