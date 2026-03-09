@@ -484,83 +484,19 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 is.na(f3) ~ 0,
                 TRUE ~ scales::rescale(pmin(abs(f3), stress_cap), to = c(0.25, 1))
             ),
+            # Assign one dominant phenotype class per node for single-color fills.
+            primary_phenotype = dplyr::case_when(
+                !is.na(f2) & f2 ~ "apoptosis",
+                !is.na(f4) & f4 ~ "senescence",
+                !is.na(abundance_code) & grepl("^A1|^A4", abundance_code) ~ "abundance_gain",
+                !is.na(abundance_code) & grepl("^A2|^A3", abundance_code) ~ "abundance_loss",
+                !is.na(ident) & !(ident %in% c("I0", "I0 Identity intact", "Identity intact", NA)) ~ "identity",
+                !is.na(f3) & f3 != 0 ~ "stress",
+                !is.na(f1_dir) & f1_dir != "" ~ "fitness",
+                TRUE ~ "none"
+            ),
             node_size_plot = node_size * 3.2
         )
-
-    active_pheno_levels <- c(
-        "apoptosis",
-        "senescence",
-        "abundance_gain",
-        "abundance_loss",
-        "identity",
-        "stress",
-        "fitness",
-        "none"
-    )
-    max_node_slices <- 4L
-
-    derive_active_phenotypes <- function(abundance_code, ident, f1_dir, f2, f3, f4) {
-        classes <- character(0)
-        if (!is.na(f2) && isTRUE(f2)) classes <- c(classes, "apoptosis")
-        if (!is.na(f4) && isTRUE(f4)) classes <- c(classes, "senescence")
-        if (!is.na(abundance_code) && grepl("^A1|^A4", abundance_code)) classes <- c(classes, "abundance_gain")
-        if (!is.na(abundance_code) && grepl("^A2|^A3", abundance_code)) classes <- c(classes, "abundance_loss")
-        if (!is.na(ident) && !(ident %in% c("I0", "I0 Identity intact", "Identity intact", NA))) classes <- c(classes, "identity")
-        if (!is.na(f3) && f3 != 0) classes <- c(classes, "stress")
-        if (!is.na(f1_dir) && f1_dir != "") classes <- c(classes, "fitness")
-        classes <- unique(classes)
-        if (length(classes) == 0) classes <- "none"
-        if (length(classes) > max_node_slices) classes <- classes[seq_len(max_node_slices)]
-        classes
-    }
-
-    g <- g %>%
-        dplyr::mutate(
-            active_phenotypes = purrr::pmap(
-                list(abundance_code, ident, f1_dir, f2, f3, f4),
-                derive_active_phenotypes
-            ),
-            primary_phenotype = purrr::map_chr(active_phenotypes, dplyr::first)
-        )
-
-    node_coords <- g %>% dplyr::distinct(name, x, y)
-    if (nrow(node_coords) > 1) {
-        dist_mat <- as.matrix(stats::dist(node_coords[, c("x", "y"), drop = FALSE]))
-        diag(dist_mat) <- Inf
-        nearest_dist <- apply(dist_mat, 1, min, na.rm = TRUE)
-        node_radius_data <- stats::median(nearest_dist[is.finite(nearest_dist)], na.rm = TRUE) * 0.22
-    } else {
-        node_radius_data <- NA_real_
-    }
-    if (!is.finite(node_radius_data) || node_radius_data <= 0) {
-        x_span <- diff(range(g$x, na.rm = TRUE))
-        y_span <- diff(range(g$y, na.rm = TRUE))
-        node_radius_data <- max(c(x_span, y_span), na.rm = TRUE) * 0.015
-    }
-    if (!is.finite(node_radius_data) || node_radius_data <= 0) {
-        node_radius_data <- 0.05
-    }
-
-    node_wedges <- g %>%
-        dplyr::select(name, x, y, tooltip, active_phenotypes) %>%
-        tidyr::unnest_longer(active_phenotypes, values_to = "phenotype_class") %>%
-        # Avoid extra slices when input has multiple rows per node with the
-        # same phenotype class.
-        dplyr::distinct(name, x, y, tooltip, phenotype_class) %>%
-        dplyr::group_by(name) %>%
-        dplyr::mutate(
-            phenotype_class = factor(phenotype_class, levels = active_pheno_levels),
-            n_slices = dplyr::n(),
-            slice_index = dplyr::row_number(),
-            start = 2 * pi * (slice_index - 1) / n_slices,
-            end = 2 * pi * slice_index / n_slices,
-            r0 = 0,
-            r = node_radius_data
-        ) %>%
-        dplyr::ungroup()
-
-    # Scalar used by interactive hitbox layer.
-    node_size_plot <- node_size * 3.2
 
     p <- ggplot2::ggplot(ggplot2::aes(x, y), data = g) +
         ggplot2::geom_path(
@@ -601,37 +537,16 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         )
     }
 
-    # Multi-phenotype node wedges
+    # Fixed-size nodes with one fill color per node (historical behavior).
     p <- p +
-        ggforce::geom_arc_bar(
-            data = node_wedges,
-            ggplot2::aes(
-                x0 = x,
-                y0 = y,
-                r0 = r0,
-                r = r,
-                start = start,
-                end = end,
-                fill = phenotype_class
-            ),
-            color = con_colour,
-            linewidth = 0.25,
-            inherit.aes = FALSE
-        ) +
-        # Keep interactive target for node tooltip/click behavior.
         ggiraph::geom_point_interactive(
-            ggplot2::aes(x = x, y = y, tooltip = tooltip, data_id = name),
+            ggplot2::aes(x = x, y = y, tooltip = tooltip, fill = primary_phenotype, size = node_size_plot),
             data = g,
-            size = node_size_plot,
             shape = 21,
-            fill = "transparent",
-            color = "transparent",
-            stroke = 0,
-            alpha = 0,
-            hover_css = "fill:transparent;stroke:transparent;",
-            selected_css = "fill:transparent;stroke:transparent;",
-            inherit.aes = FALSE
+            color = con_colour,
+            linewidth = 0.25
         ) +
+        ggplot2::scale_size_identity() +
         ggplot2::scale_fill_manual(
             values = phenotype_colors,
             name = "Primary phenotype",
