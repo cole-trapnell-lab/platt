@@ -489,60 +489,15 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         )
 
     color_priority <- c("abundance_loss", "identity", "abundance_gain", "none")
-    derive_node_color_classes <- function(abundance_code, ident) {
-        classes <- character(0)
-        if (!is.na(abundance_code) && grepl("^A2|^A3", abundance_code)) classes <- c(classes, "abundance_loss")
-        if (!is.na(ident) && !(ident %in% c("I0", "I0 Identity intact", "Identity intact", "", NA))) classes <- c(classes, "identity")
-        if (!is.na(abundance_code) && grepl("^A1|^A4", abundance_code)) classes <- c(classes, "abundance_gain")
-        classes <- unique(classes)
-        if (length(classes) == 0) classes <- "none"
-        classes
-    }
-
     g <- g %>%
         dplyr::mutate(
-            node_color_classes = purrr::pmap(
-                list(abundance_code, ident),
-                derive_node_color_classes
+            primary_phenotype = dplyr::case_when(
+                !is.na(abundance_code) && grepl("^A2|^A3", abundance_code) ~ "abundance_loss",
+                !is.na(ident) && !(ident %in% c("I0", "I0 Identity intact", "Identity intact", "", NA)) ~ "identity",
+                !is.na(abundance_code) && grepl("^A1|^A4", abundance_code) ~ "abundance_gain",
+                TRUE ~ "none"
             )
         )
-
-    node_coords <- g %>% dplyr::distinct(name, x, y)
-    if (nrow(node_coords) > 1) {
-        dist_mat <- as.matrix(stats::dist(node_coords[, c("x", "y"), drop = FALSE]))
-        diag(dist_mat) <- Inf
-        nearest_dist <- apply(dist_mat, 1, min, na.rm = TRUE)
-        node_radius_data <- stats::median(nearest_dist[is.finite(nearest_dist)], na.rm = TRUE) * 0.22
-    } else {
-        node_radius_data <- NA_real_
-    }
-    if (!is.finite(node_radius_data) || node_radius_data <= 0) {
-        x_span <- diff(range(g$x, na.rm = TRUE))
-        y_span <- diff(range(g$y, na.rm = TRUE))
-        node_radius_data <- max(c(x_span, y_span), na.rm = TRUE) * 0.015
-    }
-    if (!is.finite(node_radius_data) || node_radius_data <= 0) {
-        node_radius_data <- 0.05
-    }
-
-    node_wedges <- g %>%
-        dplyr::select(name, x, y, tooltip, node_color_classes) %>%
-        tidyr::unnest_longer(node_color_classes, values_to = "phenotype_class") %>%
-        dplyr::distinct(name, x, y, tooltip, phenotype_class) %>%
-        dplyr::mutate(
-            phenotype_class = factor(phenotype_class, levels = color_priority)
-        ) %>%
-        dplyr::arrange(name, phenotype_class) %>%
-        dplyr::group_by(name) %>%
-        dplyr::mutate(
-            n_slices = dplyr::n(),
-            slice_index = dplyr::row_number(),
-            start = 2 * pi * (slice_index - 1) / n_slices,
-            end = 2 * pi * slice_index / n_slices,
-            r0 = 0,
-            r = node_radius_data
-        ) %>%
-        dplyr::ungroup()
 
     p <- ggplot2::ggplot(ggplot2::aes(x, y), data = g) +
         ggplot2::geom_path(
@@ -583,36 +538,16 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         )
     }
 
-    # Node fills: abundance/identity classes only, with explicit priority order.
+    # Single node fill with explicit priority: loss > identity > gain > none.
     p <- p +
-        ggforce::geom_arc_bar(
-            data = node_wedges,
-            ggplot2::aes(
-                x0 = x,
-                y0 = y,
-                r0 = r0,
-                r = r,
-                start = start,
-                end = end,
-                fill = phenotype_class
-            ),
-            color = con_colour,
-            linewidth = 0.25,
-            inherit.aes = FALSE
-        ) +
         ggiraph::geom_point_interactive(
-            ggplot2::aes(x = x, y = y, tooltip = tooltip, data_id = name),
+            ggplot2::aes(x = x, y = y, tooltip = tooltip, fill = primary_phenotype, size = node_size_plot),
             data = g,
-            size = node_size_plot,
             shape = 21,
-            fill = "transparent",
-            color = "transparent",
-            stroke = 0,
-            alpha = 0,
-            hover_css = "fill:transparent;stroke:transparent;",
-            selected_css = "fill:transparent;stroke:transparent;",
-            inherit.aes = FALSE
+            color = con_colour,
+            linewidth = 0.25
         ) +
+        ggplot2::scale_size_identity() +
         ggplot2::scale_fill_manual(
             values = phenotype_colors,
             breaks = color_priority,
