@@ -9,10 +9,10 @@ rainbow_timepoint_colors <-
     )
 
 phenotype_colors <- c(
-    "none"           = "#e0e0e0",
+    "none"           = "#8f8f8f",
     "abundance_gain" = "#e41a1c",
     "abundance_loss" = "#377eb8",
-    "identity"       = "#984ea3",
+    "identity"       = "#ff8c00",
     "fitness"        = "#ff7f00",
     "apoptosis"      = "#000000",
     "stress"         = "#4daf4a",
@@ -114,7 +114,7 @@ impact_to_phenos <- function(impact_table,
                                  "I1 Maturation delay" = "<<",
                                  "I2 Precocious maturation" = ">>",
                                  "I3 Program failure within identity" = "!!",
-                                 "I4 Fate switch / misspecification" = "!!",
+                                 "I4 Fate switch / misspecification" = "⇄",
                                  "I5 Identity fragmentation" = ""
                              )) {
     stopifnot(all(c(
@@ -153,11 +153,11 @@ impact_to_phenos <- function(impact_table,
         if (grepl("precoci", s, ignore.case = TRUE)) {
             return("I2")
         }
-        if (grepl("program failure|effector|module|misspec", s, ignore.case = TRUE)) {
-            return("I3")
-        }
         if (grepl("fate switch|misspec", s, ignore.case = TRUE)) {
             return("I4")
+        }
+        if (grepl("program failure|effector|module", s, ignore.case = TRUE)) {
+            return("I3")
         }
         if (grepl("fragment", s, ignore.case = TRUE)) {
             return("I5")
@@ -168,7 +168,7 @@ impact_to_phenos <- function(impact_table,
     tab$identity_code <- ident_code
     id_map_full <- c(
         setNames(identity_glyph_map, names(identity_glyph_map)),
-        c(I0 = "", I1 = "<<", I2 = ">>", I3 = "!!", I4 = "!!", I5 = "")
+        c(I0 = "", I1 = "<<", I2 = ">>", I3 = "!!", I4 = "⇄", I5 = "")
     )
     tab$identity_glyph <- unname(id_map_full[ifelse(grepl("^I[0-5]$", ident_code), ident_code, tab$identity_label)])
     tab$identity_glyph[is.na(tab$identity_glyph)] <- ""
@@ -443,8 +443,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             badge_caption = stringr::str_replace(badge_caption, ",\\s*$", ""),
             tooltip = paste0(
                 "<b>", name, "</b><br>",
-                # ifelse(badge_caption != "", paste0("Badges: ", badge_caption, "<br>"), ""),
-                ifelse(identity_str != "", paste0("Identity: ", identity_str, "<br>"), ""),
+                ifelse(identity_str != "", paste0(ifelse(glyph != "", paste0(glyph, " "), ""), "Identity: ", identity_str, "<br>"), ""),
                 ifelse(abundance_str != "", paste0("Abundance: ", abundance_str, "<br>"), ""),
                 ifelse(
                     identity_str != "" & !is.na(identity_evidence) & identity_evidence != "",
@@ -458,10 +457,12 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                     ),
                     ""
                 ),
-                ifelse(fitness_str != "", paste0("F1 Proliferation: ", fitness_str, "<br>"), ""),
-                ifelse(!is.na(f2) & f2, "F2 Apoptosis: yes<br>", ""),
+                ifelse(!is.na(f1_dir) & f1_dir == "increase", "▲ Proliferation: increase<br>", ""),
+                ifelse(!is.na(f1_dir) & f1_dir == "decrease", "▼ Proliferation: decrease<br>", ""),
+                ifelse(!is.na(f2) & f2, "─ Apoptosis: yes<br>", ""),
+                ifelse(!is.na(f3) & f3 != 0, "* Stress response<br>", ""),
                 ifelse(!is.na(stress_evidence) & stress_evidence != "", paste0("Stress evidence:<br>", stress_evidence, "<br>"), ""),
-                ifelse(!is.na(f4) & f4, "F4 Senescence: yes<br>", ""),
+                ifelse(!is.na(f4) & f4, "□ Senescence: yes<br>", ""),
                 ifelse(
                     !is.na(dysregulated_genes) & dysregulated_genes != "",
                     paste0(
@@ -484,19 +485,64 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 is.na(f3) ~ 0,
                 TRUE ~ scales::rescale(pmin(abs(f3), stress_cap), to = c(0.25, 1))
             ),
-            # Assign one dominant phenotype class per node for single-color fills.
-            primary_phenotype = dplyr::case_when(
-                !is.na(f2) & f2 ~ "apoptosis",
-                !is.na(f4) & f4 ~ "senescence",
-                !is.na(abundance_code) & grepl("^A1|^A4", abundance_code) ~ "abundance_gain",
-                !is.na(abundance_code) & grepl("^A2|^A3", abundance_code) ~ "abundance_loss",
-                !is.na(ident) & !(ident %in% c("I0", "I0 Identity intact", "Identity intact", NA)) ~ "identity",
-                !is.na(f3) & f3 != 0 ~ "stress",
-                !is.na(f1_dir) & f1_dir != "" ~ "fitness",
-                TRUE ~ "none"
-            ),
             node_size_plot = node_size * 3.2
         )
+
+    color_priority <- c("abundance_loss", "identity", "abundance_gain", "none")
+    derive_node_color_classes <- function(abundance_code, ident) {
+        classes <- character(0)
+        if (!is.na(abundance_code) && grepl("^A2|^A3", abundance_code)) classes <- c(classes, "abundance_loss")
+        if (!is.na(ident) && !(ident %in% c("I0", "I0 Identity intact", "Identity intact", "", NA))) classes <- c(classes, "identity")
+        if (!is.na(abundance_code) && grepl("^A1|^A4", abundance_code)) classes <- c(classes, "abundance_gain")
+        classes <- unique(classes)
+        if (length(classes) == 0) classes <- "none"
+        classes
+    }
+
+    g <- g %>%
+        dplyr::mutate(
+            node_color_classes = purrr::pmap(
+                list(abundance_code, ident),
+                derive_node_color_classes
+            )
+        )
+
+    node_coords <- g %>% dplyr::distinct(name, x, y)
+    if (nrow(node_coords) > 1) {
+        dist_mat <- as.matrix(stats::dist(node_coords[, c("x", "y"), drop = FALSE]))
+        diag(dist_mat) <- Inf
+        nearest_dist <- apply(dist_mat, 1, min, na.rm = TRUE)
+        node_radius_data <- stats::median(nearest_dist[is.finite(nearest_dist)], na.rm = TRUE) * 0.22
+    } else {
+        node_radius_data <- NA_real_
+    }
+    if (!is.finite(node_radius_data) || node_radius_data <= 0) {
+        x_span <- diff(range(g$x, na.rm = TRUE))
+        y_span <- diff(range(g$y, na.rm = TRUE))
+        node_radius_data <- max(c(x_span, y_span), na.rm = TRUE) * 0.015
+    }
+    if (!is.finite(node_radius_data) || node_radius_data <= 0) {
+        node_radius_data <- 0.05
+    }
+
+    node_wedges <- g %>%
+        dplyr::select(name, x, y, tooltip, node_color_classes) %>%
+        tidyr::unnest_longer(node_color_classes, values_to = "phenotype_class") %>%
+        dplyr::distinct(name, x, y, tooltip, phenotype_class) %>%
+        dplyr::mutate(
+            phenotype_class = factor(phenotype_class, levels = color_priority)
+        ) %>%
+        dplyr::arrange(name, phenotype_class) %>%
+        dplyr::group_by(name) %>%
+        dplyr::mutate(
+            n_slices = dplyr::n(),
+            slice_index = dplyr::row_number(),
+            start = 2 * pi * (slice_index - 1) / n_slices,
+            end = 2 * pi * slice_index / n_slices,
+            r0 = 0,
+            r = node_radius_data
+        ) %>%
+        dplyr::ungroup()
 
     p <- ggplot2::ggplot(ggplot2::aes(x, y), data = g) +
         ggplot2::geom_path(
@@ -537,19 +583,46 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         )
     }
 
-    # Fixed-size nodes with one fill color per node (historical behavior).
+    # Node fills: abundance/identity classes only, with explicit priority order.
     p <- p +
-        ggiraph::geom_point_interactive(
-            ggplot2::aes(x = x, y = y, tooltip = tooltip, fill = primary_phenotype, size = node_size_plot),
-            data = g,
-            shape = 21,
+        ggforce::geom_arc_bar(
+            data = node_wedges,
+            ggplot2::aes(
+                x0 = x,
+                y0 = y,
+                r0 = r0,
+                r = r,
+                start = start,
+                end = end,
+                fill = phenotype_class
+            ),
             color = con_colour,
-            linewidth = 0.25
+            linewidth = 0.25,
+            inherit.aes = FALSE
         ) +
-        ggplot2::scale_size_identity() +
+        ggiraph::geom_point_interactive(
+            ggplot2::aes(x = x, y = y, tooltip = tooltip, data_id = name),
+            data = g,
+            size = node_size_plot,
+            shape = 21,
+            fill = "transparent",
+            color = "transparent",
+            stroke = 0,
+            alpha = 0,
+            hover_css = "fill:transparent;stroke:transparent;",
+            selected_css = "fill:transparent;stroke:transparent;",
+            inherit.aes = FALSE
+        ) +
         ggplot2::scale_fill_manual(
             values = phenotype_colors,
-            name = "Primary phenotype",
+            breaks = color_priority,
+            labels = c(
+                abundance_loss = "Abundance decrease",
+                identity = "Major transcriptional phenotype",
+                abundance_gain = "Abundance increase",
+                none = "No abundance/identity phenotype"
+            ),
+            name = "Node color",
             guide = ggplot2::guide_legend(override.aes = list(shape = 21, size = 4, alpha = 1))
         )
 
@@ -619,12 +692,12 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 ) +
                 ggplot2::geom_point(
                     data = badges %>% dplyr::filter(badge == "F2"),
-                    ggplot2::aes(bx, by), shape = 3, size = 1.9, color = badge_color, stroke = 0.6
+                    ggplot2::aes(bx, by), shape = 95, size = 1.9, color = badge_color, stroke = 0.6
                 ) +
-                ggplot2::geom_point(
+                ggplot2::geom_text(
                     data = badges %>% dplyr::filter(badge == "F3"),
-                    ggplot2::aes(bx, by, alpha = pmin(1, f3_alpha)),
-                    shape = 23, size = 1.9, fill = badge_color, color = badge_outline_color, stroke = 0.25
+                    ggplot2::aes(x = bx, y = by, alpha = pmin(1, f3_alpha)),
+                    label = "*", size = 4.6, color = badge_color, fontface = "bold"
                 ) +
                 ggplot2::geom_point(
                     data = badges %>% dplyr::filter(badge == "F4"),
