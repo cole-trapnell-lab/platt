@@ -34,6 +34,12 @@ run_perturbation_assembly(
   min_lfc = 0,
   links_between_components = c("none", "ctp", "strongest-pcor", "strong-pcor"),
   log_abund_detection_thresh = -5,
+  discordant_config = NULL,
+  discordant_pruning_mode = c("none", "greedy"),
+  discordant_pruning_k = 1,
+  discordant_pruning_power_threshold = 0,
+  discordant_pruning_cost_attr = "total_path_score_supporting",
+  discordant_pruning_lambda_edge = 0,
   batches_excluded_from_assembly = c(),
   component_col = "partition",
   embryo_size_factors = NULL
@@ -97,6 +103,9 @@ run_perturbation_assembly(
 \item{links_between_components}{Strategy for linking graph components.}
 
 \item{log_abund_detection_thresh}{Log abundance detection threshold.}
+
+\item{discordant_config}{Optional list controlling discordant pruning with
+keys \code{power_threshold}, \code{prune_mode}, \code{K_paths}, and \code{lambda_edge}.}
 
 \item{batches_excluded_from_assembly}{Vector of batches to exclude.}
 

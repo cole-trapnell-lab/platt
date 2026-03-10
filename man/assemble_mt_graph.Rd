@@ -20,6 +20,12 @@ assemble_mt_graph(
   component_col = "partition",
   edge_allowlist = NULL,
   edge_denylist = NULL,
+  discordant_config = NULL,
+  discordant_pruning_mode = c("none", "greedy"),
+  discordant_pruning_k = 1,
+  discordant_pruning_power_threshold = 0,
+  discordant_pruning_cost_attr = "total_path_score_supporting",
+  discordant_pruning_lambda_edge = 0,
   verbose = FALSE
 )
 }
@@ -57,6 +63,9 @@ observed time.}
 \item{edge_allowlist}{Optional allowlist for edges.}
 
 \item{edge_denylist}{Optional denylist for edges.}
+
+\item{discordant_config}{Optional list controlling discordant pruning with
+keys \code{power_threshold}, \code{prune_mode}, \code{K_paths}, and \code{lambda_edge}.}
 
 \item{verbose}{Logical. Emit progress messages.}
 }

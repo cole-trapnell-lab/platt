@@ -22,8 +22,19 @@ assemble_transition_graph_from_perturbations(
   verbose = FALSE,
   edge_allowlist = NULL,
   edge_denylist = NULL,
+  discordant_config = NULL,
+  discordant_pruning_mode = c("none", "greedy"),
+  discordant_pruning_k = 1,
+  discordant_pruning_power_threshold = 0,
+  discordant_pruning_cost_attr = "total_path_score_supporting",
+  discordant_pruning_lambda_edge = 0,
   newdata = tibble()
 )
+}
+\arguments{
+\item{discordant_config}{Optional list with keys \code{power_threshold},
+\code{prune_mode} (\code{"existing"} or \code{"greedy"}), \code{K_paths}, and \code{lambda_edge}.
+Defaults preserve existing behavior (\code{prune_mode = "existing"}).}
 }
 \description{
 This function takes as input a control timeseries Hooke model, and a set of timeseries perturbation models.
