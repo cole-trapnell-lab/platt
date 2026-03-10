@@ -640,7 +640,7 @@ assemble_wt_graph <- function(cds,
     newdata = newdata,
     force_allowlist = force_allowlist
   )
-  if (break_cycles) {
+  if (break_cycles & igraph::is_dag(wt_state_transition_graph)) {
     print("breaking cycles in control timeseries graph...")
     wt_state_transition_graph <- platt:::break_cycles_in_state_transition_graph(wt_state_transition_graph, "support")
   }
