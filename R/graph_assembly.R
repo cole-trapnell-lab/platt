@@ -2020,6 +2020,20 @@ score_paths_for_perturbations <- function(perturbation_ccm,
   return(NA)
 }
 
+#' Compare knockout and wild-type abundance estimates at one timepoint
+#'
+#' Internal helper used by kinetics routines to compute a per-timepoint contrast
+#' between precomputed wild-type and knockout abundance predictions.
+#'
+#' @param tp numeric/scalar timepoint value to evaluate.
+#' @param perturbation_ccm A `cell_count_model` used by `compare_abundances()`.
+#' @param wt_pred_df data.frame/tibble Wild-type predictions from
+#'   `estimate_abundances_over_interval()`.
+#' @param ko_pred_df data.frame/tibble Knockout predictions from
+#'   `estimate_abundances_over_interval()`.
+#' @param interval_col character Column name in `wt_pred_df`/`ko_pred_df`
+#'   containing timepoint values.
+#' @return A tibble from `compare_abundances()` for the selected timepoint.
 #' @noRd
 compare_ko_to_wt_at_timepoint <- function(tp, perturbation_ccm, wt_pred_df, ko_pred_df, interval_col) {
   cond_wt <- wt_pred_df %>% filter(!!sym(interval_col) == tp)
