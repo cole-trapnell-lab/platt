@@ -492,9 +492,9 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     g <- g %>%
         dplyr::mutate(
             primary_phenotype = dplyr::case_when(
-                !is.na(abundance_code) && grepl("^A2|^A3", abundance_code) ~ "abundance_loss",
-                !is.na(ident) && !(ident %in% c("I0", "I0 Identity intact", "Identity intact", "", NA)) ~ "identity",
-                !is.na(abundance_code) && grepl("^A1|^A4", abundance_code) ~ "abundance_gain",
+                !is.na(abundance_code) & grepl("^A2|^A3", abundance_code) ~ "abundance_loss",
+                !is.na(ident) & !(ident %in% c("I0", "I0 Identity intact", "Identity intact", "", NA)) ~ "identity",
+                !is.na(abundance_code) & grepl("^A1|^A4", abundance_code) ~ "abundance_gain",
                 TRUE ~ "none"
             )
         )
