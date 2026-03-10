@@ -332,6 +332,10 @@ impact_to_phenos <- function(impact_table,
 #' @param glyph_color Optional fixed color for identity glyph text.
 #' @param badge_color Fill/stroke color for fitness badges.
 #' @param badge_outline_color Outline color for filled badge shapes.
+#' @param render_mode One of `"tissue"` or `"global"`. Global mode hides
+#'   glyph/badge overlays and can draw a center marker for identity phenotypes.
+#' @param global_identity_marker Logical; when `TRUE`, draw a small black center
+#'   marker for nodes with non-intact identity (used for global view).
 #'
 #' @return A `ggplot` object.
 #' @export
@@ -366,10 +370,20 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                                    node_overlay = c("none", "glyphs", "badges", "both"),
                                    glyph_color = NULL,
                                    badge_color = "black",
-                                   badge_outline_color = "white") {
+                                   badge_outline_color = "white",
+                                   render_mode = c("tissue", "global"),
+                                   global_identity_marker = NULL) {
     node_overlay <- match.arg(node_overlay)
+    render_mode <- match.arg(render_mode)
     show_node_glyphs <- node_overlay %in% c("glyphs", "both")
     show_node_badges <- node_overlay %in% c("badges", "both")
+    if (is.null(global_identity_marker)) {
+        global_identity_marker <- identical(render_mode, "global")
+    }
+    if (identical(render_mode, "global")) {
+        show_node_glyphs <- FALSE
+        show_node_badges <- FALSE
+    }
 
     g <- cell_state_graph@g %>% dplyr::mutate(name = stringr::str_trim(name))
     bezier_df <- cell_state_graph@layout_info$bezier_df
@@ -496,7 +510,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 !is.na(ident) & !(ident %in% c("I0", "I0 Identity intact", "Identity intact", "", NA)) ~ "identity",
                 !is.na(abundance_code) & grepl("^A1|^A4", abundance_code) ~ "abundance_gain",
                 TRUE ~ "none"
-            )
+            ),
+            has_identity_change = !is.na(ident) & !(ident %in% c("I0", "I0 Identity intact", "Identity intact", "", NA))
         )
 
     p <- ggplot2::ggplot(ggplot2::aes(x, y), data = g) +
@@ -562,8 +577,22 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         )
 
     p <- p +
-        ggplot2::coord_equal() +
-        ggplot2::theme(legend.position = legend_position)
+        ggplot2::coord_equal(clip = "off") +
+        ggplot2::theme(
+            legend.position = legend_position,
+            plot.margin = ggplot2::margin(10, 10, 10, 10)
+        )
+
+    if (isTRUE(global_identity_marker)) {
+        p <- p +
+            ggiraph::geom_point_interactive(
+                data = g %>% dplyr::filter(has_identity_change),
+                ggplot2::aes(x = x, y = y, tooltip = tooltip),
+                shape = 16,
+                size = node_size * 0.55,
+                color = "black"
+            )
+    }
 
     if (show_node_glyphs) {
         glyph_draw_color <- if (is.null(glyph_color)) g$glyph_col else glyph_color
