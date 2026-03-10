@@ -463,12 +463,12 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 "<b>", name, "</b><br>",
                 ifelse(identity_str != "", paste0(ifelse(glyph != "", paste0(glyph, " "), ""), "Major transcriptional phenotype: ", identity_str, "<br>"), ""),
                 ifelse(abundance_str != "", paste0("Abundance: ", abundance_str, "<br>"), ""),
-                ifelse(!identical(render_mode, "tissue") & !is.na(lfc), paste0("Abundance logFC: ", formatC(lfc, digits = 2, format = "f"), "<br>"), ""),
-                ifelse(!is.na(q), paste0("Abundance logFC q-value: ", formatC(q, digits = 2, format = "e"), "<br>"), ""),
+                ifelse(!identical(render_mode, "tissue") & abundance_str != "" & !is.na(lfc), paste0("Abundance logFC: ", formatC(lfc, digits = 2, format = "f"), "<br>"), ""),
+                ifelse(abundance_str != "" & !is.na(q), paste0("Abundance logFC q-value: ", formatC(q, digits = 2, format = "e"), "<br>"), ""),
                 ifelse(!is.na(expectation) & expectation != "", paste0("Expected: ", expectation, "<br>"), ""),
                 ifelse(!is.na(rationale) & rationale != "", paste0("Expectation rationale: ", stringr::str_replace_all(stringr::str_wrap(stringr::str_trunc(rationale, 300), width = 50), "\n", "<br>"), "<br>"), ""),
                 ifelse(
-                    identity_str != "" & !is.na(identity_evidence) & identity_evidence != "",
+                    !identical(render_mode, "global") & identity_str != "" & !is.na(identity_evidence) & identity_evidence != "",
                     paste0(
                         "Identity evidence: ",
                         stringr::str_replace_all(
@@ -483,10 +483,10 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 ifelse(!is.na(f1_dir) & f1_dir == "decrease", "▼ Proliferation: decrease<br>", ""),
                 ifelse(!is.na(f2) & f2, "─ Apoptosis: yes<br>", ""),
                 ifelse(!is.na(f3) & f3 != 0, "* Stress response<br>", ""),
-                ifelse(!is.na(stress_evidence) & stress_evidence != "", paste0("Stress evidence:<br>", stress_evidence, "<br>"), ""),
+                ifelse(!identical(render_mode, "global") & !is.na(stress_evidence) & stress_evidence != "", paste0("Stress evidence:<br>", stress_evidence, "<br>"), ""),
                 ifelse(!is.na(f4) & f4, "□ Senescence: yes<br>", ""),
                 ifelse(
-                    !is.na(dysregulated_genes) & dysregulated_genes != "",
+                    !identical(render_mode, "global") & !is.na(dysregulated_genes) & dysregulated_genes != "",
                     paste0(
                         "Dysregulated genes: ",
                         # First truncate and wrap, then replace arrows with HTML
@@ -520,7 +520,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 TRUE ~ "none"
             ),
             has_identity_change = !is.na(ident) & !(ident %in% c("I0", "I0 Identity intact", "Identity intact", "", NA)),
-            is_expected = !is.na(expectation) & tolower(expectation) %in% c("expected", "expected change")
+            expectation_norm = tolower(trimws(dplyr::coalesce(expectation, ""))),
+            is_expected = expectation_norm %in% c("expected", "expected change")
         )
 
     edge_arrow_unit <- if (identical(render_mode, "tissue")) max(arrow_unit, 5) else arrow_unit
@@ -588,16 +589,16 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             guide = ggplot2::guide_legend(override.aes = list(shape = 21, size = 4, alpha = 1))
         )
 
-    expected_nodes <- g %>% dplyr::filter(is_expected)
+    expected_nodes <- g %>% dplyr::filter(is_expected) %>% dplyr::distinct(name, x, y, node_size_plot, .keep_all = TRUE)
     if (nrow(expected_nodes) > 0) {
         expected_nodes$expected_outline <- "Expected (black outline)"
         p <- p +
             ggplot2::geom_point(
                 data = expected_nodes,
-                ggplot2::aes(x = x, y = y, color = expected_outline, size = node_size_plot),
+                ggplot2::aes(x = x, y = y, color = expected_outline, size = if (identical(render_mode, "global")) node_size_plot * 1.06 else node_size_plot),
                 shape = 21,
                 fill = NA,
-                stroke = if (identical(render_mode, "global")) 0.08 else 0.35,
+                stroke = if (identical(render_mode, "global")) 0.16 else 0.35,
                 show.legend = TRUE
             ) +
             ggplot2::scale_color_manual(
