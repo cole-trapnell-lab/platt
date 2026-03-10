@@ -285,7 +285,9 @@ impact_to_phenos <- function(impact_table,
         F3_stress_score    = tab$F3_stress_score,
         F4_senescence      = tab$F4_senescence,
         stress_evidence    = tab$stress_evidence,
-        identity_evidence  = if ("identity_evidence" %in% names(tab)) as.character(tab$identity_evidence) else NA_character_
+        identity_evidence  = if ("identity_evidence" %in% names(tab)) as.character(tab$identity_evidence) else NA_character_,
+        expectation        = if ("expectation" %in% names(tab)) as.character(tab$expectation) else NA_character_,
+        rationale          = if ("rationale" %in% names(tab)) as.character(tab$rationale) else NA_character_
     )
 
     # Join dysregulated genes if available
@@ -421,7 +423,9 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             f4 = if (map$f4 %in% names(phenos_df)) as.logical(.data[[map$f4]]) else NA,
             dysregulated_genes = if ("dysregulated_genes" %in% names(phenos_df)) as.character(.data[["dysregulated_genes"]]) else NA_character_,
             identity_evidence = if ("identity_evidence" %in% names(phenos_df)) as.character(.data[["identity_evidence"]]) else NA_character_,
-            stress_evidence = if ("stress_evidence" %in% names(phenos_df)) as.character(.data[["stress_evidence"]]) else NA_character_
+            stress_evidence = if ("stress_evidence" %in% names(phenos_df)) as.character(.data[["stress_evidence"]]) else NA_character_,
+            expectation = if ("expectation" %in% names(phenos_df)) as.character(.data[["expectation"]]) else NA_character_,
+            rationale = if ("rationale" %in% names(phenos_df)) as.character(.data[["rationale"]]) else NA_character_
         )
 
     g <- g %>%
@@ -459,6 +463,10 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 "<b>", name, "</b><br>",
                 ifelse(identity_str != "", paste0(ifelse(glyph != "", paste0(glyph, " "), ""), "Identity: ", identity_str, "<br>"), ""),
                 ifelse(abundance_str != "", paste0("Abundance: ", abundance_str, "<br>"), ""),
+                ifelse(!is.na(lfc), paste0("Abundance logFC: ", formatC(lfc, digits = 2, format = "f"), "<br>"), ""),
+                ifelse(!is.na(q), paste0("Abundance q-value: ", formatC(q, digits = 2, format = "e"), "<br>"), ""),
+                ifelse(!is.na(expectation) & expectation != "", paste0("Expected: ", expectation, "<br>"), ""),
+                ifelse(!is.na(rationale) & rationale != "", paste0("Expectation rationale: ", stringr::str_replace_all(stringr::str_wrap(stringr::str_trunc(rationale, 300), width = 50), "\n", "<br>"), "<br>"), ""),
                 ifelse(
                     identity_str != "" & !is.na(identity_evidence) & identity_evidence != "",
                     paste0(
@@ -511,7 +519,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 !is.na(abundance_code) & grepl("^A1|^A4", abundance_code) ~ "abundance_gain",
                 TRUE ~ "none"
             ),
-            has_identity_change = !is.na(ident) & !(ident %in% c("I0", "I0 Identity intact", "Identity intact", "", NA))
+            has_identity_change = !is.na(ident) & !(ident %in% c("I0", "I0 Identity intact", "Identity intact", "", NA)),
+            is_expected = !is.na(expectation) & tolower(expectation) %in% c("expected", "expected change")
         )
 
     p <- ggplot2::ggplot(ggplot2::aes(x, y), data = g) +
@@ -570,11 +579,29 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 abundance_loss = "Abundance decrease",
                 identity = "Major transcriptional phenotype",
                 abundance_gain = "Abundance increase",
-                none = "No abundance/identity phenotype"
+                none = "No phenotype"
             ),
             name = "Node color",
             guide = ggplot2::guide_legend(override.aes = list(shape = 21, size = 4, alpha = 1))
         )
+
+    expected_nodes <- g %>% dplyr::filter(is_expected)
+    if (nrow(expected_nodes) > 0) {
+        expected_nodes$expected_outline <- "Expected (black outline)"
+        p <- p +
+            ggplot2::geom_point(
+                data = expected_nodes,
+                ggplot2::aes(x = x, y = y, color = expected_outline, size = node_size_plot),
+                shape = 21,
+                fill = NA,
+                stroke = 0.35,
+                show.legend = TRUE
+            ) +
+            ggplot2::scale_color_manual(
+                name = "Markers",
+                values = c("Expected (black outline)" = "black")
+            )
+    }
 
     p <- p +
         ggplot2::coord_equal(clip = "off") +
