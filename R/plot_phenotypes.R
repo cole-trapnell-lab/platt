@@ -523,11 +523,14 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             is_expected = !is.na(expectation) & tolower(expectation) %in% c("expected", "expected change")
         )
 
+    edge_arrow_unit <- if (identical(render_mode, "tissue")) max(arrow_unit, 5) else arrow_unit
+    edge_linewidth <- if (identical(render_mode, "tissue")) 0.35 else 0.25
+
     p <- ggplot2::ggplot(ggplot2::aes(x, y), data = g) +
         ggplot2::geom_path(
             ggplot2::aes(x, y, group = edge_name),
-            linewidth = 0.25, colour = con_colour, data = dplyr::distinct(bezier_df),
-            arrow = ggplot2::arrow(angle = 30, length = grid::unit(arrow_unit, "pt"), type = "closed"),
+            linewidth = edge_linewidth, colour = con_colour, data = dplyr::distinct(bezier_df),
+            arrow = ggplot2::arrow(angle = 30, length = grid::unit(edge_arrow_unit, "pt"), type = "closed"),
             linejoin = "mitre"
         ) +
         ggnetwork::theme_blank() +
@@ -594,7 +597,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 ggplot2::aes(x = x, y = y, color = expected_outline, size = node_size_plot),
                 shape = 21,
                 fill = NA,
-                stroke = if (identical(render_mode, "global")) 0.035 else 0.35,
+                stroke = if (identical(render_mode, "global")) 0.08 else 0.35,
                 show.legend = TRUE
             ) +
             ggplot2::scale_color_manual(
