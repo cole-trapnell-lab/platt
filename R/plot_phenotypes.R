@@ -568,8 +568,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ggplot2::aes(x = x, y = y, tooltip = tooltip, fill = primary_phenotype, size = node_size_plot),
             data = g,
             shape = 21,
-            color = if (identical(render_mode, "global")) NA else con_colour,
-            linewidth = if (identical(render_mode, "global")) 0 else 0.25
+            color = if (identical(render_mode, "global")) "transparent" else con_colour,
+            linewidth = if (identical(render_mode, "global")) 0.01 else 0.25
         ) +
         ggplot2::scale_size_identity() +
         ggplot2::scale_fill_manual(
