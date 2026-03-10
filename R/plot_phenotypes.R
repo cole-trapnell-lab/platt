@@ -461,10 +461,10 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             badge_caption = stringr::str_replace(badge_caption, ",\\s*$", ""),
             tooltip = paste0(
                 "<b>", name, "</b><br>",
-                ifelse(identity_str != "", paste0(ifelse(glyph != "", paste0(glyph, " "), ""), "Identity: ", identity_str, "<br>"), ""),
+                ifelse(identity_str != "", paste0(ifelse(glyph != "", paste0(glyph, " "), ""), "Major transcriptional phenotype: ", identity_str, "<br>"), ""),
                 ifelse(abundance_str != "", paste0("Abundance: ", abundance_str, "<br>"), ""),
-                ifelse(!is.na(lfc), paste0("Abundance logFC: ", formatC(lfc, digits = 2, format = "f"), "<br>"), ""),
-                ifelse(!is.na(q), paste0("Abundance q-value: ", formatC(q, digits = 2, format = "e"), "<br>"), ""),
+                ifelse(!identical(render_mode, "tissue") & !is.na(lfc), paste0("Abundance logFC: ", formatC(lfc, digits = 2, format = "f"), "<br>"), ""),
+                ifelse(!is.na(q), paste0("Abundance logFC q-value: ", formatC(q, digits = 2, format = "e"), "<br>"), ""),
                 ifelse(!is.na(expectation) & expectation != "", paste0("Expected: ", expectation, "<br>"), ""),
                 ifelse(!is.na(rationale) & rationale != "", paste0("Expectation rationale: ", stringr::str_replace_all(stringr::str_wrap(stringr::str_trunc(rationale, 300), width = 50), "\n", "<br>"), "<br>"), ""),
                 ifelse(
@@ -568,8 +568,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ggplot2::aes(x = x, y = y, tooltip = tooltip, fill = primary_phenotype, size = node_size_plot),
             data = g,
             shape = 21,
-            color = con_colour,
-            linewidth = 0.25
+            color = if (identical(render_mode, "global")) NA else con_colour,
+            linewidth = if (identical(render_mode, "global")) 0 else 0.25
         ) +
         ggplot2::scale_size_identity() +
         ggplot2::scale_fill_manual(
@@ -581,7 +581,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 abundance_gain = "Abundance increase",
                 none = "No phenotype"
             ),
-            name = "Node color",
+            name = if (identical(render_mode, "global")) NULL else "Node color",
             guide = ggplot2::guide_legend(override.aes = list(shape = 21, size = 4, alpha = 1))
         )
 
@@ -594,7 +594,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 ggplot2::aes(x = x, y = y, color = expected_outline, size = node_size_plot),
                 shape = 21,
                 fill = NA,
-                stroke = 0.35,
+                stroke = if (identical(render_mode, "global")) 0.035 else 0.35,
                 show.legend = TRUE
             ) +
             ggplot2::scale_color_manual(
@@ -616,7 +616,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 data = g %>% dplyr::filter(has_identity_change),
                 ggplot2::aes(x = x, y = y, tooltip = tooltip),
                 shape = 16,
-                size = node_size * 0.55,
+                size = node_size * 0.275,
                 color = "black"
             )
     }
