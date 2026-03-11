@@ -9,7 +9,7 @@ rainbow_timepoint_colors <-
     )
 
 phenotype_colors <- c(
-    "none"           = "#8f8f8f",
+    "none"           = "#b9b9b9",
     "abundance_gain" = "#e41a1c",
     "abundance_loss" = "#377eb8",
     "identity"       = "#ff8c00",
@@ -268,8 +268,22 @@ impact_to_phenos <- function(impact_table,
                 dysregulated_genes = collapse_unique_genes(dysregulated_genes),
                 .groups = "drop"
             )
+        pathway_tbl <- tab %>%
+            tidyr::unnest(dplyr::all_of(pathway_col)) %>%
+            dplyr::transmute(
+                cell_group = cell_type,
+                pathway_name = as.character(name)
+            ) %>%
+            dplyr::filter(!is.na(pathway_name), nzchar(stringr::str_squish(pathway_name))) %>%
+            dplyr::mutate(pathway_name = stringr::str_squish(pathway_name)) %>%
+            dplyr::group_by(cell_group) %>%
+            dplyr::summarise(
+                pathway_names = paste(unique(pathway_name), collapse = "; "),
+                .groups = "drop"
+            )
     } else {
         gene_tbl <- tibble::tibble(cell_group = character(), dysregulated_genes = character())
+        pathway_tbl <- tibble::tibble(cell_group = character(), pathway_names = character())
     }
 
     phenos <- dplyr::tibble(
@@ -292,7 +306,8 @@ impact_to_phenos <- function(impact_table,
 
     # Join dysregulated genes if available
     phenos <- phenos %>%
-        dplyr::left_join(gene_tbl, by = "cell_group")
+        dplyr::left_join(gene_tbl, by = "cell_group") %>%
+        dplyr::left_join(pathway_tbl, by = "cell_group")
 
     return(phenos)
 }
@@ -422,6 +437,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             f3 = if (map$f3 %in% names(phenos_df)) as.numeric(.data[[map$f3]]) else NA_real_,
             f4 = if (map$f4 %in% names(phenos_df)) as.logical(.data[[map$f4]]) else NA,
             dysregulated_genes = if ("dysregulated_genes" %in% names(phenos_df)) as.character(.data[["dysregulated_genes"]]) else NA_character_,
+            pathway_names = if ("pathway_names" %in% names(phenos_df)) as.character(.data[["pathway_names"]]) else NA_character_,
             identity_evidence = if ("identity_evidence" %in% names(phenos_df)) as.character(.data[["identity_evidence"]]) else NA_character_,
             stress_evidence = if ("stress_evidence" %in% names(phenos_df)) as.character(.data[["stress_evidence"]]) else NA_character_,
             expectation = if ("expectation" %in% names(phenos_df)) as.character(.data[["expectation"]]) else NA_character_,
@@ -450,6 +466,27 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ),
             abundance_str = show_pheno(abundance_code, c("A0 No change", NA)),
             identity_str = show_pheno(identity_display, c("I0", "I0 Identity intact", "Identity intact", NA)),
+            group_str = dplyr::coalesce(as.character(group_nodes_by), ""),
+            abundance_dir = dplyr::case_when(
+                !is.na(lfc) & lfc < 0 ~ "decrease",
+                !is.na(lfc) & lfc > 0 ~ "increase",
+                !is.na(abundance_code) & grepl("^A2|^A3", abundance_code) ~ "decrease",
+                !is.na(abundance_code) & grepl("^A1|^A4", abundance_code) ~ "increase",
+                TRUE ~ ""
+            ),
+            abundance_fc = ifelse(!is.na(lfc), exp(abs(lfc)), NA_real_),
+            abundance_text = dplyr::case_when(
+                abundance_str == "" ~ "",
+                !is.na(abundance_fc) & abundance_dir != "" ~ paste0(formatC(abundance_fc, digits = 2, format = "f"), "x ", abundance_dir),
+                abundance_dir != "" ~ abundance_dir,
+                TRUE ~ ""
+            ),
+            expectation_norm = tolower(trimws(dplyr::coalesce(expectation, ""))),
+            expectation_text = dplyr::case_when(
+                expectation_norm %in% c("expected", "expected change") ~ "Expectation: a phenotype is expected",
+                expectation_norm != "" ~ "Expectation: no phenotype expected",
+                TRUE ~ ""
+            ),
             fitness_str = show_pheno(f1_dir, c("F0 No significant phenotype", "F0 Normal", NA)),
             badge_caption = paste0(
                 ifelse(!is.na(f1_dir) & f1_dir == "increase", "F1_up, ", ""),
@@ -460,45 +497,18 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ),
             badge_caption = stringr::str_replace(badge_caption, ",\\s*$", ""),
             tooltip = paste0(
-                "<b>", name, "</b><br>",
-                ifelse(identity_str != "", paste0(ifelse(glyph != "", paste0(glyph, " "), ""), "Major transcriptional phenotype: ", identity_str, "<br>"), ""),
-                ifelse(abundance_str != "", paste0("Abundance: ", abundance_str, "<br>"), ""),
-                ifelse(!identical(render_mode, "tissue") & abundance_str != "" & !is.na(lfc), paste0("Abundance logFC: ", formatC(lfc, digits = 2, format = "f"), "<br>"), ""),
-                ifelse(abundance_str != "" & !is.na(q), paste0("Abundance logFC q-value: ", formatC(q, digits = 2, format = "e"), "<br>"), ""),
-                ifelse(!is.na(expectation) & expectation != "", paste0("Expected: ", expectation, "<br>"), ""),
-                ifelse(!is.na(rationale) & rationale != "", paste0("Expectation rationale: ", stringr::str_replace_all(stringr::str_wrap(stringr::str_trunc(rationale, 300), width = 50), "\n", "<br>"), "<br>"), ""),
-                ifelse(
-                    !identical(render_mode, "global") & identity_str != "" & !is.na(identity_evidence) & identity_evidence != "",
-                    paste0(
-                        "Identity evidence: ",
-                        stringr::str_replace_all(
-                            stringr::str_wrap(stringr::str_trunc(identity_evidence, 300), width = 50),
-                            "\n", "<br>"
-                        ),
-                        "<br>"
-                    ),
-                    ""
-                ),
+                "<b>", name, "</b>", ifelse(group_str != "", paste0(" | ", group_str), ""), "<br>",
+                ifelse(abundance_text != "", paste0("Abundance phenotype: ", abundance_text, "<br>"), ""),
+                ifelse(identity_str != "", paste0("Identity phenotype: ", identity_str, "<br>"), ""),
+                ifelse(abundance_str != "" & !is.na(q), paste0("Abundance q-value: ", formatC(q, digits = 2, format = "e"), "<br>"), ""),
+                ifelse(expectation_text != "", paste0(expectation_text, "<br>"), ""),
+                ifelse(!is.na(rationale) & rationale != "", paste0("Expectation rationale: ", stringr::str_trunc(rationale, 300), "<br>"), ""),
                 ifelse(!is.na(f1_dir) & f1_dir == "increase", "▲ Proliferation: increase<br>", ""),
                 ifelse(!is.na(f1_dir) & f1_dir == "decrease", "▼ Proliferation: decrease<br>", ""),
                 ifelse(!is.na(f2) & f2, "─ Apoptosis: yes<br>", ""),
                 ifelse(!is.na(f3) & f3 != 0, "* Stress response<br>", ""),
-                ifelse(!identical(render_mode, "global") & !is.na(stress_evidence) & stress_evidence != "", paste0("Stress evidence:<br>", stress_evidence, "<br>"), ""),
                 ifelse(!is.na(f4) & f4, "□ Senescence: yes<br>", ""),
-                ifelse(
-                    !identical(render_mode, "global") & !is.na(dysregulated_genes) & dysregulated_genes != "",
-                    paste0(
-                        "Dysregulated genes: ",
-                        # First truncate and wrap, then replace arrows with HTML
-                        stringr::str_trunc(dysregulated_genes, 300) %>%
-                            stringr::str_wrap(width = 50) %>%
-                            stringr::str_replace_all("\n", "<br>") %>%
-                            stringr::str_replace_all("↑", "<span style='color:red;'>↑</span>") %>%
-                            stringr::str_replace_all("↓", "<span style='color:blue;'>↓</span>"),
-                        "<br>"
-                    ),
-                    ""
-                )
+                ifelse(!identical(render_mode, "global") & !is.na(pathway_names) & pathway_names != "", paste0("Pathway disrupted: ", stringr::str_trunc(pathway_names, 240), "<br>"), "")
             ),
             lfc_capped = pmin(pmax(lfc, -lfc_cap), lfc_cap),
             glyph = dplyr::coalesce(glyph, ""),
@@ -510,7 +520,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             node_size_plot = node_size * 3.2
         )
 
-    color_priority <- c("abundance_loss", "identity", "abundance_gain", "none")
+    color_priority <- c("abundance_loss", "abundance_gain", "identity", "none")
     g <- g %>%
         dplyr::mutate(
             primary_phenotype = dplyr::case_when(
@@ -581,8 +591,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             breaks = color_priority,
             labels = c(
                 abundance_loss = "Abundance decrease",
-                identity = "Major transcriptional phenotype",
                 abundance_gain = "Abundance increase",
+                identity = "Identity phenotype",
                 none = "No phenotype"
             ),
             name = if (identical(render_mode, "global")) NULL else "Node color",
@@ -598,12 +608,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 ggplot2::aes(x = x, y = y, color = expected_outline, size = if (identical(render_mode, "global")) node_size_plot * 1.06 else node_size_plot),
                 shape = 21,
                 fill = NA,
-                stroke = if (identical(render_mode, "global")) 0.16 else 0.35,
-                show.legend = TRUE
-            ) +
-            ggplot2::scale_color_manual(
-                name = "Markers",
-                values = c("Expected (black outline)" = "black")
+                stroke = if (identical(render_mode, "global")) 0.32 else 0.35,
+                show.legend = FALSE
             )
     }
 
