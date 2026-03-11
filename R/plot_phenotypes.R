@@ -296,7 +296,7 @@ impact_to_phenos <- function(impact_table,
                 dplyr::mutate(genes_text = purrr::map_chr(dysregulated_genes, ~ collapse_unique_genes(as.character(.x))))
         } else {
             pathway_gene_tbl <- pathway_gene_tbl %>%
-                dplyr::mutate(genes_text = collapse_unique_genes(as.character(dysregulated_genes)))
+                dplyr::mutate(genes_text = purrr::map_chr(dysregulated_genes, ~ collapse_unique_genes(as.character(.x))))
         }
         pathway_gene_tbl <- pathway_gene_tbl %>%
             dplyr::group_by(cell_group, pathway_name) %>%
@@ -424,7 +424,9 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                                    badge_color = "black",
                                    badge_outline_color = "white",
                                    render_mode = c("tissue", "global"),
-                                   global_identity_marker = NULL) {
+                                   global_identity_marker = NULL,
+                                   tooltip_builder = NULL,
+                                   interactive = FALSE) {
     node_overlay <- match.arg(node_overlay)
     render_mode <- match.arg(render_mode)
     show_node_glyphs <- node_overlay %in% c("glyphs", "both")
@@ -500,6 +502,16 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 ident == "I5" ~ "Identity fragmentation",
                 TRUE ~ ident
             ),
+            identity_tooltip_label = dplyr::case_when(
+                is.na(ident) ~ "",
+                ident == "I0" ~ "",
+                ident == "I1" ~ "maturation delay",
+                ident == "I2" ~ "precocious maturation",
+                ident == "I3" ~ "identity",
+                ident == "I4" ~ "fate switch / misspecification",
+                ident == "I5" ~ "identity fragmentation",
+                TRUE ~ tolower(identity_display)
+            ),
             abundance_str = show_pheno(abundance_code, c("A0 No change", NA)),
             identity_str = show_pheno(identity_display, c("I0", "I0 Identity intact", "Identity intact", NA)),
             group_str = dplyr::coalesce(as.character(group_nodes_by), ""),
@@ -532,20 +544,6 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 ifelse(!is.na(f4) & f4, "F4, ", "")
             ),
             badge_caption = stringr::str_replace(badge_caption, ",\\s*$", ""),
-            tooltip = paste0(
-                "<b>Cell type: ", name, "</b>", ifelse(group_str != "", paste0(" | Tissue: ", group_str), ""), "<br>",
-                ifelse(abundance_text != "", paste0("Abundance phenotype: ", abundance_text, "<br>"), ""),
-                ifelse(identity_str != "", paste0("Identity phenotype: ", identity_str, "<br>"), ""),
-                ifelse(abundance_str != "" & !is.na(q), paste0("Abundance q-value: ", formatC(q, digits = 2, format = "e"), "<br>"), ""),
-                ifelse(expectation_text != "", paste0(expectation_text, "<br>"), ""),
-                ifelse(!is.na(f1_dir) & f1_dir == "increase", "▲ Proliferation: increase<br>", ""),
-                ifelse(!is.na(f1_dir) & f1_dir == "decrease", "▼ Proliferation: decrease<br>", ""),
-                ifelse(!is.na(f2) & f2, "─ Apoptosis: yes<br>", ""),
-                ifelse(!is.na(f3) & f3 != 0, "* Stress response<br>", ""),
-                ifelse(!is.na(f4) & f4, "□ Senescence: yes<br>", ""),
-                ifelse(!identical(render_mode, "global") & !is.na(pathway_gene_details) & pathway_gene_details != "", paste0(pathway_gene_details, "<br>"), ""),
-                ifelse(!identical(render_mode, "global") & (is.na(pathway_gene_details) | pathway_gene_details == "") & !is.na(pathway_names) & pathway_names != "", paste0("Pathway disrupted: ", stringr::str_trunc(pathway_names, 240), "<br>"), "")
-            ),
             lfc_capped = pmin(pmax(lfc, -lfc_cap), lfc_cap),
             glyph = dplyr::coalesce(glyph, ""),
             glyph_col = ifelse(is.na(lfc), "black", ifelse(abs(lfc) >= 0.8, "white", "black")),
@@ -555,6 +553,16 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ),
             node_size_plot = node_size * 3.2
         )
+
+    if (!is.null(tooltip_builder)) {
+        tooltip_vec <- tooltip_builder(g, render_mode)
+        if (length(tooltip_vec) != nrow(g)) {
+            stop("tooltip_builder must return one tooltip per plotted node.")
+        }
+        g$.tooltip <- as.character(tooltip_vec)
+    } else {
+        g$.tooltip <- NA_character_
+    }
 
     color_priority <- c("abundance_loss", "abundance_gain", "identity", "none")
     g <- g %>%
@@ -613,14 +621,27 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     }
 
     # Single node fill with explicit priority: loss > identity > gain > none.
+    if (isTRUE(interactive) && !is.null(tooltip_builder)) {
+        p <- p +
+            ggiraph::geom_point_interactive(
+                ggplot2::aes(x = x, y = y, tooltip = .tooltip, fill = primary_phenotype, size = node_size_plot),
+                data = g,
+                shape = 21,
+                color = if (identical(render_mode, "global")) "transparent" else con_colour,
+                linewidth = if (identical(render_mode, "global")) 0.01 else 0.25
+            )
+    } else {
+        p <- p +
+            ggplot2::geom_point(
+                ggplot2::aes(x = x, y = y, fill = primary_phenotype, size = node_size_plot),
+                data = g,
+                shape = 21,
+                color = if (identical(render_mode, "global")) "transparent" else con_colour,
+                linewidth = if (identical(render_mode, "global")) 0.01 else 0.25
+            )
+    }
+
     p <- p +
-        ggiraph::geom_point_interactive(
-            ggplot2::aes(x = x, y = y, tooltip = tooltip, fill = primary_phenotype, size = node_size_plot),
-            data = g,
-            shape = 21,
-            color = if (identical(render_mode, "global")) "transparent" else con_colour,
-            linewidth = if (identical(render_mode, "global")) 0.01 else 0.25
-        ) +
         ggplot2::scale_size_identity() +
         ggplot2::scale_fill_manual(
             values = phenotype_colors,
@@ -657,23 +678,42 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         )
 
     if (isTRUE(global_identity_marker)) {
-        p <- p +
-            ggiraph::geom_point_interactive(
-                data = g %>% dplyr::filter(has_identity_change),
-                ggplot2::aes(x = x, y = y, tooltip = tooltip),
-                shape = 16,
-                size = node_size * 0.275,
-                color = "black"
-            )
+        if (isTRUE(interactive) && !is.null(tooltip_builder)) {
+            p <- p +
+                ggiraph::geom_point_interactive(
+                    data = g %>% dplyr::filter(has_identity_change),
+                    ggplot2::aes(x = x, y = y, tooltip = .tooltip),
+                    shape = 16,
+                    size = node_size * 0.275,
+                    color = "black"
+                )
+        } else {
+            p <- p +
+                ggplot2::geom_point(
+                    data = g %>% dplyr::filter(has_identity_change),
+                    ggplot2::aes(x = x, y = y),
+                    shape = 16,
+                    size = node_size * 0.275,
+                    color = "black"
+                )
+        }
     }
 
     if (show_node_glyphs) {
         glyph_draw_color <- if (is.null(glyph_color)) g$glyph_col else glyph_color
-        p <- p +
-            ggiraph::geom_text_interactive(
-                ggplot2::aes(x = x, y = y, label = glyph, tooltip = tooltip),
-                data = g, size = node_size * 1.4, color = glyph_draw_color, fontface = "bold", vjust = 0.35
-            )
+        if (isTRUE(interactive) && !is.null(tooltip_builder)) {
+            p <- p +
+                ggiraph::geom_text_interactive(
+                    ggplot2::aes(x = x, y = y, label = glyph, tooltip = .tooltip),
+                    data = g, size = node_size * 1.4, color = glyph_draw_color, fontface = "bold", vjust = 0.35
+                )
+        } else {
+            p <- p +
+                ggplot2::geom_text(
+                    ggplot2::aes(x = x, y = y, label = glyph),
+                    data = g, size = node_size * 1.4, color = glyph_draw_color, fontface = "bold", vjust = 0.35
+                )
+        }
     }
 
     if (show_node_badges) {
