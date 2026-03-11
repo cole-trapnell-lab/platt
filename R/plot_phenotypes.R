@@ -306,11 +306,10 @@ impact_to_phenos <- function(impact_table,
             ) %>%
             dplyr::group_by(cell_group) %>%
             dplyr::arrange(pathway_name, .by_group = TRUE) %>%
-            dplyr::mutate(pathway_idx = dplyr::row_number()) %>%
             dplyr::mutate(
                 pathway_line = paste0(
-                    "pathway", pathway_idx, ": ", pathway_name, ", genes disrupted: ",
-                    ifelse(is.na(genes_text) | !nzchar(genes_text), "NA", genes_text)
+                    "Pathway: ", pathway_name, "<br>&nbsp;&nbsp;genes disrupted: ",
+                    ifelse(is.na(genes_text) | !nzchar(genes_text), "NA", genes_text), "<br>"
                 )
             ) %>%
             dplyr::summarise(pathway_gene_details = paste(pathway_line, collapse = "<br>"), .groups = "drop")
@@ -334,6 +333,7 @@ impact_to_phenos <- function(impact_table,
         F4_senescence      = tab$F4_senescence,
         stress_evidence    = tab$stress_evidence,
         identity_evidence  = if ("identity_evidence" %in% names(tab)) as.character(tab$identity_evidence) else NA_character_,
+        effect_type        = if ("effect_type" %in% names(tab)) as.character(tab$effect_type) else NA_character_,
         expectation        = if ("expectation" %in% names(tab)) as.character(tab$expectation) else NA_character_,
         rationale          = if ("rationale" %in% names(tab)) as.character(tab$rationale) else NA_character_
     )
@@ -478,6 +478,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             pathway_gene_details = if ("pathway_gene_details" %in% names(phenos_df)) as.character(.data[["pathway_gene_details"]]) else NA_character_,
             identity_evidence = if ("identity_evidence" %in% names(phenos_df)) as.character(.data[["identity_evidence"]]) else NA_character_,
             stress_evidence = if ("stress_evidence" %in% names(phenos_df)) as.character(.data[["stress_evidence"]]) else NA_character_,
+            effect_type = if ("effect_type" %in% names(phenos_df)) as.character(.data[["effect_type"]]) else NA_character_,
             expectation = if ("expectation" %in% names(phenos_df)) as.character(.data[["expectation"]]) else NA_character_,
             rationale = if ("rationale" %in% names(phenos_df)) as.character(.data[["rationale"]]) else NA_character_
         )
