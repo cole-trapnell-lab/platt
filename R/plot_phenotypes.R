@@ -591,15 +591,16 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         dplyr::mutate(.draw_order = ifelse(primary_phenotype == "none", 0L, 1L)) %>%
         dplyr::arrange(.draw_order)
 
-    edge_arrow_unit <- if (identical(render_mode, "tissue")) max(arrow_unit, 5) else arrow_unit
-    edge_linewidth <- if (identical(render_mode, "tissue")) 0.35 else 0.25
+    edge_arrow_unit <- if (identical(render_mode, "tissue")) max(arrow_unit, 5) else max(arrow_unit, 6)
+    edge_linewidth <- if (identical(render_mode, "tissue")) 0.35 else 0.45
+    edge_colour <- if (identical(render_mode, "global")) "#6f6f6f" else con_colour
 
     p <- ggplot2::ggplot(ggplot2::aes(x, y), data = g) +
         ggplot2::geom_path(
             ggplot2::aes(x, y, group = edge_name),
-            linewidth = edge_linewidth, colour = con_colour, data = dplyr::distinct(bezier_df),
+            linewidth = edge_linewidth, colour = edge_colour, data = dplyr::distinct(bezier_df),
             arrow = ggplot2::arrow(angle = 30, length = grid::unit(edge_arrow_unit, "pt"), type = "closed"),
-            linejoin = "mitre"
+            linejoin = "mitre", lineend = "round"
         ) +
         ggnetwork::theme_blank() +
         hooke_theme_opts()
@@ -666,7 +667,9 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 none = "No phenotype"
             ),
             name = if (identical(render_mode, "global")) NULL else "Node color",
-            guide = ggplot2::guide_legend(override.aes = list(shape = 21, size = 4, alpha = 1))
+            guide = ggplot2::guide_legend(
+                override.aes = list(shape = 21, size = if (identical(render_mode, "global")) 8 else 4, alpha = 1)
+            )
         )
 
     expected_nodes <- g %>% dplyr::filter(is_expected) %>% dplyr::distinct(name, x, y, node_size_plot, .keep_all = TRUE)
@@ -688,6 +691,9 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ggplot2::coord_cartesian(clip = "off") +
             ggplot2::theme(
                 legend.position = legend_position,
+                legend.text = ggplot2::element_text(size = 16),
+                legend.key.size = grid::unit(10, "mm"),
+                legend.spacing.x = grid::unit(3, "mm"),
                 plot.margin = ggplot2::margin(10, 10, 10, 10)
             )
     } else {
