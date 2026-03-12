@@ -308,8 +308,8 @@ impact_to_phenos <- function(impact_table,
             dplyr::arrange(pathway_name, .by_group = TRUE) %>%
             dplyr::mutate(
                 pathway_line = paste0(
-                    "Pathway: ", pathway_name, "<br>&nbsp;&nbsp;genes disrupted: ",
-                    ifelse(is.na(genes_text) | !nzchar(genes_text), "NA", genes_text), "<br>"
+                    "Pathway: ", pathway_name, "<br>&nbsp;&nbsp;Genes dysregulated: ",
+                    ifelse(is.na(genes_text) | !nzchar(genes_text), "NA", genes_text)
                 )
             ) %>%
             dplyr::summarise(pathway_gene_details = paste(pathway_line, collapse = "<br>"), .groups = "drop")
@@ -579,6 +579,18 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             is_expected = expectation_norm %in% c("expected", "expected change")
         )
 
+    if (identical(render_mode, "global")) {
+        # Mild horizontal spread keeps the global plot readable without shrinking nodes.
+        g <- g %>% dplyr::mutate(x = x * 1.35)
+        if ("x" %in% names(bezier_df)) {
+            bezier_df <- bezier_df %>% dplyr::mutate(x = x * 1.35)
+        }
+    }
+
+    g_draw <- g %>%
+        dplyr::mutate(.draw_order = ifelse(primary_phenotype == "none", 0L, 1L)) %>%
+        dplyr::arrange(.draw_order)
+
     edge_arrow_unit <- if (identical(render_mode, "tissue")) max(arrow_unit, 5) else arrow_unit
     edge_linewidth <- if (identical(render_mode, "tissue")) 0.35 else 0.25
 
@@ -626,7 +638,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         p <- p +
             ggiraph::geom_point_interactive(
                 ggplot2::aes(x = x, y = y, tooltip = .tooltip, fill = primary_phenotype, size = node_size_plot),
-                data = g,
+                data = g_draw,
                 shape = 21,
                 color = if (identical(render_mode, "global")) "transparent" else con_colour,
                 linewidth = if (identical(render_mode, "global")) 0.01 else 0.25
@@ -635,7 +647,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         p <- p +
             ggplot2::geom_point(
                 ggplot2::aes(x = x, y = y, fill = primary_phenotype, size = node_size_plot),
-                data = g,
+                data = g_draw,
                 shape = 21,
                 color = if (identical(render_mode, "global")) "transparent" else con_colour,
                 linewidth = if (identical(render_mode, "global")) 0.01 else 0.25
