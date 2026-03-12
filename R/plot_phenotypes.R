@@ -554,7 +554,16 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 is.na(f3) ~ 0,
                 TRUE ~ scales::rescale(pmin(abs(f3), stress_cap), to = c(0.25, 1))
             ),
-            node_size_plot = node_size * 3.2
+            power_status = dplyr::case_when(
+                !is.na(power) & power >= powered_thresh ~ "Powered",
+                TRUE ~ "Underpowered"
+            ),
+            node_size_plot = dplyr::case_when(
+                identical(render_mode, "global") & power_status == "Powered" ~ node_size * 3.8,
+                identical(render_mode, "global") ~ node_size * 3.0,
+                TRUE ~ node_size * 3.2
+            ),
+            outline_size_plot = ifelse(identical(render_mode, "global"), node_size_plot * 1.06, node_size_plot)
         )
 
     if (!is.null(tooltip_builder)) {
@@ -643,7 +652,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         p <- p +
             ggplot2::geom_point(
                 data = expected_nodes_draw,
-                ggplot2::aes(x = x, y = y, size = if (identical(render_mode, "global")) node_size_plot * 1.06 else node_size_plot),
+                ggplot2::aes(x = x, y = y, size = outline_size_plot),
                 shape = 21,
                 fill = NA,
                 color = "black",
@@ -686,18 +695,54 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ),
             name = if (identical(render_mode, "global")) NULL else "Node color",
             guide = ggplot2::guide_legend(
+                order = 1,
                 override.aes = list(shape = 21, size = if (identical(render_mode, "global")) 8 else 4, alpha = 1)
             )
         )
+
+    if (identical(render_mode, "global")) {
+        power_legend_df <- tibble::tibble(
+            x = c(Inf, Inf),
+            y = c(Inf, Inf),
+            power_status = factor(c("Powered", "Underpowered"), levels = c("Powered", "Underpowered"))
+        )
+        p <- p +
+            ggnewscale::new_scale("size") +
+            ggplot2::geom_point(
+                data = power_legend_df,
+                ggplot2::aes(x = x, y = y, size = power_status),
+                alpha = 0,
+                shape = 21,
+                inherit.aes = FALSE,
+                show.legend = TRUE
+            ) +
+            ggplot2::scale_size_manual(
+                values = c("Powered" = node_size * 3.8, "Underpowered" = node_size * 3.0),
+                name = "Abundance power",
+                guide = ggplot2::guide_legend(
+                    order = 2,
+                    override.aes = list(
+                        alpha = 1,
+                        fill = "#b9b9b9",
+                        color = "black",
+                        shape = 21
+                    )
+                )
+            )
+    }
 
     if (identical(render_mode, "global")) {
         p <- p +
             ggplot2::coord_cartesian(clip = "off") +
             ggplot2::theme(
                 legend.position = legend_position,
-                legend.text = ggplot2::element_text(size = 16),
-                legend.key.size = grid::unit(10, "mm"),
+                legend.direction = "horizontal",
+                legend.box = "vertical",
+                legend.text = ggplot2::element_text(size = 20),
+                legend.title = ggplot2::element_text(size = 20),
+                legend.key.size = grid::unit(12, "mm"),
                 legend.spacing.x = grid::unit(3, "mm"),
+                legend.spacing.y = grid::unit(2, "mm"),
                 plot.margin = ggplot2::margin(10, 10, 10, 10)
             )
     } else {
