@@ -683,12 +683,21 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             )
     }
 
-    p <- p +
-        ggplot2::coord_equal(clip = "off") +
-        ggplot2::theme(
-            legend.position = legend_position,
-            plot.margin = ggplot2::margin(10, 10, 10, 10)
-        )
+    if (identical(render_mode, "global")) {
+        p <- p +
+            ggplot2::coord_cartesian(clip = "off") +
+            ggplot2::theme(
+                legend.position = legend_position,
+                plot.margin = ggplot2::margin(10, 10, 10, 10)
+            )
+    } else {
+        p <- p +
+            ggplot2::coord_equal(clip = "off") +
+            ggplot2::theme(
+                legend.position = legend_position,
+                plot.margin = ggplot2::margin(10, 10, 10, 10)
+            )
+    }
 
     if (isTRUE(global_identity_marker)) {
         if (isTRUE(interactive) && !is.null(tooltip_builder)) {
