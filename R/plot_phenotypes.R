@@ -681,7 +681,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 shape = 21,
                 fill = NA,
                 color = "black",
-                stroke = if (identical(render_mode, "global")) 0.32 else 0.35,
+                stroke = if (identical(render_mode, "global")) 0.64 else 0.35,
                 show.legend = FALSE
             )
     }
