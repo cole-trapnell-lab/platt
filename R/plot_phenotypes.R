@@ -465,6 +465,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             name = .data[[map$id]],
             lfc = as.numeric(.data[[map$lfc]]),
             q = if (map$q %in% names(phenos_df)) as.numeric(.data[[map$q]]) else NA_real_,
+            power = if ("power" %in% names(phenos_df)) as.numeric(.data[["power"]]) else NA_real_,
+            powered_thresh = if ("powered_thresh" %in% names(phenos_df)) as.numeric(.data[["powered_thresh"]]) else 0.8,
             abundance_code = if ("abundance_code" %in% names(phenos_df)) as.character(.data[["abundance_code"]]) else NA_character_,
             ident = if (map$ident %in% names(phenos_df)) as.character(.data[[map$ident]]) else "I0",
             glyph = if (map$glyph %in% names(phenos_df)) as.character(.data[[map$glyph]]) else "",
@@ -590,6 +592,9 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     g_draw <- g %>%
         dplyr::mutate(.draw_order = ifelse(primary_phenotype == "none", 0L, 1L)) %>%
         dplyr::arrange(.draw_order)
+    expected_nodes_draw <- g_draw %>%
+        dplyr::filter(is_expected) %>%
+        dplyr::distinct(name, x, y, node_size_plot, .keep_all = TRUE)
 
     edge_arrow_unit <- if (identical(render_mode, "tissue")) max(arrow_unit, 5) else max(arrow_unit, 6)
     edge_linewidth <- if (identical(render_mode, "tissue")) 0.35 else 0.45
@@ -634,6 +639,19 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         )
     }
 
+    if (nrow(expected_nodes_draw) > 0) {
+        p <- p +
+            ggplot2::geom_point(
+                data = expected_nodes_draw,
+                ggplot2::aes(x = x, y = y, size = if (identical(render_mode, "global")) node_size_plot * 1.06 else node_size_plot),
+                shape = 21,
+                fill = NA,
+                color = "black",
+                stroke = if (identical(render_mode, "global")) 1.4 else 0.35,
+                show.legend = FALSE
+            )
+    }
+
     # Single node fill with explicit priority: loss > identity > gain > none.
     if (isTRUE(interactive) && !is.null(tooltip_builder)) {
         p <- p +
@@ -671,20 +689,6 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 override.aes = list(shape = 21, size = if (identical(render_mode, "global")) 8 else 4, alpha = 1)
             )
         )
-
-    expected_nodes <- g %>% dplyr::filter(is_expected) %>% dplyr::distinct(name, x, y, node_size_plot, .keep_all = TRUE)
-    if (nrow(expected_nodes) > 0) {
-        p <- p +
-            ggplot2::geom_point(
-                data = expected_nodes,
-                ggplot2::aes(x = x, y = y, size = if (identical(render_mode, "global")) node_size_plot * 1.06 else node_size_plot),
-                shape = 21,
-                fill = NA,
-                color = "black",
-                stroke = if (identical(render_mode, "global")) 0.64 else 0.35,
-                show.legend = FALSE
-            )
-    }
 
     if (identical(render_mode, "global")) {
         p <- p +
