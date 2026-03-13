@@ -560,7 +560,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ),
             node_size_plot = dplyr::case_when(
                 identical(render_mode, "global") & power_status == "Powered" ~ node_size * 3.8,
-                identical(render_mode, "global") ~ node_size * 3.0,
+                identical(render_mode, "global") ~ node_size * 1.9,
                 TRUE ~ node_size * 3.2
             ),
             outline_size_plot = ifelse(identical(render_mode, "global"), node_size_plot * 1.06, node_size_plot)
@@ -717,7 +717,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 show.legend = TRUE
             ) +
             ggplot2::scale_size_manual(
-                values = c("Powered" = node_size * 3.8, "Underpowered" = node_size * 3.0),
+                values = c("Powered" = node_size * 3.8, "Underpowered" = node_size * 1.9),
                 name = "Abundance power",
                 guide = ggplot2::guide_legend(
                     order = 2,
