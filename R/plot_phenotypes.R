@@ -561,12 +561,12 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             node_size_plot = dplyr::case_when(
                 identical(render_mode, "global") & power_status == "Powered" ~ node_size * 3.8,
                 identical(render_mode, "global") ~ node_size * 1.9,
-                power_status == "Powered" ~ node_size * 3.2,
-                TRUE ~ node_size * 2.2
+                power_status == "Powered" ~ node_size * 3.4,
+                TRUE ~ node_size * 2.4
             ),
             outline_size_plot = dplyr::case_when(
-                identical(render_mode, "global") ~ node_size_plot * 1.22,
-                TRUE ~ node_size_plot * 1.14
+                identical(render_mode, "global") ~ node_size_plot * 1.11,
+                TRUE ~ node_size_plot * 1.09
             )
         )
 
@@ -660,7 +660,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 shape = 21,
                 fill = NA,
                 color = "black",
-                stroke = if (identical(render_mode, "global")) 2.2 else 1.1,
+                stroke = if (identical(render_mode, "global")) 1.2 else 0.7,
                 show.legend = FALSE
             )
     }
@@ -701,10 +701,11 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             guide = ggplot2::guide_legend(
                 order = 1,
                 override.aes = list(
-                    shape = 21,
-                    size = if (identical(render_mode, "global")) 16 else 7,
+                    shape = 16,
+                    size = if (identical(render_mode, "global")) 28 else 16,
                     alpha = 1,
-                    color = "transparent",
+                    fill = unname(phenotype_colors[color_priority]),
+                    color = unname(phenotype_colors[color_priority]),
                     stroke = 0
                 )
             )
@@ -713,14 +714,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     power_legend_values <- if (identical(render_mode, "global")) {
         c("Powered" = node_size * 3.8, "Underpowered" = node_size * 1.9)
     } else {
-        c("Powered" = node_size * 3.2, "Underpowered" = node_size * 2.2)
+        c("Powered" = node_size * 3.4, "Underpowered" = node_size * 2.4)
     }
-
-    expectation_legend_df <- tibble::tibble(
-        x = Inf,
-        y = Inf,
-        expectation_status = factor("Expected phenotype", levels = "Expected phenotype")
-    )
 
     if (!identical(legend_position, "none")) {
         power_legend_df <- tibble::tibble(
@@ -747,28 +742,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                         alpha = 1,
                         fill = NA,
                         color = "black",
-                        shape = 21
-                    )
-                )
-            ) +
-            ggplot2::geom_point(
-                data = expectation_legend_df,
-                ggplot2::aes(x = x, y = y, shape = expectation_status),
-                alpha = 0,
-                inherit.aes = FALSE,
-                show.legend = TRUE
-            ) +
-            ggplot2::scale_shape_manual(
-                values = c("Expected phenotype" = 1),
-                name = NULL,
-                guide = ggplot2::guide_legend(
-                    order = 3,
-                    override.aes = list(
-                        alpha = 1,
-                        color = "black",
-                        fill = NA,
-                        stroke = if (identical(render_mode, "global")) 2.2 else 1.1,
-                        size = if (identical(render_mode, "global")) 8 else 5
+                        shape = 1,
+                        stroke = 1.2
                     )
                 )
             )
@@ -794,13 +769,13 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ggplot2::theme(
                 legend.position = legend_position,
                 legend.direction = "horizontal",
-                legend.box = "vertical",
-                legend.text = ggplot2::element_text(size = 12),
-                legend.title = ggplot2::element_text(size = 12),
-                legend.key.size = grid::unit(8, "mm"),
-                legend.spacing.x = grid::unit(2, "mm"),
-                legend.spacing.y = grid::unit(2, "mm"),
-                plot.margin = ggplot2::margin(10, 10, 10, 10)
+                legend.box = "horizontal",
+                legend.text = ggplot2::element_text(size = 10),
+                legend.title = ggplot2::element_text(size = 10),
+                legend.key.size = grid::unit(5, "mm"),
+                legend.spacing.x = grid::unit(1, "mm"),
+                legend.spacing.y = grid::unit(0.5, "mm"),
+                plot.margin = ggplot2::margin(6, 6, 2, 6)
             )
     }
 
