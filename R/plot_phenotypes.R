@@ -114,7 +114,7 @@ impact_to_phenos <- function(impact_table,
                                  "I1 Maturation delay" = "<<",
                                  "I2 Precocious maturation" = ">>",
                                  "I3 Program failure within identity" = "!!",
-                                 "I4 Fate switch / misspecification" = "⬄",
+                                 "I4 Fate switch / misspecification" = "⬌",
                                  "I5 Identity fragmentation" = ""
                              )) {
     stopifnot(all(c(
@@ -168,7 +168,7 @@ impact_to_phenos <- function(impact_table,
     tab$identity_code <- ident_code
     id_map_full <- c(
         setNames(identity_glyph_map, names(identity_glyph_map)),
-        c(I0 = "", I1 = "<<", I2 = ">>", I3 = "!!", I4 = "⇄", I5 = "")
+        c(I0 = "", I1 = "<<", I2 = ">>", I3 = "!!", I4 = "⬌", I5 = "")
     )
     tab$identity_glyph <- unname(id_map_full[ifelse(grepl("^I[0-5]$", ident_code), ident_code, tab$identity_label)])
     tab$identity_glyph[is.na(tab$identity_glyph)] <- ""
