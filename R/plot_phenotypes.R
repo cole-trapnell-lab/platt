@@ -563,7 +563,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 identical(render_mode, "global") ~ node_size * 1.9,
                 TRUE ~ node_size * 3.2
             ),
-            outline_size_plot = ifelse(identical(render_mode, "global"), node_size_plot * 1.06, node_size_plot)
+            outline_size_plot = ifelse(identical(render_mode, "global"), node_size_plot * 1.14, node_size_plot)
         )
 
     if (!is.null(tooltip_builder)) {
@@ -605,7 +605,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         dplyr::filter(is_expected) %>%
         dplyr::distinct(name, x, y, node_size_plot, .keep_all = TRUE)
 
-    edge_arrow_unit <- if (identical(render_mode, "tissue")) max(arrow_unit, 5) else max(arrow_unit, 6)
+    edge_arrow_unit <- if (identical(render_mode, "tissue")) max(arrow_unit, 4) else max(arrow_unit, 5)
     edge_linewidth <- if (identical(render_mode, "tissue")) 0.35 else 0.45
     edge_colour <- if (identical(render_mode, "global")) "#6f6f6f" else con_colour
 
@@ -696,7 +696,13 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             name = if (identical(render_mode, "global")) NULL else "Node color",
             guide = ggplot2::guide_legend(
                 order = 1,
-                override.aes = list(shape = 21, size = if (identical(render_mode, "global")) 8 else 4, alpha = 1)
+                override.aes = list(
+                    shape = 16,
+                    size = if (identical(render_mode, "global")) 16 else 4,
+                    alpha = 1,
+                    color = NA,
+                    stroke = 0
+                )
             )
         )
 
@@ -723,7 +729,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                     order = 2,
                     override.aes = list(
                         alpha = 1,
-                        fill = "#b9b9b9",
+                        fill = NA,
                         color = "black",
                         shape = 21
                     )
@@ -738,11 +744,11 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 legend.position = legend_position,
                 legend.direction = "horizontal",
                 legend.box = "vertical",
-                legend.text = ggplot2::element_text(size = 20),
-                legend.title = ggplot2::element_text(size = 20),
-                legend.key.size = grid::unit(12, "mm"),
-                legend.spacing.x = grid::unit(3, "mm"),
-                legend.spacing.y = grid::unit(2, "mm"),
+                legend.text = ggplot2::element_text(size = 40),
+                legend.title = ggplot2::element_text(size = 40),
+                legend.key.size = grid::unit(24, "mm"),
+                legend.spacing.x = grid::unit(6, "mm"),
+                legend.spacing.y = grid::unit(4, "mm"),
                 plot.margin = ggplot2::margin(10, 10, 10, 10)
             )
     } else {
