@@ -114,7 +114,7 @@ impact_to_phenos <- function(impact_table,
                                  "I1 Maturation delay" = "<<",
                                  "I2 Precocious maturation" = ">>",
                                  "I3 Program failure within identity" = "!!",
-                                 "I4 Fate switch / misspecification" = "⇄",
+                                 "I4 Fate switch / misspecification" = "⬄",
                                  "I5 Identity fragmentation" = ""
                              )) {
     stopifnot(all(c(
@@ -562,7 +562,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 identical(render_mode, "global") & power_status == "Powered" ~ node_size * 3.8,
                 identical(render_mode, "global") ~ node_size * 1.9,
                 power_status == "Powered" ~ node_size * 3.2,
-                TRUE ~ node_size * 1.6
+                TRUE ~ node_size * 2.0
             )
         )
 
