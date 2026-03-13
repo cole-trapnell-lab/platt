@@ -561,12 +561,12 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             node_size_plot = dplyr::case_when(
                 identical(render_mode, "global") & power_status == "Powered" ~ node_size * 3.8,
                 identical(render_mode, "global") ~ node_size * 1.9,
-                power_status == "Powered" ~ node_size * 3.4,
-                TRUE ~ node_size * 2.4
+                power_status == "Powered" ~ node_size * 3.2,
+                TRUE ~ node_size * 1.3
             ),
             outline_size_plot = dplyr::case_when(
-                identical(render_mode, "global") ~ node_size_plot * 1.11,
-                TRUE ~ node_size_plot * 1.09
+                identical(render_mode, "global") ~ node_size_plot * 1.06,
+                TRUE ~ node_size_plot * 1.08
             )
         )
 
@@ -660,7 +660,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 shape = 21,
                 fill = NA,
                 color = "black",
-                stroke = if (identical(render_mode, "global")) 1.2 else 0.7,
+                stroke = if (identical(render_mode, "global")) 1.2 else 0.8,
                 show.legend = FALSE
             )
     }
@@ -701,12 +701,11 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             guide = ggplot2::guide_legend(
                 order = 1,
                 override.aes = list(
-                    shape = 16,
-                    size = if (identical(render_mode, "global")) 28 else 16,
+                    shape = 21,
+                    size = if (identical(render_mode, "global")) 28 else 4,
                     alpha = 1,
-                    fill = unname(phenotype_colors[color_priority]),
-                    color = unname(phenotype_colors[color_priority]),
-                    stroke = 0
+                    color = "transparent",
+                    stroke = 0.01
                 )
             )
         )
@@ -714,7 +713,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     power_legend_values <- if (identical(render_mode, "global")) {
         c("Powered" = node_size * 3.8, "Underpowered" = node_size * 1.9)
     } else {
-        c("Powered" = node_size * 3.4, "Underpowered" = node_size * 2.4)
+        c("Powered" = node_size * 1.6, "Underpowered" = node_size * 0.8)
     }
 
     if (!identical(legend_position, "none")) {
@@ -744,6 +743,38 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                         color = "black",
                         shape = 1,
                         stroke = 1.2
+                    )
+                )
+            )
+    }
+
+    if (identical(render_mode, "tissue") && !identical(legend_position, "none")) {
+        expected_legend_df <- tibble::tibble(
+            x = Inf,
+            y = Inf,
+            expected_status = factor("Expected phenotype", levels = "Expected phenotype")
+        )
+        p <- p +
+            ggnewscale::new_scale("size") +
+            ggplot2::geom_point(
+                data = expected_legend_df,
+                ggplot2::aes(x = x, y = y, size = expected_status),
+                alpha = 0,
+                shape = 21,
+                inherit.aes = FALSE,
+                show.legend = TRUE
+            ) +
+            ggplot2::scale_size_manual(
+                values = c("Expected phenotype" = node_size * 1.8),
+                name = NULL,
+                guide = ggplot2::guide_legend(
+                    order = 3,
+                    override.aes = list(
+                        alpha = 1,
+                        fill = NA,
+                        color = "black",
+                        shape = 1,
+                        stroke = 0.8
                     )
                 )
             )
@@ -807,13 +838,13 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             p <- p +
                 ggiraph::geom_text_interactive(
                     ggplot2::aes(x = x, y = y, label = glyph, tooltip = .tooltip),
-                    data = g, size = node_size * 1.4, color = glyph_draw_color, fontface = "bold", vjust = 0.35
+                    data = g, size = node_size * 1.4, color = glyph_draw_color, fontface = "bold", vjust = 0.43, hjust = 0.5
                 )
         } else {
             p <- p +
                 ggplot2::geom_text(
                     ggplot2::aes(x = x, y = y, label = glyph),
-                    data = g, size = node_size * 1.4, color = glyph_draw_color, fontface = "bold", vjust = 0.35
+                    data = g, size = node_size * 1.4, color = glyph_draw_color, fontface = "bold", vjust = 0.43, hjust = 0.5
                 )
         }
     }
