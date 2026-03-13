@@ -334,6 +334,7 @@ impact_to_phenos <- function(impact_table,
         stress_evidence    = tab$stress_evidence,
         identity_evidence  = if ("identity_evidence" %in% names(tab)) as.character(tab$identity_evidence) else NA_character_,
         effect_type        = if ("effect_type" %in% names(tab)) as.character(tab$effect_type) else NA_character_,
+        sulston_display    = if ("sulston_display" %in% names(tab)) as.character(tab$sulston_display) else NA_character_,
         expectation        = if ("expectation" %in% names(tab)) as.character(tab$expectation) else NA_character_,
         rationale          = if ("rationale" %in% names(tab)) as.character(tab$rationale) else NA_character_
     )
