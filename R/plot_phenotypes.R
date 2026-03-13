@@ -562,7 +562,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 identical(render_mode, "global") & power_status == "Powered" ~ node_size * 3.8,
                 identical(render_mode, "global") ~ node_size * 1.9,
                 power_status == "Powered" ~ node_size * 3.2,
-                TRUE ~ node_size * 1.3
+                TRUE ~ node_size * 1.6
             )
         )
 
@@ -576,7 +576,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         g$.tooltip <- NA_character_
     }
 
-    color_priority <- c("abundance_loss", "abundance_gain", "identity", "fitness", "none")
+    color_priority <- c("severe", "medium", "mild", "none")
     g <- g %>%
         dplyr::mutate(
             has_fitness_change = (!is.na(f1_dir) & f1_dir %in% c("increase", "decrease")) |
@@ -588,6 +588,12 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 !is.na(ident) & !(ident %in% c("I0", "I0 Identity intact", "Identity intact", "", NA)) ~ "identity",
                 !is.na(abundance_code) & grepl("^A1|^A4", abundance_code) ~ "abundance_gain",
                 has_fitness_change ~ "fitness",
+                TRUE ~ "none"
+            ),
+            severity_fill = dplyr::case_when(
+                primary_phenotype == "abundance_loss" ~ "severe",
+                primary_phenotype == "identity" ~ "medium",
+                primary_phenotype %in% c("abundance_gain", "fitness") ~ "mild",
                 TRUE ~ "none"
             ),
             has_identity_change = !is.na(ident) & !(ident %in% c("I0", "I0 Identity intact", "Identity intact", "", NA)),
@@ -655,7 +661,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     if (isTRUE(interactive) && !is.null(tooltip_builder)) {
         p <- p +
             ggiraph::geom_point_interactive(
-                ggplot2::aes(x = x, y = y, tooltip = .tooltip, fill = primary_phenotype, shape = expected_shape, size = node_size_plot),
+                ggplot2::aes(x = x, y = y, tooltip = .tooltip, fill = severity_fill, shape = expected_shape, size = node_size_plot),
                 data = g_draw,
                 color = "black",
                 stroke = if (identical(render_mode, "global")) 0.7 else 0.5
@@ -663,7 +669,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     } else {
         p <- p +
             ggplot2::geom_point(
-                ggplot2::aes(x = x, y = y, fill = primary_phenotype, shape = expected_shape, size = node_size_plot),
+                ggplot2::aes(x = x, y = y, fill = severity_fill, shape = expected_shape, size = node_size_plot),
                 data = g_draw,
                 color = "black",
                 stroke = if (identical(render_mode, "global")) 0.7 else 0.5
@@ -673,18 +679,22 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     p <- p +
         ggplot2::scale_size_identity() +
         ggplot2::scale_shape_manual(
-            values = c("Observed phenotype" = 21, "Expected phenotype" = 23),
+            values = c("Observed phenotype" = 21, "Expected phenotype" = 24),
             name = NULL,
             guide = "none"
         ) +
         ggplot2::scale_fill_manual(
-            values = phenotype_colors,
+            values = c(
+                severe = unname(phenotype_colors["abundance_loss"]),
+                medium = unname(phenotype_colors["identity"]),
+                mild = unname(phenotype_colors["abundance_gain"]),
+                none = unname(phenotype_colors["none"])
+            ),
             breaks = color_priority,
             labels = c(
-                abundance_loss = "Abundance decrease",
-                abundance_gain = "Abundance increase",
-                identity = "Identity phenotype",
-                fitness = "Fitness phenotype",
+                severe = "Severe phenotype",
+                medium = "Medium phenotype",
+                mild = "Mild phenotype",
                 none = "No phenotype"
             ),
             name = if (identical(render_mode, "global")) NULL else "Node color",
@@ -713,20 +723,24 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 show.legend = TRUE
             ) +
             ggplot2::scale_fill_manual(
-                values = phenotype_colors,
+                values = c(
+                    severe = unname(phenotype_colors["abundance_loss"]),
+                    medium = unname(phenotype_colors["identity"]),
+                    mild = unname(phenotype_colors["abundance_gain"]),
+                    none = unname(phenotype_colors["none"])
+                ),
                 breaks = color_priority,
                 labels = c(
-                    abundance_loss = "Abundance decrease",
-                    abundance_gain = "Abundance increase",
-                    identity = "Identity phenotype",
-                    fitness = "Fitness phenotype",
+                    severe = "Severe phenotype",
+                    medium = "Medium phenotype",
+                    mild = "Mild phenotype",
                     none = "No phenotype"
                 ),
                 name = if (identical(render_mode, "global")) NULL else "Node color",
                 guide = ggplot2::guide_legend(
                     order = 1,
                     override.aes = list(
-                        shape = 21,
+                        shape = 24,
                         size = if (identical(render_mode, "global")) node_size * 3.8 else 10,
                         alpha = 1,
                         color = "black",
@@ -759,7 +773,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                         alpha = 1,
                         fill = NA,
                         color = "black",
-                        shape = 1,
+                        shape = 24,
                         stroke = 1.2
                     )
                 )
@@ -783,7 +797,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 show.legend = TRUE
             ) +
             ggplot2::scale_shape_manual(
-                values = c("Expected phenotype" = 23, "Observed phenotype" = 21),
+                values = c("Expected phenotype" = 24, "Observed phenotype" = 21),
                 name = NULL,
                 guide = ggplot2::guide_legend(
                     order = 3,
