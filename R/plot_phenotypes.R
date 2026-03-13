@@ -675,16 +675,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         ggplot2::scale_shape_manual(
             values = c("Observed phenotype" = 21, "Expected phenotype" = 23),
             name = NULL,
-            guide = ggplot2::guide_legend(
-                order = 3,
-                override.aes = list(
-                    size = if (identical(render_mode, "global")) 10 else 5,
-                    fill = "white",
-                    color = "black",
-                    alpha = 1,
-                    stroke = 1
-                )
-            )
+            guide = "none"
         ) +
         ggplot2::scale_fill_manual(
             values = phenotype_colors,
@@ -697,21 +688,53 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 none = "No phenotype"
             ),
             name = if (identical(render_mode, "global")) NULL else "Node color",
-            guide = ggplot2::guide_legend(
-                order = 1,
-                override.aes = list(
-                    shape = 21,
-                    size = if (identical(render_mode, "global")) node_size * 3.8 else 8,
-                    alpha = 1,
-                    color = "black",
-                    stroke = 0.7
-                )
-            )
+            guide = "none"
         )
 
     power_legend_values <- c("Powered" = node_size * 1.6, "Underpowered" = node_size * 0.8)
 
     if (!identical(legend_position, "none")) {
+        fill_legend_df <- tibble::tibble(
+            x = rep(Inf, length(color_priority)),
+            y = rep(Inf, length(color_priority)),
+            fill_status = factor(color_priority, levels = color_priority)
+        )
+        p <- p +
+            ggnewscale::new_scale_fill() +
+            ggplot2::geom_point(
+                data = fill_legend_df,
+                ggplot2::aes(x = x, y = y, fill = fill_status),
+                alpha = 0,
+                shape = 21,
+                size = 0,
+                color = "black",
+                stroke = 0.7,
+                inherit.aes = FALSE,
+                show.legend = TRUE
+            ) +
+            ggplot2::scale_fill_manual(
+                values = phenotype_colors,
+                breaks = color_priority,
+                labels = c(
+                    abundance_loss = "Abundance decrease",
+                    abundance_gain = "Abundance increase",
+                    identity = "Identity phenotype",
+                    fitness = "Fitness phenotype",
+                    none = "No phenotype"
+                ),
+                name = if (identical(render_mode, "global")) NULL else "Node color",
+                guide = ggplot2::guide_legend(
+                    order = 1,
+                    override.aes = list(
+                        shape = 21,
+                        size = if (identical(render_mode, "global")) node_size * 3.8 else 10,
+                        alpha = 1,
+                        color = "black",
+                        stroke = 0.7
+                    )
+                )
+            )
+
         power_legend_df <- tibble::tibble(
             x = c(Inf, Inf),
             y = c(Inf, Inf),
@@ -743,6 +766,38 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             )
     }
 
+    if (!identical(legend_position, "none")) {
+        shape_legend_df <- tibble::tibble(
+            x = c(Inf, Inf),
+            y = c(Inf, Inf),
+            expected_status = factor(c("Expected phenotype", "Observed phenotype"), levels = c("Expected phenotype", "Observed phenotype"))
+        )
+        p <- p +
+            ggnewscale::new_scale("shape") +
+            ggplot2::geom_point(
+                data = shape_legend_df,
+                ggplot2::aes(x = x, y = y, shape = expected_status),
+                alpha = 0,
+                size = 0,
+                inherit.aes = FALSE,
+                show.legend = TRUE
+            ) +
+            ggplot2::scale_shape_manual(
+                values = c("Expected phenotype" = 23, "Observed phenotype" = 21),
+                name = NULL,
+                guide = ggplot2::guide_legend(
+                    order = 3,
+                    override.aes = list(
+                        size = if (identical(render_mode, "global")) 10 else 5,
+                        fill = "white",
+                        color = "black",
+                        alpha = 1,
+                        stroke = 1
+                    )
+                )
+            )
+    }
+
     if (identical(render_mode, "global")) {
         p <- p +
             ggplot2::coord_cartesian(clip = "off") +
@@ -766,8 +821,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 legend.box = "vertical",
                 legend.text = ggplot2::element_text(size = 10),
                 legend.title = ggplot2::element_text(size = 10),
-                legend.key.size = grid::unit(5, "mm"),
-                legend.spacing.x = grid::unit(1, "mm"),
+                legend.key.size = grid::unit(4, "mm"),
+                legend.spacing.x = grid::unit(0.75, "mm"),
                 legend.spacing.y = grid::unit(0.5, "mm"),
                 plot.margin = ggplot2::margin(6, 6, 2, 6)
             )
