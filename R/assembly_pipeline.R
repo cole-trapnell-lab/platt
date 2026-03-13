@@ -234,6 +234,10 @@ run_wildtype_assembly <- function(cds,
 #' @param embryo_size_factors Optional size factors for embryo data.
 #'
 #' @return An igraph object for the assembled mutant graph, or the WT graph on failure.
+.is_invalid_mt_graph <- function(mt_graph) {
+    is.null(mt_graph) || (length(mt_graph) == 1 && is.na(mt_graph)) || !inherits(mt_graph, "igraph")
+}
+
 run_perturbation_assembly <- function(cds,
                                       sample_group,
                                       cell_group,
@@ -353,7 +357,7 @@ run_perturbation_assembly <- function(cds,
         verbose = verbose
     )
 
-    if (is.na(mt_graph)) {
+    if (.is_invalid_mt_graph(mt_graph)) {
         print("returning wt_graph")
         return(wt_graph)
     }
