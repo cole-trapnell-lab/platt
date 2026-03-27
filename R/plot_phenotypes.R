@@ -706,18 +706,18 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ),
             name = if (identical(render_mode, "global")) NULL else "Node color",
             guide = "none"
-        ) +
-        ggplot2::scale_size_manual(
-            values = c("Powered" = node_size * 1.6, "Underpowered" = node_size * 0.8),
-            guide = guide_legend(
-                # override.aes = list(size = c(1.6*2, 0.8*2))
-            ),
-            name = "Size"
-        ) +
-        ggplot2::scale_shape_manual(
-            values = c("Observed phenotype" = 21, "Expected phenotype" = 22),
-            name = "Shape"
-        )
+        ) #+
+    # ggplot2::scale_size_manual(
+    #     values = c("Powered" = node_size * 1.6, "Underpowered" = node_size * 0.8),
+    #     guide = guide_legend(
+    #         # override.aes = list(size = c(1.6*2, 0.8*2))
+    #     ),
+    #     name = "Size"
+    # ) +
+    # ggplot2::scale_shape_manual(
+    #     values = c("Observed phenotype" = 21, "Expected phenotype" = 22),
+    #     name = "Shape"
+    # )
 
     fill_legend_df <- data.frame(
         x = NA_real_,
@@ -768,6 +768,51 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             )
         )
 
+    size_legend_df <- data.frame(
+        x = NA_real_,
+        y = NA_real_,
+        size_value = c("Powered", "Underpowered")
+    )
+
+    p <- p +
+        ggplot2::geom_point(
+            data = size_legend_df,
+            ggplot2::aes(x = x, y = y, size = size_value),
+            inherit.aes = FALSE,
+            shape = 21,
+            fill = "black",
+            stroke = 0.5,
+            show.legend = c(color = FALSE, size = TRUE)
+        ) +
+        ggplot2::scale_size_manual(
+            values = c("Powered" = node_size * 1.6, "Underpowered" = node_size * 0.8),
+            guide = guide_legend(
+                override.aes = list(size = c(1.6 * 2, 0.8 * 2))
+            ),
+            name = "Size"
+        )
+
+    shape_legend_df <- data.frame(
+        x = NA_real_,
+        y = NA_real_,
+        shape_value = c("Observed phenotype", "Expected phenotype")
+    )
+
+    p <- p +
+        ggplot2::geom_point(
+            data = shape_legend_df,
+            ggplot2::aes(x = x, y = y, shape = shape_value),
+            inherit.aes = FALSE,
+            color = "black",
+            fill = "white",
+            stroke = 0.5,
+            size = 3,
+            show.legend = c(color = FALSE, size = TRUE)
+        ) +
+        ggplot2::scale_shape_manual(
+            values = c("Observed phenotype" = 21, "Expected phenotype" = 22),
+            name = "Shape"
+        )
 
     if (isTRUE(global_identity_marker)) {
         if (isTRUE(interactive) && !is.null(tooltip_builder)) {
