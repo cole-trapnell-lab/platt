@@ -46,11 +46,11 @@ phenotype_colors <- c(
 #' @examples
 #' \dontrun{
 #' p <- plot_phenotypes_from_impact(
-#'   cell_state_graph = cell_state_graph,
-#'   impact_table = impact_table,
-#'   show_node_labels = TRUE,
-#'   label_font_size_pt = 14,
-#'   show_group_labels = TRUE
+#'     cell_state_graph = cell_state_graph,
+#'     impact_table = impact_table,
+#'     show_node_labels = TRUE,
+#'     label_font_size_pt = 14,
+#'     show_group_labels = TRUE
 #' )
 #' }
 #' @export
@@ -389,7 +389,6 @@ impact_to_phenos <- function(impact_table,
 #'   glyph/badge overlays and can draw a center marker for identity phenotypes.
 #' @param global_identity_marker Logical; when `TRUE`, draw a small black center
 #'   marker for nodes with non-intact identity (used for global view).
-#'
 #' @return A `ggplot` object.
 #' @export
 plot_phenotypes_glyphs <- function(cell_state_graph,
@@ -439,8 +438,12 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         show_node_glyphs <- FALSE
         show_node_badges <- FALSE
     }
+    compact_bottom_legend <- identical(legend_position, "bottom")
 
     g <- cell_state_graph@g %>% dplyr::mutate(name = stringr::str_trim(name))
+    g <- g %>%
+        select(x, y, name, color_nodes_by, label_nodes_by, group_nodes_by) %>%
+        distinct()
     bezier_df <- cell_state_graph@layout_info$bezier_df
     grouping_df <- cell_state_graph@layout_info$grouping_df
 
@@ -650,11 +653,14 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 y = max(y, na.rm = TRUE) + 0.02 * yrange,
                 .groups = "drop"
             )
-        p <- p + ggplot2::geom_text(
+        p <- p + ggrepel::geom_text_repel(
             data = group_labels,
             ggplot2::aes(x = x, y = y, label = group_nodes_by),
             size = group_label_font_size,
-            color = "black"
+            color = "black",
+            box.padding = 0.3,
+            point.padding = 0.1,
+            segment.color = "grey50"
         )
     }
 
@@ -670,7 +676,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     } else {
         p <- p +
             ggplot2::geom_point(
-                ggplot2::aes(x = x, y = y, fill = severity_fill, shape = expected_shape, size = node_size_plot),
+                ggplot2::aes(x = x, y = y, fill = severity_fill, shape = expected_shape, size = power_status),
                 data = g_draw,
                 color = "black",
                 stroke = if (identical(render_mode, "global")) 0.7 else 0.5
@@ -678,12 +684,12 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     }
 
     p <- p +
-        ggplot2::scale_size_identity() +
-        ggplot2::scale_shape_manual(
-            values = c("Observed phenotype" = 21, "Expected phenotype" = 24),
-            name = NULL,
-            guide = "none"
+        ggplot2::geom_point(
+            aes(x = x, y = y, fill = severity_fill, shape = expected_shape, size = power_status),
+            data = g_draw,
+            stroke = if (identical(render_mode, "global")) 0.7 else 0.5
         ) +
+        ggplot2::scale_size_identity(guide = "none") +
         ggplot2::scale_fill_manual(
             values = c(
                 severe = unname(phenotype_colors["abundance_loss"]),
@@ -700,148 +706,68 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ),
             name = if (identical(render_mode, "global")) NULL else "Node color",
             guide = "none"
+        ) +
+        ggplot2::scale_size_manual(
+            values = c("Powered" = node_size * 1.6, "Underpowered" = node_size * 0.8),
+            guide = guide_legend(
+                # override.aes = list(size = c(1.6*2, 0.8*2))
+            ),
+            name = "Size"
+        ) +
+        ggplot2::scale_shape_manual(
+            values = c("Observed phenotype" = 21, "Expected phenotype" = 22),
+            name = "Shape"
         )
 
-    power_legend_values <- c("Powered" = node_size * 1.6, "Underpowered" = node_size * 0.8)
-
-    if (!identical(legend_position, "none")) {
-        fill_legend_df <- tibble::tibble(
-            x = rep(Inf, length(color_priority)),
-            y = rep(Inf, length(color_priority)),
-            fill_status = factor(color_priority, levels = color_priority)
+    fill_legend_df <- data.frame(
+        x = NA_real_,
+        y = NA_real_,
+        severity_fill = factor(
+            c("severe", "medium", "mild", "none"),
+            levels = c("severe", "medium", "mild", "none")
         )
-        p <- p +
-            ggnewscale::new_scale_fill() +
-            ggplot2::geom_point(
-                data = fill_legend_df,
-                ggplot2::aes(x = x, y = y, fill = fill_status),
-                alpha = 0,
-                shape = 21,
-                size = 0,
-                color = "black",
-                stroke = 0.7,
-                inherit.aes = FALSE,
-                show.legend = TRUE
-            ) +
-            ggplot2::scale_fill_manual(
-                values = c(
-                    severe = unname(phenotype_colors["abundance_loss"]),
-                    medium = unname(phenotype_colors["identity"]),
-                    mild = unname(phenotype_colors["abundance_gain"]),
-                    none = unname(phenotype_colors["none"])
-                ),
-                breaks = color_priority,
-                labels = c(
-                    severe = "Severe phenotype",
-                    medium = "Medium phenotype",
-                    mild = "Mild phenotype",
-                    none = "No phenotype"
-                ),
-                name = if (identical(render_mode, "global")) NULL else "Node color",
-                guide = ggplot2::guide_legend(
-                    order = 1,
-                    override.aes = list(
-                        shape = 24,
-                        size = if (identical(render_mode, "global")) node_size * 3.8 else 10,
-                        alpha = 1,
-                        color = "black",
-                        stroke = 0.7
-                    )
+    )
+
+    p <- p +
+        ggnewscale::new_scale_fill() +
+        ggplot2::geom_point(
+            data = fill_legend_df,
+            ggplot2::aes(x = x, y = y, fill = severity_fill),
+            inherit.aes = FALSE,
+            shape = 21,
+            size = 4,
+            colour = "black",
+            stroke = 0.5,
+            show.legend = c(color = TRUE, size = FALSE)
+        ) +
+        ggplot2::scale_fill_manual(
+            values = c(
+                severe = unname(phenotype_colors["abundance_loss"]),
+                medium = unname(phenotype_colors["identity"]),
+                mild   = unname(phenotype_colors["abundance_gain"]),
+                none   = unname(phenotype_colors["none"])
+            ),
+            breaks = c("severe", "medium", "mild", "none"),
+            labels = c(
+                severe = "Severe phenotype",
+                medium = "Medium phenotype",
+                mild   = "Mild phenotype",
+                none   = "No phenotype"
+            ),
+            drop = FALSE,
+            name = "Node color",
+            guide = ggplot2::guide_legend(
+                order = 1,
+                override.aes = list(
+                    shape = 21,
+                    size = 4,
+                    colour = "black",
+                    stroke = 0.5,
+                    alpha = 1
                 )
             )
-
-        power_legend_df <- tibble::tibble(
-            x = c(Inf, Inf),
-            y = c(Inf, Inf),
-            power_status = factor(c("Powered", "Underpowered"), levels = c("Powered", "Underpowered"))
         )
-        p <- p +
-            ggnewscale::new_scale("size") +
-            ggplot2::geom_point(
-                data = power_legend_df,
-                ggplot2::aes(x = x, y = y, size = power_status),
-                alpha = 0,
-                shape = 1,
-                inherit.aes = FALSE,
-                show.legend = TRUE
-            ) +
-            ggplot2::scale_size_manual(
-                values = power_legend_values,
-                name = "Abundance power",
-                guide = ggplot2::guide_legend(
-                    order = 2,
-                    override.aes = list(
-                        alpha = 1,
-                        fill = NA,
-                        color = "black",
-                        shape = 24,
-                        stroke = 1.2
-                    )
-                )
-            )
-    }
 
-    if (!identical(legend_position, "none")) {
-        shape_legend_df <- tibble::tibble(
-            x = c(Inf, Inf),
-            y = c(Inf, Inf),
-            expected_status = factor(c("Expected phenotype", "Observed phenotype"), levels = c("Expected phenotype", "Observed phenotype"))
-        )
-        p <- p +
-            ggnewscale::new_scale("shape") +
-            ggplot2::geom_point(
-                data = shape_legend_df,
-                ggplot2::aes(x = x, y = y, shape = expected_status),
-                alpha = 0,
-                size = 0,
-                inherit.aes = FALSE,
-                show.legend = TRUE
-            ) +
-            ggplot2::scale_shape_manual(
-                values = c("Expected phenotype" = 24, "Observed phenotype" = 21),
-                name = NULL,
-                guide = ggplot2::guide_legend(
-                    order = 3,
-                    override.aes = list(
-                        size = if (identical(render_mode, "global")) 10 else 5,
-                        fill = "white",
-                        color = "black",
-                        alpha = 1,
-                        stroke = 1
-                    )
-                )
-            )
-    }
-
-    if (identical(render_mode, "global")) {
-        p <- p +
-            ggplot2::coord_cartesian(clip = "off") +
-            ggplot2::theme(
-                legend.position = legend_position,
-                legend.direction = "horizontal",
-                legend.box = "vertical",
-                legend.text = ggplot2::element_text(size = 40),
-                legend.title = ggplot2::element_text(size = 40),
-                legend.key.size = grid::unit(24, "mm"),
-                legend.spacing.x = grid::unit(6, "mm"),
-                legend.spacing.y = grid::unit(4, "mm"),
-                plot.margin = ggplot2::margin(10, 10, 10, 10)
-            )
-    } else {
-        p <- p +
-            ggplot2::coord_equal(clip = "off") +
-            ggplot2::theme(
-                legend.position = legend_position,
-                legend.direction = "horizontal",
-                legend.box = "vertical",
-                legend.text = ggplot2::element_text(size = 10),
-                legend.title = ggplot2::element_text(size = 10),
-                legend.key.size = grid::unit(4, "mm"),
-                legend.spacing.x = grid::unit(0.75, "mm"),
-                legend.spacing.y = grid::unit(0.5, "mm"),
-                plot.margin = ggplot2::margin(6, 6, 2, 6)
-            )
-    }
 
     if (isTRUE(global_identity_marker)) {
         if (isTRUE(interactive) && !is.null(tooltip_builder)) {
@@ -854,13 +780,25 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                     color = "black"
                 )
         } else {
+            g$identity_change_marker <- ifelse(g$has_identity_change, "*", "")
             p <- p +
-                ggplot2::geom_point(
-                    data = g %>% dplyr::filter(has_identity_change),
-                    ggplot2::aes(x = x, y = y),
-                    shape = 16,
-                    size = node_size * 0.275,
-                    color = "black"
+                geom_text(
+                    data = g,
+                    aes(x = x, y = y, label = identity_change_marker, alpha = identity_change_marker),
+                    show.legend = c(alpha = TRUE, color = FALSE),
+                    vjust = 0.7,
+                    hjust = 0.5
+                ) +
+                scale_alpha_manual(
+                    name = "Transcriptional Identity",
+                    values = c("*" = 1),
+                    labels = "Phenotype detected",
+                    breaks = c("*")
+                ) +
+                guides(
+                    alpha = guide_legend(
+                        override.aes = list(label = "*", size = 6)
+                    )
                 )
         }
     }
@@ -874,10 +812,84 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                     data = g, size = node_size * 1.4, color = glyph_draw_color, fontface = "bold", vjust = 0.43, hjust = 0.5
                 )
         } else {
+            g_draw$glyph_size <- case_when(
+                g_draw$power_status == "Powered" ~ node_size * 1.6 * 0.5,
+                TRUE ~ node_size * 0.8 * 0.6
+            )
+
             p <- p +
+                ggnewscale::new_scale("size") +
                 ggplot2::geom_text(
-                    ggplot2::aes(x = x, y = y, label = glyph),
-                    data = g, size = node_size * 1.4, color = glyph_draw_color, fontface = "bold", vjust = 0.43, hjust = 0.5
+                    ggplot2::aes(x = x, y = y, label = glyph, size = glyph_size),
+                    data = g_draw,
+                    color = glyph_draw_color,
+                    fontface = "bold", vjust = 0.43, hjust = 0.5, show.legend = F
+                ) + ggplot2::scale_size_identity(guide = "none")
+
+            glyph_legend_df <- data.frame(
+                x = NA_real_,
+                y = NA_real_,
+                glyph = c("", "<<", ">>", "!!", "<>", "##"),
+                glyph_type = c(
+                    "Identity intact",
+                    "Maturation delay",
+                    "Precocious maturation",
+                    "Program failure",
+                    "Fate switch / misspecification",
+                    "Identity fragmentation"
+                ),
+                stringsAsFactors = FALSE
+            )
+            glyph_order <- c(
+                "Identity intact",
+                "Maturation delay",
+                "Precocious maturation",
+                "Program failure",
+                "Fate switch / misspecification",
+                "Identity fragmentation"
+            )
+
+            glyph_legend_df$glyph_type <- factor(
+                glyph_legend_df$glyph_type,
+                levels = glyph_order
+            )
+
+            p <- p +
+                geom_text(
+                    data = glyph_legend_df,
+                    aes(x = x, y = y, label = glyph, alpha = glyph_type),
+                    inherit.aes = FALSE,
+                    fontface = "bold",
+                    colour = "black",
+                    show.legend = c(alpha = TRUE, size = FALSE)
+                ) +
+                scale_alpha_manual(
+                    name = "Glyphs",
+                    breaks = glyph_order,
+                    values = c(
+                        "Identity intact" = 1,
+                        "Maturation delay" = 1,
+                        "Precocious maturation" = 1,
+                        "Program failure" = 1,
+                        "Fate switch / misspecification" = 1,
+                        "Identity fragmentation" = 1
+                    ),
+                    labels = c(
+                        "Identity intact",
+                        "Maturation delay",
+                        "Precocious maturation",
+                        "Program failure",
+                        "Fate switch / misspecification",
+                        "Identity fragmentation"
+                    ),
+                    guide = guide_legend(
+                        override.aes = list(
+                            label = c("", "<<", ">>", "!!", "<>", "##"),
+                            size = 3,
+                            colour = "black"
+                        ),
+                        order = 1
+                    )
                 )
         }
     }
