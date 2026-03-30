@@ -9,7 +9,7 @@ rainbow_timepoint_colors <-
     )
 
 phenotype_colors <- c(
-    "none"           = "#b9b9b9",
+    "none"           = "#ffffff",
     "abundance_gain" = "#f6c141",
     "abundance_loss" = "#e41a1c",
     "identity"       = "#ff8c00",
@@ -921,21 +921,30 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         shape_value = c("Observed phenotype", "Expected phenotype")
     )
 
-    p <- p +
-        ggplot2::geom_point(
-            data = shape_legend_df,
-            ggplot2::aes(x = x, y = y, shape = shape_value),
-            inherit.aes = FALSE,
-            color = "black",
-            fill = "white",
-            stroke = 0.5,
-            size = 3,
-            show.legend = c(color = FALSE, size = TRUE)
-        ) +
-        ggplot2::scale_shape_manual(
-            values = c("Observed phenotype" = 21, "Expected phenotype" = 22),
-            name = "Shape"
-        )
+    if ("Expected phenotype" %in% unique(g_draw$expected_shape)) {
+        p <- p +
+            ggplot2::geom_point(
+                data = shape_legend_df,
+                ggplot2::aes(x = x, y = y, shape = shape_value),
+                inherit.aes = FALSE,
+                color = "black",
+                fill = "white",
+                stroke = 0.5,
+                size = 3,
+                show.legend = c(color = FALSE, size = TRUE)
+            ) +
+            ggplot2::scale_shape_manual(
+                values = c("Observed phenotype" = 21, "Expected phenotype" = 22),
+                name = "Shape"
+            )
+    } else {
+        p <- p +
+            ggplot2::scale_shape_manual(
+                values = c("Observed phenotype" = 21, "Expected phenotype" = 22),
+                name = "Shape"
+            ) + guides(shape = "none")
+    }
+
 
     if (isTRUE(global_identity_marker)) {
         if (isTRUE(interactive)) {
