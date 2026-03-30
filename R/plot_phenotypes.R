@@ -540,7 +540,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                                    arrow_unit = 3,
                                    node_size = 2.2,
                                    con_colour = "darkgrey",
-                                   legend_position = "none",
+                                   legend_position = "right",
                                    label_cell_types = NULL,
                                    show_node_labels = FALSE,
                                    label_font_size = 3,
@@ -568,7 +568,6 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     if (identical(render_mode, "global")) {
         show_node_glyphs <- FALSE
     }
-    compact_bottom_legend <- identical(legend_position, "bottom")
 
     g <- cell_state_graph@g %>% dplyr::mutate(name = stringr::str_trim(name))
     g <- g %>%
@@ -1089,12 +1088,12 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     }
 
     if (isTRUE(interactive)) {
-        p <- p + ggplot2::coord_equal()
+        p <- p + ggplot2::coord_equal() + theme(legend.position = legend_position)
         ggiraph::girafe(
             ggobj = p,
             width_svg = width, height_svg = height
         )
     } else {
-        p
+        p + theme(legend.position = legend_position)
     }
 }
