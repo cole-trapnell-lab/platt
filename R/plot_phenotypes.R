@@ -551,24 +551,20 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                                    draw_group_boxes = TRUE,
                                    show_group_labels = FALSE,
                                    group_label_font_size = 2,
-                                   node_overlay = c("none", "glyphs", "badges", "both"),
-                                   glyph_color = NULL,
+                                   node_overlay = c("glyphs", "none"),
+                                   glyph_color = "white",
                                    badge_color = "black",
                                    badge_outline_color = "white",
                                    render_mode = c("tissue", "global"),
-                                   global_identity_marker = NULL,
                                    tooltip_builder = NULL,
                                    interactive = FALSE) {
     node_overlay <- match.arg(node_overlay)
     render_mode <- match.arg(render_mode)
     show_node_glyphs <- node_overlay %in% c("glyphs", "both")
-    show_node_badges <- node_overlay %in% c("badges", "both")
-    if (is.null(global_identity_marker)) {
-        global_identity_marker <- identical(render_mode, "global")
-    }
+    global_identity_marker <- identical(render_mode, "global")
+
     if (identical(render_mode, "global")) {
         show_node_glyphs <- FALSE
-        show_node_badges <- FALSE
     }
     compact_bottom_legend <- identical(legend_position, "bottom")
 
@@ -963,7 +959,9 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                     data = g,
                     aes(x = x, y = y, label = identity_change_marker, alpha = identity_change_marker),
                     show.legend = c(alpha = TRUE, color = FALSE),
-                    vjust = 0.7,
+                    color = glyph_color,
+                    size = node_size,
+                    vjust = 0.8,
                     hjust = 0.5
                 ) +
                 scale_alpha_manual(
@@ -974,7 +972,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 ) +
                 guides(
                     alpha = guide_legend(
-                        override.aes = list(label = "*", size = 6)
+                        override.aes = list(label = "*", size = 6, color = "black")
                     )
                 )
         }
@@ -1070,75 +1068,6 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                         order = 1
                     )
                 )
-        }
-    }
-
-    if (show_node_badges) {
-        mk_badges <- function(df) {
-            offs <- tibble::tibble(
-                badge = c("F1_up", "F1_down", "F2", "F3", "F4"),
-                dx = c(0.00, 0.00, -0.23, 0.23, 0.00),
-                dy = c(0.27, -0.27, 0.00, 0.00, 0.36)
-            )
-            base <- df %>% dplyr::select(dplyr::any_of(c("name", "x", "y", "node_size_plot", "node_size", "f1_dir", "f2", "f3", "f4", "f3_alpha")))
-            if (!("node_size_plot" %in% names(base))) {
-                if ("node_size" %in% names(base)) {
-                    base <- base %>% dplyr::mutate(node_size_plot = node_size * 3.2)
-                } else {
-                    base <- base %>% dplyr::mutate(node_size_plot = 3.2)
-                }
-            }
-            b1u <- base %>%
-                dplyr::filter(f1_dir == "increase") %>%
-                dplyr::mutate(badge = "F1_up")
-            b1d <- base %>%
-                dplyr::filter(f1_dir == "decrease") %>%
-                dplyr::mutate(badge = "F1_down")
-            b2 <- base %>%
-                dplyr::filter(isTRUE(f2)) %>%
-                dplyr::mutate(badge = "F2")
-            b3 <- base %>%
-                dplyr::filter(!is.na(f3) & f3_alpha > 0) %>%
-                dplyr::mutate(badge = "F3")
-            b4 <- base %>%
-                dplyr::filter(isTRUE(f4)) %>%
-                dplyr::mutate(badge = "F4")
-            dplyr::bind_rows(b1u, b1d, b2, b3, b4) %>%
-                dplyr::left_join(offs, by = "badge") %>%
-                dplyr::mutate(
-                    # Keep badge placement proportional to the actual rendered node size.
-                    bx = x + dx * node_size_plot,
-                    by = y + dy * node_size_plot
-                )
-        }
-
-        badges <- mk_badges(g)
-        if (nrow(badges)) {
-            p <- p +
-                ggnewscale::new_scale_color() +
-                ggplot2::geom_point(
-                    data = badges %>% dplyr::filter(badge == "F1_up"),
-                    ggplot2::aes(bx, by), shape = 24, size = 1.9, fill = badge_color, color = badge_outline_color, stroke = 0.25
-                ) +
-                ggplot2::geom_point(
-                    data = badges %>% dplyr::filter(badge == "F1_down"),
-                    ggplot2::aes(bx, by), shape = 25, size = 1.9, fill = badge_color, color = badge_outline_color, stroke = 0.25
-                ) +
-                ggplot2::geom_point(
-                    data = badges %>% dplyr::filter(badge == "F2"),
-                    ggplot2::aes(bx, by), shape = 95, size = 1.9, color = badge_color, stroke = 0.6
-                ) +
-                ggplot2::geom_text(
-                    data = badges %>% dplyr::filter(badge == "F3"),
-                    ggplot2::aes(x = bx, y = by, alpha = pmin(1, f3_alpha)),
-                    label = "*", size = 4.6, color = badge_color, fontface = "bold"
-                ) +
-                ggplot2::geom_point(
-                    data = badges %>% dplyr::filter(badge == "F4"),
-                    ggplot2::aes(bx, by),
-                    shape = 22, size = 1.9, fill = badge_color, color = badge_outline_color, stroke = 0.25
-                ) +
-                ggplot2::scale_alpha_continuous(range = c(0.25, 1), guide = "none")
         }
     }
 
