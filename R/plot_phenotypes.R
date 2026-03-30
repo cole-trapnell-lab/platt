@@ -19,6 +19,32 @@ phenotype_colors <- c(
     "senescence"     = "#a65628"
 )
 
+
+format_group_display_name <- function(x) {
+    x <- trimws(as.character(x))
+    x <- dplyr::na_if(x, "")
+    out <- stringr::str_to_title(stringr::str_replace_all(x, "_", " "))
+    out[out == "Cns Other"] <- "CNS Other"
+    out
+}
+
+format_abundance_change_percent <- function(lfc) {
+    pct <- (exp(lfc) - 1) * 100
+    dplyr::if_else(
+        is.na(lfc),
+        NA_character_,
+        paste0(formatC(pct, digits = 0, format = "f", flag = "+"), "%")
+    )
+}
+
+abundance_power_status_label <- function(power, powered_thresh = 0.8) {
+    dplyr::case_when(
+        is.na(power) ~ NA_character_,
+        power >= powered_thresh ~ "powered",
+        TRUE ~ "underpowered"
+    )
+}
+
 #' Plot Phenotype Glyphs from an Impact Table
 #'
 #' Convert a standardized impact table into phenotype glyph fields and render
@@ -349,6 +375,112 @@ impact_to_phenos <- function(impact_table,
 }
 
 
+phenotype_tooltip_builder <- function(g, render_mode = c("tissue", "global")) {
+    render_mode <- match.arg(render_mode)
+    g <- g %>%
+        dplyr::mutate(
+            group_str = dplyr::coalesce(
+                if ("sulston_display" %in% names(g)) format_group_display_name(sulston_display) else NA_character_,
+                format_group_display_name(group_nodes_by),
+                ""
+            ),
+            abundance_code = if ("abundance_code" %in% names(g)) as.character(abundance_code) else NA_character_,
+            lfc = if ("lfc" %in% names(g)) as.numeric(lfc) else NA_real_,
+            q = if ("q" %in% names(g)) as.numeric(q) else NA_real_,
+            power = if ("power" %in% names(g)) as.numeric(power) else NA_real_,
+            powered_thresh = if ("powered_thresh" %in% names(g)) as.numeric(powered_thresh) else 0.8,
+            present_above_thresh = if ("present_above_thresh" %in% names(g)) as.logical(present_above_thresh) else NA,
+            present_above_thresh_flag = if ("present_above_thresh_flag" %in% names(g)) as.logical(present_above_thresh_flag) else dplyr::coalesce(present_above_thresh, FALSE),
+            abundance_text = dplyr::case_when(
+                (!is.na(abundance_code) & abundance_code == "A0 No change" & !is.na(power)) ~ "0%",
+                ((is.na(abundance_code) | abundance_code == "") & !is.na(power)) ~ "0%",
+                is.na(lfc) ~ "",
+                TRUE ~ format_abundance_change_percent(lfc)
+            ),
+            abundance_power_status = abundance_power_status_label(power, powered_thresh),
+            abundance_display = dplyr::case_when(
+                abundance_text == "" ~ "",
+                is.na(abundance_power_status) ~ abundance_text,
+                TRUE ~ paste0(abundance_text, " (", abundance_power_status, ")")
+            ),
+            abundance_display_color = ifelse(
+                abundance_text == "",
+                NA_character_,
+                ifelse(
+                    !is.na(q) & q < 0.05 & abundance_text != "0%" & substr(abundance_text, 1, 1) == "-",
+                    "#377eb8",
+                    ifelse(!is.na(q) & q < 0.05 & abundance_text != "0%" & substr(abundance_text, 1, 1) == "+", "#e41a1c", NA_character_)
+                )
+            ),
+            identity_tooltip_label = if ("identity_tooltip_label" %in% names(g)) as.character(identity_tooltip_label) else "",
+            identity_display = if ("identity_display" %in% names(g)) as.character(identity_display) else as.character(identity_tooltip_label),
+            glyph = dplyr::coalesce(as.character(glyph), ""),
+            effect_type = if ("effect_type" %in% names(g)) as.character(effect_type) else "",
+            expectation = if ("expectation" %in% names(g)) as.character(expectation) else "",
+            expectation_text = if ("expectation_text" %in% names(g)) as.character(expectation_text) else "",
+            expectation_norm = tolower(trimws(dplyr::coalesce(expectation, ""))),
+            expectation_display = dplyr::case_when(
+                identical(render_mode, "global") ~ expectation_text,
+                expectation_text == "" ~ "",
+                TRUE ~ stringr::str_replace(
+                    expectation_text,
+                    regex("see below for more information\\.?$", ignore_case = TRUE),
+                    "See table for more information about expectation."
+                )
+            ),
+            f1_dir = if ("f1_dir" %in% names(g)) as.character(f1_dir) else NA_character_,
+            f2 = if ("f2" %in% names(g)) as.logical(f2) else FALSE,
+            f3 = if ("f3" %in% names(g)) as.numeric(f3) else NA_real_,
+            f4 = if ("f4" %in% names(g)) as.logical(f4) else FALSE,
+            pathway_gene_details = if ("pathway_gene_details" %in% names(g)) as.character(pathway_gene_details) else NA_character_,
+            pathway_names = if ("pathway_names" %in% names(g)) as.character(pathway_names) else NA_character_
+        )
+
+    paste0(
+        "<b>Cell type: ", g$name, "</b>", ifelse(g$group_str != "", paste0(" | Tissue: ", g$group_str), ""), "<br>",
+        ifelse(
+            !is.na(g$present_above_thresh_flag) & !g$present_above_thresh_flag,
+            "This cell type was not present at the timepoints sampled in this experimental design.<br>",
+            ""
+        ),
+        ifelse(
+            g$abundance_display != "",
+            paste0(
+                "<span",
+                ifelse(!is.na(g$abundance_display_color), paste0(" style='color:", g$abundance_display_color, ";'"), ""),
+                ">Abundance phenotype: ", g$abundance_display, "</span><br>"
+            ),
+            ""
+        ),
+        ifelse(
+            !is.na(g$identity_display) & g$identity_display != "" & !(g$identity_display %in% c("Identity intact")),
+            paste0(
+                ifelse(g$glyph != "", paste0(g$glyph, " "), ""),
+                stringr::str_to_lower(g$identity_display),
+                ifelse(!is.na(g$effect_type) & g$effect_type != "", paste0(" (", g$effect_type, ")"), ""),
+                "<br>"
+            ),
+            ""
+        ),
+        ifelse(
+            g$expectation_display != "",
+            paste0(
+                ifelse(g$expectation_norm %in% c("expected", "expected change"), "○ ", ""),
+                g$expectation_display,
+                "<br>"
+            ),
+            ""
+        ),
+        ifelse(!is.na(g$f1_dir) & g$f1_dir == "increase", "▲ proliferation increase<br>", ""),
+        ifelse(!is.na(g$f1_dir) & g$f1_dir == "decrease", "▼ proliferation decrease<br>", ""),
+        ifelse(!is.na(g$f2) & g$f2, "─ apoptosis<br>", ""),
+        ifelse(!is.na(g$f3) & g$f3 != 0, "* stress<br>", ""),
+        ifelse(!is.na(g$f4) & g$f4, "□ senescence<br>", ""),
+        ifelse(!identical(render_mode, "global") & !is.na(g$pathway_gene_details) & g$pathway_gene_details != "", g$pathway_gene_details, ""),
+        ifelse(!identical(render_mode, "global") & (is.na(g$pathway_gene_details) | g$pathway_gene_details == "") & !is.na(g$pathway_names) & g$pathway_names != "", paste0("Pathway disrupted: ", stringr::str_trunc(g$pathway_names, 240)), "")
+    )
+}
+
 
 #' Plot Lineage Graph with Phenotype Overlays
 #'
@@ -570,14 +702,15 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             )
         )
 
-    if (!is.null(tooltip_builder)) {
+    g$.tooltip <- NA_character_
+    if (isTRUE(interactive) && !is.null(tooltip_builder)) {
         tooltip_vec <- tooltip_builder(g, render_mode)
         if (length(tooltip_vec) != nrow(g)) {
             stop("tooltip_builder must return one tooltip per plotted node.")
         }
         g$.tooltip <- as.character(tooltip_vec)
-    } else {
-        g$.tooltip <- NA_character_
+    } else if (isTRUE(interactive)) {
+        g$.tooltip <- phenotype_tooltip_builder(g)
     }
 
     color_priority <- c("severe", "medium", "mild", "none")
@@ -664,11 +797,12 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         )
     }
 
+
     # Single node fill with explicit priority: loss > identity/gain > fitness > none.
-    if (isTRUE(interactive) && !is.null(tooltip_builder)) {
+    if (isTRUE(interactive)) {
         p <- p +
             ggiraph::geom_point_interactive(
-                ggplot2::aes(x = x, y = y, tooltip = .tooltip, fill = severity_fill, shape = expected_shape, size = node_size_plot),
+                ggplot2::aes(x = x, y = y, tooltip = .tooltip, fill = severity_fill, shape = expected_shape, size = power_status),
                 data = g_draw,
                 color = "black",
                 stroke = if (identical(render_mode, "global")) 0.7 else 0.5
@@ -684,11 +818,11 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     }
 
     p <- p +
-        ggplot2::geom_point(
-            aes(x = x, y = y, fill = severity_fill, shape = expected_shape, size = power_status),
-            data = g_draw,
-            stroke = if (identical(render_mode, "global")) 0.7 else 0.5
-        ) +
+        # ggplot2::geom_point(
+        #     aes(x = x, y = y, fill = severity_fill, shape = expected_shape, size = power_status),
+        #     data = g_draw,
+        #     stroke = if (identical(render_mode, "global")) 0.7 else 0.5
+        # ) +
         ggplot2::scale_size_identity(guide = "none") +
         ggplot2::scale_fill_manual(
             values = c(
@@ -706,18 +840,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ),
             name = if (identical(render_mode, "global")) NULL else "Node color",
             guide = "none"
-        ) #+
-    # ggplot2::scale_size_manual(
-    #     values = c("Powered" = node_size * 1.6, "Underpowered" = node_size * 0.8),
-    #     guide = guide_legend(
-    #         # override.aes = list(size = c(1.6*2, 0.8*2))
-    #     ),
-    #     name = "Size"
-    # ) +
-    # ggplot2::scale_shape_manual(
-    #     values = c("Observed phenotype" = 21, "Expected phenotype" = 22),
-    #     name = "Shape"
-    # )
+        )
 
     fill_legend_df <- data.frame(
         x = NA_real_,
@@ -815,7 +938,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         )
 
     if (isTRUE(global_identity_marker)) {
-        if (isTRUE(interactive) && !is.null(tooltip_builder)) {
+        if (isTRUE(interactive)) {
             p <- p +
                 ggiraph::geom_point_interactive(
                     data = g %>% dplyr::filter(has_identity_change),
@@ -850,18 +973,20 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
 
     if (show_node_glyphs) {
         glyph_draw_color <- if (is.null(glyph_color)) g$glyph_col else glyph_color
-        if (isTRUE(interactive) && !is.null(tooltip_builder)) {
+        g_draw$glyph_size <- case_when(
+            g_draw$power_status == "Powered" ~ node_size * 1.6 * 0.5,
+            TRUE ~ node_size * 0.8 * 0.6
+        )
+        if (isTRUE(interactive)) {
             p <- p +
+                ggnewscale::new_scale("size") +
                 ggiraph::geom_text_interactive(
-                    ggplot2::aes(x = x, y = y, label = glyph, tooltip = .tooltip),
-                    data = g, size = node_size * 1.4, color = glyph_draw_color, fontface = "bold", vjust = 0.43, hjust = 0.5
-                )
+                    ggplot2::aes(x = x, y = y, label = glyph, tooltip = .tooltip, size = glyph_size),
+                    data = g_draw,
+                    color = glyph_draw_color,
+                    fontface = "bold", vjust = 0.43, hjust = 0.5
+                ) + ggplot2::scale_size_identity(guide = "none")
         } else {
-            g_draw$glyph_size <- case_when(
-                g_draw$power_status == "Powered" ~ node_size * 1.6 * 0.5,
-                TRUE ~ node_size * 0.8 * 0.6
-            )
-
             p <- p +
                 ggnewscale::new_scale("size") +
                 ggplot2::geom_text(
@@ -1023,5 +1148,10 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         )
     }
 
-    p
+    if (isTRUE(interactive)) {
+        p <- p + ggplot2::coord_equal()
+        ggiraph::girafe(ggobj = p)
+    } else {
+        p
+    }
 }
