@@ -557,7 +557,9 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                                    badge_outline_color = "white",
                                    render_mode = c("tissue", "global"),
                                    tooltip_builder = NULL,
-                                   interactive = FALSE) {
+                                   interactive = FALSE,
+                                   width = NULL,
+                                   height = NULL) {
     node_overlay <- match.arg(node_overlay)
     render_mode <- match.arg(render_mode)
     show_node_glyphs <- node_overlay %in% c("glyphs", "both")
@@ -1088,7 +1090,10 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
 
     if (isTRUE(interactive)) {
         p <- p + ggplot2::coord_equal()
-        ggiraph::girafe(ggobj = p)
+        ggiraph::girafe(
+            ggobj = p,
+            width_svg = width, height_svg = height
+        )
     } else {
         p
     }
