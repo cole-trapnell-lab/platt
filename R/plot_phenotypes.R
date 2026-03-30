@@ -9,15 +9,41 @@ rainbow_timepoint_colors <-
     )
 
 phenotype_colors <- c(
-    "none"           = "#e0e0e0",
-    "abundance_gain" = "#e41a1c",
-    "abundance_loss" = "#377eb8",
-    "identity"       = "#984ea3",
-    "fitness"        = "#ff7f00",
+    "none"           = "#ffffff",
+    "abundance_gain" = "#f6c141",
+    "abundance_loss" = "#e41a1c",
+    "identity"       = "#ff8c00",
+    "fitness"        = "#f6c141",
     "apoptosis"      = "#000000",
     "stress"         = "#4daf4a",
     "senescence"     = "#a65628"
 )
+
+
+format_group_display_name <- function(x) {
+    x <- trimws(as.character(x))
+    x <- dplyr::na_if(x, "")
+    out <- stringr::str_to_title(stringr::str_replace_all(x, "_", " "))
+    out[out == "Cns Other"] <- "CNS Other"
+    out
+}
+
+format_abundance_change_percent <- function(lfc) {
+    pct <- (exp(lfc) - 1) * 100
+    dplyr::if_else(
+        is.na(lfc),
+        NA_character_,
+        paste0(formatC(pct, digits = 0, format = "f", flag = "+"), "%")
+    )
+}
+
+abundance_power_status_label <- function(power, powered_thresh = 0.8) {
+    dplyr::case_when(
+        is.na(power) ~ NA_character_,
+        power >= powered_thresh ~ "powered",
+        TRUE ~ "underpowered"
+    )
+}
 
 #' Plot Phenotype Glyphs from an Impact Table
 #'
@@ -46,13 +72,14 @@ phenotype_colors <- c(
 #' @examples
 #' \dontrun{
 #' p <- plot_phenotypes_from_impact(
-#'   cell_state_graph = cell_state_graph,
-#'   impact_table = impact_table,
-#'   show_node_labels = TRUE,
-#'   label_font_size_pt = 14,
-#'   show_group_labels = TRUE
+#'     cell_state_graph = cell_state_graph,
+#'     impact_table = impact_table,
+#'     show_node_labels = TRUE,
+#'     label_font_size_pt = 14,
+#'     show_group_labels = TRUE
 #' )
 #' }
+#' @export
 plot_phenotypes_from_impact <- function(cell_state_graph,
                                         impact_table,
                                         filter_by_group = FALSE,
@@ -98,6 +125,7 @@ plot_phenotypes_from_impact <- function(cell_state_graph,
 #' @return A tibble with columns expected by `plot_phenotypes_glyphs()`,
 #'   including `cell_group`, `abundance_log2fc`, identity glyph fields, fitness
 #'   axes, and optional `dysregulated_genes`.
+#' @export
 impact_to_phenos <- function(impact_table,
                              sev_map = c(none = 0.25, mild = 0.6, moderate = 1.2, severe = 2.0),
                              abundance_code_map = c(
@@ -112,7 +140,7 @@ impact_to_phenos <- function(impact_table,
                                  "I1 Maturation delay" = "<<",
                                  "I2 Precocious maturation" = ">>",
                                  "I3 Program failure within identity" = "!!",
-                                 "I4 Fate switch / misspecification" = "!!",
+                                 "I4 Fate switch / misspecification" = "⬌",
                                  "I5 Identity fragmentation" = ""
                              )) {
     stopifnot(all(c(
@@ -151,11 +179,11 @@ impact_to_phenos <- function(impact_table,
         if (grepl("precoci", s, ignore.case = TRUE)) {
             return("I2")
         }
-        if (grepl("program failure|effector|module|misspec", s, ignore.case = TRUE)) {
-            return("I3")
-        }
         if (grepl("fate switch|misspec", s, ignore.case = TRUE)) {
             return("I4")
+        }
+        if (grepl("program failure|effector|module", s, ignore.case = TRUE)) {
+            return("I3")
         }
         if (grepl("fragment", s, ignore.case = TRUE)) {
             return("I5")
@@ -166,7 +194,7 @@ impact_to_phenos <- function(impact_table,
     tab$identity_code <- ident_code
     id_map_full <- c(
         setNames(identity_glyph_map, names(identity_glyph_map)),
-        c(I0 = "", I1 = "<<", I2 = ">>", I3 = "!!", I4 = "!!", I5 = "")
+        c(I0 = "", I1 = "<<", I2 = ">>", I3 = "!!", I4 = "⬌", I5 = "")
     )
     tab$identity_glyph <- unname(id_map_full[ifelse(grepl("^I[0-5]$", ident_code), ident_code, tab$identity_label)])
     tab$identity_glyph[is.na(tab$identity_glyph)] <- ""
@@ -255,8 +283,9 @@ impact_to_phenos <- function(impact_table,
     }
 
     if (!is.null(pathway_col)) {
-        gene_tbl <- tab %>%
-            tidyr::unnest(dplyr::all_of(pathway_col)) %>%
+        pathway_long <- tab %>%
+            tidyr::unnest(dplyr::all_of(pathway_col))
+        gene_tbl <- pathway_long %>%
             dplyr::select(cell_group = cell_type, dysregulated_genes) %>%
             tidyr::unnest_longer(dysregulated_genes) %>%
             dplyr::mutate(dysregulated_genes = stringr::str_squish(as.character(dysregulated_genes))) %>%
@@ -266,8 +295,54 @@ impact_to_phenos <- function(impact_table,
                 dysregulated_genes = collapse_unique_genes(dysregulated_genes),
                 .groups = "drop"
             )
+        pathway_tbl <- pathway_long %>%
+            dplyr::transmute(
+                cell_group = cell_type,
+                pathway_name = as.character(name)
+            ) %>%
+            dplyr::filter(!is.na(pathway_name), nzchar(stringr::str_squish(pathway_name))) %>%
+            dplyr::mutate(pathway_name = stringr::str_squish(pathway_name)) %>%
+            dplyr::group_by(cell_group) %>%
+            dplyr::summarise(
+                pathway_names = paste(unique(pathway_name), collapse = "; "),
+                .groups = "drop"
+            )
+        pathway_gene_tbl <- pathway_long %>%
+            dplyr::transmute(
+                cell_group = as.character(cell_type),
+                pathway_name = as.character(name),
+                dysregulated_genes = if ("dysregulated_genes" %in% names(pathway_long)) dysregulated_genes else NA
+            ) %>%
+            dplyr::mutate(
+                pathway_name = stringr::str_squish(pathway_name),
+                pathway_name = ifelse(is.na(pathway_name) | !nzchar(pathway_name), "Unknown pathway", pathway_name)
+            )
+        if (is.list(pathway_gene_tbl$dysregulated_genes)) {
+            pathway_gene_tbl <- pathway_gene_tbl %>%
+                dplyr::mutate(genes_text = purrr::map_chr(dysregulated_genes, ~ collapse_unique_genes(as.character(.x))))
+        } else {
+            pathway_gene_tbl <- pathway_gene_tbl %>%
+                dplyr::mutate(genes_text = purrr::map_chr(dysregulated_genes, ~ collapse_unique_genes(as.character(.x))))
+        }
+        pathway_gene_tbl <- pathway_gene_tbl %>%
+            dplyr::group_by(cell_group, pathway_name) %>%
+            dplyr::summarise(
+                genes_text = collapse_unique_genes(genes_text),
+                .groups = "drop"
+            ) %>%
+            dplyr::group_by(cell_group) %>%
+            dplyr::arrange(pathway_name, .by_group = TRUE) %>%
+            dplyr::mutate(
+                pathway_line = paste0(
+                    "Pathway: ", pathway_name, "<br>&nbsp;&nbsp;Genes dysregulated: ",
+                    ifelse(is.na(genes_text) | !nzchar(genes_text), "NA", genes_text)
+                )
+            ) %>%
+            dplyr::summarise(pathway_gene_details = paste(pathway_line, collapse = "<br>"), .groups = "drop")
     } else {
         gene_tbl <- tibble::tibble(cell_group = character(), dysregulated_genes = character())
+        pathway_tbl <- tibble::tibble(cell_group = character(), pathway_names = character())
+        pathway_gene_tbl <- tibble::tibble(cell_group = character(), pathway_gene_details = character())
     }
 
     phenos <- dplyr::tibble(
@@ -283,16 +358,128 @@ impact_to_phenos <- function(impact_table,
         F3_stress_score    = tab$F3_stress_score,
         F4_senescence      = tab$F4_senescence,
         stress_evidence    = tab$stress_evidence,
-        identity_evidence  = if ("identity_evidence" %in% names(tab)) as.character(tab$identity_evidence) else NA_character_
+        identity_evidence  = if ("identity_evidence" %in% names(tab)) as.character(tab$identity_evidence) else NA_character_,
+        effect_type        = if ("effect_type" %in% names(tab)) as.character(tab$effect_type) else NA_character_,
+        sulston_display    = if ("sulston_display" %in% names(tab)) as.character(tab$sulston_display) else NA_character_,
+        expectation        = if ("expectation" %in% names(tab)) as.character(tab$expectation) else NA_character_,
+        rationale          = if ("rationale" %in% names(tab)) as.character(tab$rationale) else NA_character_
     )
 
     # Join dysregulated genes if available
     phenos <- phenos %>%
-        dplyr::left_join(gene_tbl, by = "cell_group")
+        dplyr::left_join(gene_tbl, by = "cell_group") %>%
+        dplyr::left_join(pathway_tbl, by = "cell_group") %>%
+        dplyr::left_join(pathway_gene_tbl, by = "cell_group")
 
     return(phenos)
 }
 
+
+phenotype_tooltip_builder <- function(g, render_mode = c("tissue", "global")) {
+    render_mode <- match.arg(render_mode)
+    g <- g %>%
+        dplyr::mutate(
+            group_str = dplyr::coalesce(
+                if ("sulston_display" %in% names(g)) format_group_display_name(sulston_display) else NA_character_,
+                format_group_display_name(group_nodes_by),
+                ""
+            ),
+            abundance_code = if ("abundance_code" %in% names(g)) as.character(abundance_code) else NA_character_,
+            lfc = if ("lfc" %in% names(g)) as.numeric(lfc) else NA_real_,
+            q = if ("q" %in% names(g)) as.numeric(q) else NA_real_,
+            power = if ("power" %in% names(g)) as.numeric(power) else NA_real_,
+            powered_thresh = if ("powered_thresh" %in% names(g)) as.numeric(powered_thresh) else 0.8,
+            present_above_thresh = if ("present_above_thresh" %in% names(g)) as.logical(present_above_thresh) else NA,
+            present_above_thresh_flag = if ("present_above_thresh_flag" %in% names(g)) as.logical(present_above_thresh_flag) else dplyr::coalesce(present_above_thresh, FALSE),
+            abundance_text = dplyr::case_when(
+                (!is.na(abundance_code) & abundance_code == "A0 No change" & !is.na(power)) ~ "0%",
+                ((is.na(abundance_code) | abundance_code == "") & !is.na(power)) ~ "0%",
+                is.na(lfc) ~ "",
+                TRUE ~ format_abundance_change_percent(lfc)
+            ),
+            abundance_power_status = abundance_power_status_label(power, powered_thresh),
+            abundance_display = dplyr::case_when(
+                abundance_text == "" ~ "",
+                is.na(abundance_power_status) ~ abundance_text,
+                TRUE ~ paste0(abundance_text, " (", abundance_power_status, ")")
+            ),
+            abundance_display_color = ifelse(
+                abundance_text == "",
+                NA_character_,
+                ifelse(
+                    !is.na(q) & q < 0.05 & abundance_text != "0%" & substr(abundance_text, 1, 1) == "-",
+                    "#377eb8",
+                    ifelse(!is.na(q) & q < 0.05 & abundance_text != "0%" & substr(abundance_text, 1, 1) == "+", "#e41a1c", NA_character_)
+                )
+            ),
+            identity_tooltip_label = if ("identity_tooltip_label" %in% names(g)) as.character(identity_tooltip_label) else "",
+            identity_display = if ("identity_display" %in% names(g)) as.character(identity_display) else as.character(identity_tooltip_label),
+            glyph = dplyr::coalesce(as.character(glyph), ""),
+            effect_type = if ("effect_type" %in% names(g)) as.character(effect_type) else "",
+            expectation = if ("expectation" %in% names(g)) as.character(expectation) else "",
+            expectation_text = if ("expectation_text" %in% names(g)) as.character(expectation_text) else "",
+            expectation_norm = tolower(trimws(dplyr::coalesce(expectation, ""))),
+            expectation_display = dplyr::case_when(
+                identical(render_mode, "global") ~ expectation_text,
+                expectation_text == "" ~ "",
+                TRUE ~ stringr::str_replace(
+                    expectation_text,
+                    regex("see below for more information\\.?$", ignore_case = TRUE),
+                    "See table for more information about expectation."
+                )
+            ),
+            f1_dir = if ("f1_dir" %in% names(g)) as.character(f1_dir) else NA_character_,
+            f2 = if ("f2" %in% names(g)) as.logical(f2) else FALSE,
+            f3 = if ("f3" %in% names(g)) as.numeric(f3) else NA_real_,
+            f4 = if ("f4" %in% names(g)) as.logical(f4) else FALSE,
+            pathway_gene_details = if ("pathway_gene_details" %in% names(g)) as.character(pathway_gene_details) else NA_character_,
+            pathway_names = if ("pathway_names" %in% names(g)) as.character(pathway_names) else NA_character_
+        )
+
+    paste0(
+        "<b>Cell type: ", g$name, "</b>", ifelse(g$group_str != "", paste0(" | Tissue: ", g$group_str), ""), "<br>",
+        ifelse(
+            !is.na(g$present_above_thresh_flag) & !g$present_above_thresh_flag,
+            "This cell type was not present at the timepoints sampled in this experimental design.<br>",
+            ""
+        ),
+        ifelse(
+            g$abundance_display != "",
+            paste0(
+                "<span",
+                ifelse(!is.na(g$abundance_display_color), paste0(" style='color:", g$abundance_display_color, ";'"), ""),
+                ">Abundance phenotype: ", g$abundance_display, "</span><br>"
+            ),
+            ""
+        ),
+        ifelse(
+            !is.na(g$identity_display) & g$identity_display != "" & !(g$identity_display %in% c("Identity intact")),
+            paste0(
+                ifelse(g$glyph != "", paste0(g$glyph, " "), ""),
+                stringr::str_to_lower(g$identity_display),
+                ifelse(!is.na(g$effect_type) & g$effect_type != "", paste0(" (", g$effect_type, ")"), ""),
+                "<br>"
+            ),
+            ""
+        ),
+        ifelse(
+            g$expectation_display != "",
+            paste0(
+                ifelse(g$expectation_norm %in% c("expected", "expected change"), "○ ", ""),
+                g$expectation_display,
+                "<br>"
+            ),
+            ""
+        ),
+        ifelse(!is.na(g$f1_dir) & g$f1_dir == "increase", "▲ proliferation increase<br>", ""),
+        ifelse(!is.na(g$f1_dir) & g$f1_dir == "decrease", "▼ proliferation decrease<br>", ""),
+        ifelse(!is.na(g$f2) & g$f2, "─ apoptosis<br>", ""),
+        ifelse(!is.na(g$f3) & g$f3 != 0, "* stress<br>", ""),
+        ifelse(!is.na(g$f4) & g$f4, "□ senescence<br>", ""),
+        ifelse(!identical(render_mode, "global") & !is.na(g$pathway_gene_details) & g$pathway_gene_details != "", g$pathway_gene_details, ""),
+        ifelse(!identical(render_mode, "global") & (is.na(g$pathway_gene_details) | g$pathway_gene_details == "") & !is.na(g$pathway_names) & g$pathway_names != "", paste0("Pathway disrupted: ", stringr::str_trunc(g$pathway_names, 240)), "")
+    )
+}
 
 
 #' Plot Lineage Graph with Phenotype Overlays
@@ -309,7 +496,8 @@ impact_to_phenos <- function(impact_table,
 #' @param arrow_unit Numeric arrowhead size for edges (points).
 #' @param node_size Base node size scalar.
 #' @param con_colour Edge/node outline color.
-#' @param legend_position Legend position passed to `theme(legend.position=...)`
+#' @param legend_position Legend position passed to `theme(legend.position=...)`.
+#'   Default is `"none"` to preserve historical no-legend behavior.
 #'   (e.g. `"right"`, `"bottom"`, `"top"`, `"left"`, or `"none"` to hide).
 #' @param label_cell_types Optional character vector of node names to label, or
 #'   `"all"`.
@@ -329,8 +517,12 @@ impact_to_phenos <- function(impact_table,
 #' @param glyph_color Optional fixed color for identity glyph text.
 #' @param badge_color Fill/stroke color for fitness badges.
 #' @param badge_outline_color Outline color for filled badge shapes.
-#'
+#' @param render_mode One of `"tissue"` or `"global"`. Global mode hides
+#'   glyph/badge overlays and can draw a center marker for identity phenotypes.
+#' @param global_identity_marker Logical; when `TRUE`, draw a small black center
+#'   marker for nodes with non-intact identity (used for global view).
 #' @return A `ggplot` object.
+#' @export
 plot_phenotypes_glyphs <- function(cell_state_graph,
                                    phenos_df,
                                    map = list(
@@ -348,7 +540,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                                    arrow_unit = 3,
                                    node_size = 2.2,
                                    con_colour = "darkgrey",
-                                   legend_position = "bottom",
+                                   legend_position = "none",
                                    label_cell_types = NULL,
                                    show_node_labels = FALSE,
                                    label_font_size = 3,
@@ -359,15 +551,27 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                                    draw_group_boxes = TRUE,
                                    show_group_labels = FALSE,
                                    group_label_font_size = 2,
-                                   node_overlay = c("none", "glyphs", "badges", "both"),
-                                   glyph_color = NULL,
+                                   node_overlay = c("glyphs", "none"),
+                                   glyph_color = "white",
                                    badge_color = "black",
-                                   badge_outline_color = "white") {
+                                   badge_outline_color = "white",
+                                   render_mode = c("tissue", "global"),
+                                   tooltip_builder = NULL,
+                                   interactive = FALSE) {
     node_overlay <- match.arg(node_overlay)
+    render_mode <- match.arg(render_mode)
     show_node_glyphs <- node_overlay %in% c("glyphs", "both")
-    show_node_badges <- node_overlay %in% c("badges", "both")
+    global_identity_marker <- identical(render_mode, "global")
+
+    if (identical(render_mode, "global")) {
+        show_node_glyphs <- FALSE
+    }
+    compact_bottom_legend <- identical(legend_position, "bottom")
 
     g <- cell_state_graph@g %>% dplyr::mutate(name = stringr::str_trim(name))
+    g <- g %>%
+        select(x, y, name, color_nodes_by, label_nodes_by, group_nodes_by) %>%
+        distinct()
     bezier_df <- cell_state_graph@layout_info$bezier_df
     grouping_df <- cell_state_graph@layout_info$grouping_df
 
@@ -393,6 +597,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             name = .data[[map$id]],
             lfc = as.numeric(.data[[map$lfc]]),
             q = if (map$q %in% names(phenos_df)) as.numeric(.data[[map$q]]) else NA_real_,
+            power = if ("power" %in% names(phenos_df)) as.numeric(.data[["power"]]) else NA_real_,
+            powered_thresh = if ("powered_thresh" %in% names(phenos_df)) as.numeric(.data[["powered_thresh"]]) else 0.8,
             abundance_code = if ("abundance_code" %in% names(phenos_df)) as.character(.data[["abundance_code"]]) else NA_character_,
             ident = if (map$ident %in% names(phenos_df)) as.character(.data[[map$ident]]) else "I0",
             glyph = if (map$glyph %in% names(phenos_df)) as.character(.data[[map$glyph]]) else "",
@@ -402,8 +608,13 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             f3 = if (map$f3 %in% names(phenos_df)) as.numeric(.data[[map$f3]]) else NA_real_,
             f4 = if (map$f4 %in% names(phenos_df)) as.logical(.data[[map$f4]]) else NA,
             dysregulated_genes = if ("dysregulated_genes" %in% names(phenos_df)) as.character(.data[["dysregulated_genes"]]) else NA_character_,
+            pathway_names = if ("pathway_names" %in% names(phenos_df)) as.character(.data[["pathway_names"]]) else NA_character_,
+            pathway_gene_details = if ("pathway_gene_details" %in% names(phenos_df)) as.character(.data[["pathway_gene_details"]]) else NA_character_,
             identity_evidence = if ("identity_evidence" %in% names(phenos_df)) as.character(.data[["identity_evidence"]]) else NA_character_,
-            stress_evidence = if ("stress_evidence" %in% names(phenos_df)) as.character(.data[["stress_evidence"]]) else NA_character_
+            stress_evidence = if ("stress_evidence" %in% names(phenos_df)) as.character(.data[["stress_evidence"]]) else NA_character_,
+            effect_type = if ("effect_type" %in% names(phenos_df)) as.character(.data[["effect_type"]]) else NA_character_,
+            expectation = if ("expectation" %in% names(phenos_df)) as.character(.data[["expectation"]]) else NA_character_,
+            rationale = if ("rationale" %in% names(phenos_df)) as.character(.data[["rationale"]]) else NA_character_
         )
 
     g <- g %>%
@@ -426,8 +637,39 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 ident == "I5" ~ "Identity fragmentation",
                 TRUE ~ ident
             ),
+            identity_tooltip_label = dplyr::case_when(
+                is.na(ident) ~ "",
+                ident == "I0" ~ "",
+                ident == "I1" ~ "maturation delay",
+                ident == "I2" ~ "precocious maturation",
+                ident == "I3" ~ "identity",
+                ident == "I4" ~ "fate switch / misspecification",
+                ident == "I5" ~ "identity fragmentation",
+                TRUE ~ tolower(identity_display)
+            ),
             abundance_str = show_pheno(abundance_code, c("A0 No change", NA)),
             identity_str = show_pheno(identity_display, c("I0", "I0 Identity intact", "Identity intact", NA)),
+            group_str = dplyr::coalesce(as.character(group_nodes_by), ""),
+            abundance_dir = dplyr::case_when(
+                !is.na(lfc) & lfc < 0 ~ "decrease",
+                !is.na(lfc) & lfc > 0 ~ "increase",
+                !is.na(abundance_code) & grepl("^A2|^A3", abundance_code) ~ "decrease",
+                !is.na(abundance_code) & grepl("^A1|^A4", abundance_code) ~ "increase",
+                TRUE ~ ""
+            ),
+            abundance_fc = ifelse(!is.na(lfc), exp(abs(lfc)), NA_real_),
+            abundance_text = dplyr::case_when(
+                abundance_str == "" ~ "",
+                !is.na(abundance_fc) & abundance_dir != "" ~ paste0(formatC(abundance_fc, digits = 1, format = "f"), "x ", abundance_dir),
+                abundance_dir != "" ~ abundance_dir,
+                TRUE ~ ""
+            ),
+            expectation_norm = tolower(trimws(dplyr::coalesce(expectation, ""))),
+            expectation_text = dplyr::case_when(
+                expectation_norm %in% c("expected", "expected change") ~ "Expectation: a phenotype is expected, see tissue specific plot for more information",
+                expectation_norm != "" ~ "Expectation: no phenotype expected, see tissue specific plot for more information",
+                TRUE ~ ""
+            ),
             fitness_str = show_pheno(f1_dir, c("F0 No significant phenotype", "F0 Normal", NA)),
             badge_caption = paste0(
                 ifelse(!is.na(f1_dir) & f1_dir == "increase", "F1_up, ", ""),
@@ -437,53 +679,6 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 ifelse(!is.na(f4) & f4, "F4, ", "")
             ),
             badge_caption = stringr::str_replace(badge_caption, ",\\s*$", ""),
-            # Assign primary phenotype class by new hierarchy, using abundance_code
-            primary_phenotype = dplyr::case_when(
-                !is.na(f2) & f2 ~ "apoptosis", # 1. Death (apoptosis)
-                !is.na(f4) & f4 ~ "senescence", # 2. Arrest (senescence)
-                !is.na(abundance_code) & grepl("^A1|^A4", abundance_code) ~ "abundance_gain", # 3. Abundance gain (A1 Expansion, A4 Ectopic/extra state)
-                !is.na(abundance_code) & grepl("^A2|^A3", abundance_code) ~ "abundance_loss", # 3. Abundance loss (A2 Depletion, A3 Ablation/Loss)
-                !is.na(ident) & !(ident %in% c("I0", "I0 Identity intact", "Identity intact", NA)) ~ "identity", # 4. Identity
-                !is.na(f3) & f3 != 0 ~ "stress", # 5. Stress
-                !is.na(f1_dir) & f1_dir != "" ~ "fitness", # 6. Proliferation
-                TRUE ~ "none" # 7. None
-            ),
-            tooltip = paste0(
-                "<b>", name, "</b><br>",
-                # ifelse(badge_caption != "", paste0("Badges: ", badge_caption, "<br>"), ""),
-                ifelse(identity_str != "", paste0("Identity: ", identity_str, "<br>"), ""),
-                ifelse(abundance_str != "", paste0("Abundance: ", abundance_str, "<br>"), ""),
-                ifelse(
-                    identity_str != "" & !is.na(identity_evidence) & identity_evidence != "",
-                    paste0(
-                        "Identity evidence: ",
-                        stringr::str_replace_all(
-                            stringr::str_wrap(stringr::str_trunc(identity_evidence, 300), width = 50),
-                            "\n", "<br>"
-                        ),
-                        "<br>"
-                    ),
-                    ""
-                ),
-                ifelse(fitness_str != "", paste0("F1 Proliferation: ", fitness_str, "<br>"), ""),
-                ifelse(!is.na(f2) & f2, "F2 Apoptosis: yes<br>", ""),
-                ifelse(!is.na(stress_evidence) & stress_evidence != "", paste0("Stress evidence:<br>", stress_evidence, "<br>"), ""),
-                ifelse(!is.na(f4) & f4, "F4 Senescence: yes<br>", ""),
-                ifelse(
-                    !is.na(dysregulated_genes) & dysregulated_genes != "",
-                    paste0(
-                        "Dysregulated genes: ",
-                        # First truncate and wrap, then replace arrows with HTML
-                        stringr::str_trunc(dysregulated_genes, 300) %>%
-                            stringr::str_wrap(width = 50) %>%
-                            stringr::str_replace_all("\n", "<br>") %>%
-                            stringr::str_replace_all("↑", "<span style='color:red;'>↑</span>") %>%
-                            stringr::str_replace_all("↓", "<span style='color:blue;'>↓</span>"),
-                        "<br>"
-                    ),
-                    ""
-                )
-            ),
             lfc_capped = pmin(pmax(lfc, -lfc_cap), lfc_cap),
             glyph = dplyr::coalesce(glyph, ""),
             glyph_col = ifelse(is.na(lfc), "black", ifelse(abs(lfc) >= 0.8, "white", "black")),
@@ -491,15 +686,77 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 is.na(f3) ~ 0,
                 TRUE ~ scales::rescale(pmin(abs(f3), stress_cap), to = c(0.25, 1))
             ),
-            node_size_plot = node_size * 3.2
+            power_status = dplyr::case_when(
+                !is.na(power) & power >= powered_thresh ~ "Powered",
+                TRUE ~ "Underpowered"
+            ),
+            node_size_plot = dplyr::case_when(
+                identical(render_mode, "global") & power_status == "Powered" ~ node_size * 3.8,
+                identical(render_mode, "global") ~ node_size * 1.9,
+                power_status == "Powered" ~ node_size * 3.2,
+                TRUE ~ node_size * 2.0
+            )
         )
+
+    g$.tooltip <- NA_character_
+    if (isTRUE(interactive) && !is.null(tooltip_builder)) {
+        tooltip_vec <- tooltip_builder(g, render_mode)
+        if (length(tooltip_vec) != nrow(g)) {
+            stop("tooltip_builder must return one tooltip per plotted node.")
+        }
+        g$.tooltip <- as.character(tooltip_vec)
+    } else if (isTRUE(interactive)) {
+        g$.tooltip <- phenotype_tooltip_builder(g)
+    }
+
+    color_priority <- c("severe", "medium", "mild", "none")
+    g <- g %>%
+        dplyr::mutate(
+            has_fitness_change = (!is.na(f1_dir) & f1_dir %in% c("increase", "decrease")) |
+                dplyr::coalesce(f2, FALSE) |
+                (!is.na(f3) & f3 != 0) |
+                dplyr::coalesce(f4, FALSE),
+            primary_phenotype = dplyr::case_when(
+                !is.na(abundance_code) & grepl("^A2|^A3", abundance_code) ~ "abundance_loss",
+                !is.na(ident) & !(ident %in% c("I0", "I0 Identity intact", "Identity intact", "", NA)) ~ "identity",
+                !is.na(abundance_code) & grepl("^A1|^A4", abundance_code) ~ "abundance_gain",
+                has_fitness_change ~ "fitness",
+                TRUE ~ "none"
+            ),
+            severity_fill = dplyr::case_when(
+                primary_phenotype == "abundance_loss" ~ "severe",
+                primary_phenotype == "identity" ~ "medium",
+                primary_phenotype %in% c("abundance_gain", "fitness") ~ "mild",
+                TRUE ~ "none"
+            ),
+            has_identity_change = !is.na(ident) & !(ident %in% c("I0", "I0 Identity intact", "Identity intact", "", NA)),
+            expectation_norm = tolower(trimws(dplyr::coalesce(expectation, ""))),
+            is_expected = expectation_norm %in% c("expected", "expected change"),
+            expected_shape = dplyr::if_else(is_expected, "Expected phenotype", "Observed phenotype")
+        )
+
+    if (identical(render_mode, "global")) {
+        # Mild horizontal spread keeps the global plot readable without shrinking nodes.
+        g <- g %>% dplyr::mutate(x = x * 1.35)
+        if ("x" %in% names(bezier_df)) {
+            bezier_df <- bezier_df %>% dplyr::mutate(x = x * 1.35)
+        }
+    }
+
+    g_draw <- g %>%
+        dplyr::mutate(.draw_order = ifelse(primary_phenotype == "none", 0L, 1L)) %>%
+        dplyr::arrange(.draw_order)
+
+    edge_arrow_unit <- if (identical(render_mode, "tissue")) max(arrow_unit, 4) else max(arrow_unit, 5)
+    edge_linewidth <- if (identical(render_mode, "tissue")) 0.35 else 0.45
+    edge_colour <- if (identical(render_mode, "global")) "#6f6f6f" else con_colour
 
     p <- ggplot2::ggplot(ggplot2::aes(x, y), data = g) +
         ggplot2::geom_path(
             ggplot2::aes(x, y, group = edge_name),
-            linewidth = 0.25, colour = con_colour, data = dplyr::distinct(bezier_df),
-            arrow = ggplot2::arrow(angle = 30, length = grid::unit(arrow_unit, "pt"), type = "closed"),
-            linejoin = "mitre"
+            linewidth = edge_linewidth, colour = edge_colour, data = dplyr::distinct(bezier_df),
+            arrow = ggplot2::arrow(angle = 30, length = grid::unit(edge_arrow_unit, "pt"), type = "closed"),
+            linejoin = "mitre", lineend = "round"
         ) +
         ggnetwork::theme_blank() +
         hooke_theme_opts()
@@ -525,98 +782,292 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 y = max(y, na.rm = TRUE) + 0.02 * yrange,
                 .groups = "drop"
             )
-        p <- p + ggplot2::geom_text(
+        p <- p + ggrepel::geom_text_repel(
             data = group_labels,
             ggplot2::aes(x = x, y = y, label = group_nodes_by),
             size = group_label_font_size,
-            color = "black"
+            color = "black",
+            box.padding = 0.3,
+            point.padding = 0.1,
+            segment.color = "grey50"
         )
     }
 
-    # Fixed-size nodes colored by abundance proxy
+
+    # Single node fill with explicit priority: loss > identity/gain > fitness > none.
+    if (isTRUE(interactive)) {
+        p <- p +
+            ggiraph::geom_point_interactive(
+                ggplot2::aes(x = x, y = y, tooltip = .tooltip, fill = severity_fill, shape = expected_shape, size = power_status),
+                data = g_draw,
+                color = "black",
+                stroke = if (identical(render_mode, "global")) 0.7 else 0.5
+            )
+    } else {
+        p <- p +
+            ggplot2::geom_point(
+                ggplot2::aes(x = x, y = y, fill = severity_fill, shape = expected_shape, size = power_status),
+                data = g_draw,
+                color = "black",
+                stroke = if (identical(render_mode, "global")) 0.7 else 0.5
+            )
+    }
+
     p <- p +
-        ggnewscale::new_scale_fill() +
-        ggiraph::geom_point_interactive(
-            ggplot2::aes(x = x, y = y, tooltip = tooltip, fill = primary_phenotype, size = node_size_plot),
-            data = g, shape = 21, color = con_colour, linewidth = 0.25
-        ) +
-        ggplot2::scale_size_identity() +
+        # ggplot2::geom_point(
+        #     aes(x = x, y = y, fill = severity_fill, shape = expected_shape, size = power_status),
+        #     data = g_draw,
+        #     stroke = if (identical(render_mode, "global")) 0.7 else 0.5
+        # ) +
+        ggplot2::scale_size_identity(guide = "none") +
         ggplot2::scale_fill_manual(
-            values = phenotype_colors,
-            name = "Primary phenotype",
-            guide = ggplot2::guide_legend(override.aes = list(shape = 21, size = 4, alpha = 1))
+            values = c(
+                severe = unname(phenotype_colors["abundance_loss"]),
+                medium = unname(phenotype_colors["identity"]),
+                mild = unname(phenotype_colors["abundance_gain"]),
+                none = unname(phenotype_colors["none"])
+            ),
+            breaks = color_priority,
+            labels = c(
+                severe = "Severe phenotype",
+                medium = "Medium phenotype",
+                mild = "Mild phenotype",
+                none = "No phenotype"
+            ),
+            name = if (identical(render_mode, "global")) NULL else "Node color",
+            guide = "none"
         )
 
-    p <- p + ggplot2::theme(legend.position = legend_position)
+    fill_legend_df <- data.frame(
+        x = NA_real_,
+        y = NA_real_,
+        severity_fill = factor(
+            c("severe", "medium", "mild", "none"),
+            levels = c("severe", "medium", "mild", "none")
+        )
+    )
+
+    p <- p +
+        ggnewscale::new_scale_fill() +
+        ggplot2::geom_point(
+            data = fill_legend_df,
+            ggplot2::aes(x = x, y = y, fill = severity_fill),
+            inherit.aes = FALSE,
+            shape = 21,
+            size = 4,
+            colour = "black",
+            stroke = 0.5,
+            show.legend = c(color = TRUE, size = FALSE)
+        ) +
+        ggplot2::scale_fill_manual(
+            values = c(
+                severe = unname(phenotype_colors["abundance_loss"]),
+                medium = unname(phenotype_colors["identity"]),
+                mild   = unname(phenotype_colors["abundance_gain"]),
+                none   = unname(phenotype_colors["none"])
+            ),
+            breaks = c("severe", "medium", "mild", "none"),
+            labels = c(
+                severe = "Severe phenotype",
+                medium = "Medium phenotype",
+                mild   = "Mild phenotype",
+                none   = "No phenotype"
+            ),
+            drop = FALSE,
+            name = "Node color",
+            guide = ggplot2::guide_legend(
+                order = 1,
+                override.aes = list(
+                    shape = 21,
+                    size = 4,
+                    colour = "black",
+                    stroke = 0.5,
+                    alpha = 1
+                )
+            )
+        )
+
+    size_legend_df <- data.frame(
+        x = NA_real_,
+        y = NA_real_,
+        size_value = c("Powered", "Underpowered")
+    )
+
+    p <- p +
+        ggplot2::geom_point(
+            data = size_legend_df,
+            ggplot2::aes(x = x, y = y, size = size_value),
+            inherit.aes = FALSE,
+            shape = 21,
+            fill = "black",
+            stroke = 0.5,
+            show.legend = c(color = FALSE, size = TRUE)
+        ) +
+        ggplot2::scale_size_manual(
+            values = c("Powered" = node_size * 1.6, "Underpowered" = node_size * 0.8),
+            guide = guide_legend(
+                override.aes = list(size = c(1.6 * 2, 0.8 * 2))
+            ),
+            name = "Size"
+        )
+
+    shape_legend_df <- data.frame(
+        x = NA_real_,
+        y = NA_real_,
+        shape_value = c("Observed phenotype", "Expected phenotype")
+    )
+
+    if ("Expected phenotype" %in% unique(g_draw$expected_shape)) {
+        p <- p +
+            ggplot2::geom_point(
+                data = shape_legend_df,
+                ggplot2::aes(x = x, y = y, shape = shape_value),
+                inherit.aes = FALSE,
+                color = "black",
+                fill = "white",
+                stroke = 0.5,
+                size = 3,
+                show.legend = c(color = FALSE, size = TRUE)
+            ) +
+            ggplot2::scale_shape_manual(
+                values = c("Observed phenotype" = 21, "Expected phenotype" = 22),
+                name = "Shape"
+            )
+    } else {
+        p <- p +
+            ggplot2::scale_shape_manual(
+                values = c("Observed phenotype" = 21, "Expected phenotype" = 22),
+                name = "Shape"
+            ) + guides(shape = "none")
+    }
+
+
+    if (isTRUE(global_identity_marker)) {
+        if (isTRUE(interactive)) {
+            p <- p +
+                ggiraph::geom_point_interactive(
+                    data = g %>% dplyr::filter(has_identity_change),
+                    ggplot2::aes(x = x, y = y, tooltip = .tooltip),
+                    shape = 16,
+                    size = node_size * 0.275,
+                    color = "black"
+                )
+        } else {
+            g$identity_change_marker <- ifelse(g$has_identity_change, "*", "")
+            p <- p +
+                geom_text(
+                    data = g,
+                    aes(x = x, y = y, label = identity_change_marker, alpha = identity_change_marker),
+                    show.legend = c(alpha = TRUE, color = FALSE),
+                    color = glyph_color,
+                    size = node_size,
+                    vjust = 0.8,
+                    hjust = 0.5
+                ) +
+                scale_alpha_manual(
+                    name = "Transcriptional Identity",
+                    values = c("*" = 1),
+                    labels = "Phenotype detected",
+                    breaks = c("*")
+                ) +
+                guides(
+                    alpha = guide_legend(
+                        override.aes = list(label = "*", size = 6, color = "black")
+                    )
+                )
+        }
+    }
 
     if (show_node_glyphs) {
         glyph_draw_color <- if (is.null(glyph_color)) g$glyph_col else glyph_color
-        p <- p +
-            ggiraph::geom_text_interactive(
-                ggplot2::aes(x = x, y = y, label = glyph, tooltip = tooltip),
-                data = g, size = node_size * 1.4, color = glyph_draw_color, fontface = "bold", vjust = 0.35
-            )
-    }
-
-    if (show_node_badges) {
-        mk_badges <- function(df) {
-            offs <- tibble::tibble(
-                badge = c("F1_up", "F1_down", "F2", "F3", "F4"),
-                dx = c(0.00, 0.00, -0.23, 0.23, 0.00),
-                dy = c(0.27, -0.27, 0.00, 0.00, 0.36)
-            )
-            base <- df %>% dplyr::select(name, x, y, node_size_plot, f1_dir, f2, f3, f4, f3_alpha)
-            b1u <- base %>%
-                dplyr::filter(f1_dir == "increase") %>%
-                dplyr::mutate(badge = "F1_up")
-            b1d <- base %>%
-                dplyr::filter(f1_dir == "decrease") %>%
-                dplyr::mutate(badge = "F1_down")
-            b2 <- base %>%
-                dplyr::filter(isTRUE(f2)) %>%
-                dplyr::mutate(badge = "F2")
-            b3 <- base %>%
-                dplyr::filter(!is.na(f3) & f3_alpha > 0) %>%
-                dplyr::mutate(badge = "F3")
-            b4 <- base %>%
-                dplyr::filter(isTRUE(f4)) %>%
-                dplyr::mutate(badge = "F4")
-            dplyr::bind_rows(b1u, b1d, b2, b3, b4) %>%
-                dplyr::left_join(offs, by = "badge") %>%
-                dplyr::mutate(
-                    # Keep badge placement proportional to the actual rendered node size.
-                    bx = x + dx * node_size_plot,
-                    by = y + dy * node_size_plot
-                )
-        }
-
-        badges <- mk_badges(g)
-        if (nrow(badges)) {
+        g_draw$glyph_size <- case_when(
+            g_draw$power_status == "Powered" ~ node_size * 1.6 * 0.5,
+            TRUE ~ node_size * 0.8 * 0.6
+        )
+        if (isTRUE(interactive)) {
             p <- p +
-                ggnewscale::new_scale_color() +
-                ggplot2::geom_point(
-                    data = badges %>% dplyr::filter(badge == "F1_up"),
-                    ggplot2::aes(bx, by), shape = 24, size = 1.9, fill = badge_color, color = badge_outline_color, stroke = 0.25
+                ggnewscale::new_scale("size") +
+                ggiraph::geom_text_interactive(
+                    ggplot2::aes(x = x, y = y, label = glyph, tooltip = .tooltip, size = glyph_size),
+                    data = g_draw,
+                    color = glyph_draw_color,
+                    fontface = "bold", vjust = 0.43, hjust = 0.5
+                ) + ggplot2::scale_size_identity(guide = "none")
+        } else {
+            p <- p +
+                ggnewscale::new_scale("size") +
+                ggplot2::geom_text(
+                    ggplot2::aes(x = x, y = y, label = glyph, size = glyph_size),
+                    data = g_draw,
+                    color = glyph_draw_color,
+                    fontface = "bold", vjust = 0.43, hjust = 0.5, show.legend = F
+                ) + ggplot2::scale_size_identity(guide = "none")
+
+            glyph_legend_df <- data.frame(
+                x = NA_real_,
+                y = NA_real_,
+                glyph = c("", "<<", ">>", "!!", "<>", "##"),
+                glyph_type = c(
+                    "Identity intact",
+                    "Maturation delay",
+                    "Precocious maturation",
+                    "Program failure",
+                    "Fate switch / misspecification",
+                    "Identity fragmentation"
+                ),
+                stringsAsFactors = FALSE
+            )
+            glyph_order <- c(
+                "Identity intact",
+                "Maturation delay",
+                "Precocious maturation",
+                "Program failure",
+                "Fate switch / misspecification",
+                "Identity fragmentation"
+            )
+
+            glyph_legend_df$glyph_type <- factor(
+                glyph_legend_df$glyph_type,
+                levels = glyph_order
+            )
+
+            p <- p +
+                geom_text(
+                    data = glyph_legend_df,
+                    aes(x = x, y = y, label = glyph, alpha = glyph_type),
+                    inherit.aes = FALSE,
+                    fontface = "bold",
+                    colour = "black",
+                    show.legend = c(alpha = TRUE, size = FALSE)
                 ) +
-                ggplot2::geom_point(
-                    data = badges %>% dplyr::filter(badge == "F1_down"),
-                    ggplot2::aes(bx, by), shape = 25, size = 1.9, fill = badge_color, color = badge_outline_color, stroke = 0.25
-                ) +
-                ggplot2::geom_point(
-                    data = badges %>% dplyr::filter(badge == "F2"),
-                    ggplot2::aes(bx, by), shape = 3, size = 1.9, color = badge_color, stroke = 0.6
-                ) +
-                ggplot2::geom_point(
-                    data = badges %>% dplyr::filter(badge == "F3"),
-                    ggplot2::aes(bx, by, alpha = pmin(1, f3_alpha)),
-                    shape = 23, size = 1.9, fill = badge_color, color = badge_outline_color, stroke = 0.25
-                ) +
-                ggplot2::geom_point(
-                    data = badges %>% dplyr::filter(badge == "F4"),
-                    ggplot2::aes(bx, by),
-                    shape = 22, size = 1.9, fill = badge_color, color = badge_outline_color, stroke = 0.25
-                ) +
-                ggplot2::scale_alpha_continuous(range = c(0.25, 1), guide = "none")
+                scale_alpha_manual(
+                    name = "Glyphs",
+                    breaks = glyph_order,
+                    values = c(
+                        "Identity intact" = 1,
+                        "Maturation delay" = 1,
+                        "Precocious maturation" = 1,
+                        "Program failure" = 1,
+                        "Fate switch / misspecification" = 1,
+                        "Identity fragmentation" = 1
+                    ),
+                    labels = c(
+                        "Identity intact",
+                        "Maturation delay",
+                        "Precocious maturation",
+                        "Program failure",
+                        "Fate switch / misspecification",
+                        "Identity fragmentation"
+                    ),
+                    guide = guide_legend(
+                        override.aes = list(
+                            label = c("", "<<", ">>", "!!", "<>", "##"),
+                            size = 3,
+                            colour = "black"
+                        ),
+                        order = 1
+                    )
+                )
         }
     }
 
@@ -635,5 +1086,10 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         )
     }
 
-    p
+    if (isTRUE(interactive)) {
+        p <- p + ggplot2::coord_equal()
+        ggiraph::girafe(ggobj = p)
+    } else {
+        p
+    }
 }
