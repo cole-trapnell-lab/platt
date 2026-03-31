@@ -16,7 +16,8 @@ phenotype_colors <- c(
     "fitness"        = "#f6c141",
     "apoptosis"      = "#000000",
     "stress"         = "#4daf4a",
-    "senescence"     = "#a65628"
+    "senescence"     = "#a65628",
+    "not present"    = "#cccccc"
 )
 
 
@@ -600,6 +601,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             q = if (map$q %in% names(phenos_df)) as.numeric(.data[[map$q]]) else NA_real_,
             power = if ("power" %in% names(phenos_df)) as.numeric(.data[["power"]]) else NA_real_,
             powered_thresh = if ("powered_thresh" %in% names(phenos_df)) as.numeric(.data[["powered_thresh"]]) else 0.8,
+            present_above_thresh = if ("present_above_thresh" %in% names(phenos_df)) as.logical(.data[["present_above_thresh"]]) else NA,
             abundance_code = if ("abundance_code" %in% names(phenos_df)) as.character(.data[["abundance_code"]]) else NA_character_,
             ident = if (map$ident %in% names(phenos_df)) as.character(.data[[map$ident]]) else "I0",
             glyph = if (map$glyph %in% names(phenos_df)) as.character(.data[[map$glyph]]) else "",
@@ -710,7 +712,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         g$.tooltip <- phenotype_tooltip_builder(g)
     }
 
-    color_priority <- c("severe", "medium", "mild", "none")
+    color_priority <- c("severe", "medium", "mild", "none", "not_present")
     g <- g %>%
         dplyr::mutate(
             has_fitness_change = (!is.na(f1_dir) & f1_dir %in% c("increase", "decrease")) |
@@ -733,8 +735,11 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             has_identity_change = !is.na(ident) & !(ident %in% c("I0", "I0 Identity intact", "Identity intact", "", NA)),
             expectation_norm = tolower(trimws(dplyr::coalesce(expectation, ""))),
             is_expected = expectation_norm %in% c("expected", "expected change"),
-            expected_shape = dplyr::if_else(is_expected, "Expected phenotype", "Observed phenotype")
+            expected_shape = dplyr::if_else(is_expected, "Expected phenotype", "Observed phenotype"),
+            present_above_thresh_flag = dplyr::coalesce(present_above_thresh, TRUE)
         )
+
+    g <- g %>% mutate(severity_fill = ifelse(present_above_thresh_flag == FALSE, "not_present", severity_fill))
 
     if (identical(render_mode, "global")) {
         # Mild horizontal spread keeps the global plot readable without shrinking nodes.
@@ -826,14 +831,16 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 severe = unname(phenotype_colors["abundance_loss"]),
                 medium = unname(phenotype_colors["identity"]),
                 mild = unname(phenotype_colors["abundance_gain"]),
-                none = unname(phenotype_colors["none"])
+                none = unname(phenotype_colors["none"]),
+                not_present = unname(phenotype_colors["not_present"])
             ),
             breaks = color_priority,
             labels = c(
                 severe = "Severe phenotype",
                 medium = "Medium phenotype",
                 mild = "Mild phenotype",
-                none = "No phenotype"
+                none = "No phenotype",
+                not_present = "Not present"
             ),
             name = if (identical(render_mode, "global")) NULL else "Node color",
             guide = "none"
@@ -843,8 +850,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         x = NA_real_,
         y = NA_real_,
         severity_fill = factor(
-            c("severe", "medium", "mild", "none"),
-            levels = c("severe", "medium", "mild", "none")
+            c("severe", "medium", "mild", "none", "not_present"),
+            levels = c("severe", "medium", "mild", "none", "not_present")
         )
     )
 
@@ -864,15 +871,17 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             values = c(
                 severe = unname(phenotype_colors["abundance_loss"]),
                 medium = unname(phenotype_colors["identity"]),
-                mild   = unname(phenotype_colors["abundance_gain"]),
-                none   = unname(phenotype_colors["none"])
+                mild = unname(phenotype_colors["abundance_gain"]),
+                none = unname(phenotype_colors["none"]),
+                not_present = unname(phenotype_colors["not_present"])
             ),
-            breaks = c("severe", "medium", "mild", "none"),
+            breaks = c("severe", "medium", "mild", "none", "not_present"),
             labels = c(
                 severe = "Severe phenotype",
                 medium = "Medium phenotype",
-                mild   = "Mild phenotype",
-                none   = "No phenotype"
+                mild = "Mild phenotype",
+                none = "No phenotype",
+                not_present = "Not present"
             ),
             drop = FALSE,
             name = "Node color",
@@ -1084,7 +1093,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             )
         } else {
             p <- p + theme(legend.position = legend_position)
-            ggiraph::girafe(
+            p <- ggiraph::girafe(
                 ggobj = p,
                 width_svg = width, height_svg = height
             )
