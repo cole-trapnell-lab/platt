@@ -944,39 +944,28 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
 
 
     if (isTRUE(global_identity_marker)) {
-        if (isTRUE(interactive)) {
-            p <- p +
-                ggiraph::geom_point_interactive(
-                    data = g %>% dplyr::filter(has_identity_change),
-                    ggplot2::aes(x = x, y = y, tooltip = .tooltip),
-                    shape = 16,
-                    size = node_size * 0.275,
-                    color = "black"
+        g$identity_change_marker <- ifelse(g$has_identity_change, "*", "")
+        p <- p +
+            geom_text(
+                data = g,
+                aes(x = x, y = y, label = identity_change_marker, alpha = identity_change_marker),
+                show.legend = c(alpha = TRUE, color = FALSE),
+                color = glyph_color,
+                size = node_size,
+                vjust = 0.8,
+                hjust = 0.5
+            ) +
+            scale_alpha_manual(
+                name = "Transcriptional Identity",
+                values = c("*" = 1),
+                labels = "Phenotype detected",
+                breaks = c("*")
+            ) +
+            guides(
+                alpha = guide_legend(
+                    override.aes = list(label = "*", size = 6, color = "black")
                 )
-        } else {
-            g$identity_change_marker <- ifelse(g$has_identity_change, "*", "")
-            p <- p +
-                geom_text(
-                    data = g,
-                    aes(x = x, y = y, label = identity_change_marker, alpha = identity_change_marker),
-                    show.legend = c(alpha = TRUE, color = FALSE),
-                    color = glyph_color,
-                    size = node_size,
-                    vjust = 0.8,
-                    hjust = 0.5
-                ) +
-                scale_alpha_manual(
-                    name = "Transcriptional Identity",
-                    values = c("*" = 1),
-                    labels = "Phenotype detected",
-                    breaks = c("*")
-                ) +
-                guides(
-                    alpha = guide_legend(
-                        override.aes = list(label = "*", size = 6, color = "black")
-                    )
-                )
-        }
+            )
     }
 
     if (show_node_glyphs) {
@@ -1088,11 +1077,18 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     }
 
     if (isTRUE(interactive)) {
-        p <- p + ggplot2::coord_equal() + theme(legend.position = legend_position)
-        ggiraph::girafe(
-            ggobj = p,
-            width_svg = width, height_svg = height
-        )
+        if (is.null(width) || is.null(height)) {
+            p <- p + ggplot2::coord_equal() + theme(legend.position = legend_position)
+            ggiraph::girafe(
+                ggobj = p
+            )
+        } else {
+            p <- p + theme(legend.position = legend_position)
+            ggiraph::girafe(
+                ggobj = p,
+                width_svg = width, height_svg = height
+            )
+        }
     } else {
         p + theme(legend.position = legend_position)
     }
