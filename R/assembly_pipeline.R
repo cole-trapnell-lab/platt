@@ -100,7 +100,9 @@ run_wildtype_assembly <- function(cds,
         return(wt_graph)
     }
 
-    cds <- cds[, colData(cds)[[batch_col]] %in% batches_excluded_from_assembly == FALSE]
+    if (is.null(batch_col) == FALSE && length(batches_excluded_from_assembly) > 0) {
+        cds <- cds[, colData(cds)[[batch_col]] %in% batches_excluded_from_assembly == FALSE]
+    }
 
     tryCatch(
         {

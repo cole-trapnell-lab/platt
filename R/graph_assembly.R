@@ -116,7 +116,6 @@ add_cross_component_pathfinding_links <- function(ccm,
   cross_partition_map <- cross_partition_map %>% left_join(pcor_graph, by = c("from" = "from", "to" = "to"))
 
 
-
   if (type == "strongest-pcor") {
     cross_partition_edges <- cross_partition_map %>%
       group_by(to_partition) %>%
@@ -149,7 +148,6 @@ add_cross_component_pathfinding_links <- function(ccm,
   updated_pathfinding_graph <- igraph::simplify(updated_pathfinding_graph)
   return(updated_pathfinding_graph)
 }
-
 
 
 #' Initialize a graph over which cells can transition
@@ -283,7 +281,6 @@ init_pathfinding_graph <- function(ccm,
 
   return(pathfinding_graph)
 }
-
 
 
 #' Generate a denylist of state transition relationships based on a perturbation
@@ -1116,6 +1113,51 @@ find_cycles <- function(g) {
 #' @param ccs cell count set
 #' @param path_df path df
 #' @noRd
+get_sample_time_tbl <- function(ccs, interval_col = "timepoint") {
+  sample_coldata <- tryCatch(
+    SummarizedExperiment::colData(ccs),
+    error = function(e) {
+      if (isS4(ccs) && "cds" %in% methods::slotNames(ccs)) {
+        return(SummarizedExperiment::colData(ccs@cds))
+      }
+      stop(e)
+    }
+  )
+
+  sample_tbl <- sample_coldata %>%
+    as.data.frame()
+  if ("sample" %in% colnames(sample_tbl)) {
+    sample_tbl$sample <- as.character(sample_tbl$sample)
+  } else {
+    sample_tbl$sample <- row.names(sample_tbl)
+  }
+  sample_tbl %>%
+    dplyr::select(sample, !!sym(interval_col)) %>%
+    tibble::as_tibble()
+}
+
+#' @noRd
+get_cells_along_path_df <- function(ccs) {
+  norm_mat <- tryCatch(
+    normalized_counts(ccs, "size_only", pseudocount = 0),
+    error = function(e) {
+      if (isS4(ccs) && "cds" %in% methods::slotNames(ccs) && "counts" %in% SummarizedExperiment::assayNames(ccs@cds)) {
+        return(SummarizedExperiment::assay(ccs@cds, "counts"))
+      }
+      stop(e)
+    }
+  )
+
+  norm_mat %>%
+    as.matrix() %>%
+    Matrix::t() %>%
+    as.data.frame() %>%
+    tibble::rownames_to_column(var = "sample") %>%
+    tidyr::pivot_longer(!matches("sample")) %>%
+    dplyr::rename(cell_group = name, num_cells = value)
+}
+
+#' @noRd
 measure_time_delta_along_path <- function(path_df, ccs, cells_along_path_df, interval_col = "timepoint") {
   # cds = ccs@cds
   vertices <- union(path_df$to, path_df$from) %>% unique()
@@ -1134,9 +1176,7 @@ measure_time_delta_along_path <- function(path_df, ccs, cells_along_path_df, int
   #   rename(sample=rowname, cell_group=name, num_cells=value)
 
   cells_along_path_df <- cells_along_path_df %>%
-    left_join(colData(ccs) %>% as.data.frame() %>%
-      select(sample, !!sym(interval_col)) %>%
-      as_tibble(), by = c("sample" = "sample"))
+    left_join(get_sample_time_tbl(ccs, interval_col = interval_col), by = c("sample" = "sample"))
 
   cells_along_path_df <- cells_along_path_df %>%
     left_join(path_df %>% select(-from), by = c("cell_group" = "to"))
@@ -1162,6 +1202,122 @@ measure_time_delta_along_path <- function(path_df, ccs, cells_along_path_df, int
   # return(coef(path_model)[["distance_from_root"]])
 }
 # debug(cells_along_path)
+
+#' @noRd
+measure_time_delta_along_edge <- function(from, to, ccs, cells_along_path_df, interval_col = "timepoint") {
+  edge_path_df <- tibble::tibble(
+    from = from,
+    to = to,
+    weight = 1,
+    distance_from_root = 1
+  )
+
+  measure_time_delta_along_path(
+    path_df = edge_path_df,
+    ccs = ccs,
+    cells_along_path_df = cells_along_path_df,
+    interval_col = interval_col
+  )
+}
+
+#' @noRd
+redirect_state_graph_edges_by_time <- function(state_graph, ccs, interval_col = "timepoint", penalty_long_jump = 1) {
+  if (is.null(state_graph) || igraph::ecount(state_graph) == 0) {
+    return(state_graph)
+  }
+
+  cell_group_col <- ccs@info$cell_group
+  if (!cell_group_col %in% colnames(colData(ccs@cds)) ||
+    !interval_col %in% colnames(colData(ccs@cds))) {
+    return(state_graph)
+  }
+
+  cells_along_path_df <- get_cells_along_path_df(ccs)
+
+  # Summarize peak time for each cell group as the most frequent interval.
+  cell_group_summary <- colData(ccs@cds) %>%
+    as.data.frame() %>%
+    dplyr::select(dplyr::all_of(c(cell_group_col, interval_col))) %>%
+    dplyr::filter(!is.na(.data[[cell_group_col]]), !is.na(.data[[interval_col]])) %>%
+    dplyr::count(.data[[cell_group_col]], .data[[interval_col]], name = "n_cells") %>%
+    dplyr::group_by(.data[[cell_group_col]]) %>%
+    dplyr::arrange(dplyr::desc(n_cells), .data[[interval_col]], .by_group = TRUE) %>%
+    dplyr::slice_head(n = 1) %>%
+    dplyr::ungroup() %>%
+    dplyr::transmute(
+      cell_group = .data[[cell_group_col]],
+      peak_time = .data[[interval_col]]
+    )
+
+  edge_df <- igraph::as_data_frame(state_graph, what = "edges") %>%
+    dplyr::left_join(cell_group_summary, by = c("from" = "cell_group")) %>%
+    dplyr::rename(from_peak_time = peak_time) %>%
+    dplyr::left_join(cell_group_summary, by = c("to" = "cell_group")) %>%
+    dplyr::rename(to_peak_time = peak_time) %>%
+    dplyr::mutate(
+      edge_time_stats = purrr::map2(
+        from, to,
+        ~ measure_time_delta_along_edge(
+          from = .x,
+          to = .y,
+          ccs = ccs,
+          cells_along_path_df = cells_along_path_df,
+          interval_col = interval_col
+        )
+      )
+    ) %>%
+    tidyr::unnest_wider(edge_time_stats)
+
+  # Reorient edges but do not prune them.
+  edge_df <- edge_df %>%
+    dplyr::mutate(
+      has_path_time_order = !is.na(time_dist_effect),
+      has_peak_time_order = !is.na(from_peak_time) & !is.na(to_peak_time),
+      reverse_in_time = dplyr::case_when(
+        has_path_time_order ~ time_dist_effect < 0,
+        has_peak_time_order ~ from_peak_time > to_peak_time,
+        TRUE ~ FALSE
+      ),
+      orig_from = from,
+      orig_to = to,
+      orig_from_peak_time = from_peak_time,
+      orig_to_peak_time = to_peak_time,
+      orig_time_dist_effect = time_dist_effect,
+      from = ifelse(reverse_in_time, orig_to, orig_from),
+      to = ifelse(reverse_in_time, orig_from, orig_to),
+      from_peak_time = ifelse(reverse_in_time, orig_to_peak_time, orig_from_peak_time),
+      to_peak_time = ifelse(reverse_in_time, orig_from_peak_time, orig_to_peak_time),
+      time_dist_effect = ifelse(reverse_in_time, -orig_time_dist_effect, orig_time_dist_effect)
+    ) %>%
+    dplyr::select(
+      -orig_from, -orig_to,
+      -orig_from_peak_time, -orig_to_peak_time,
+      -orig_time_dist_effect
+    )
+
+  # Combine edge attributes as before
+  combine_edge_attr <- function(x) {
+    non_missing <- x[!is.na(x)]
+    if (is.numeric(x)) {
+      if (length(non_missing) == 0) {
+        return(as.numeric(NA))
+      }
+      return(sum(non_missing))
+    }
+    if (length(non_missing) == 0) {
+      return(x[1])
+    }
+    return(non_missing[1])
+  }
+
+  edge_df <- edge_df %>%
+    dplyr::group_by(from, to) %>%
+    dplyr::summarise(dplyr::across(dplyr::everything(), combine_edge_attr), .groups = "drop")
+
+  vertex_df <- igraph::as_data_frame(state_graph, what = "vertices")
+  redirected_graph <- igraph::graph_from_data_frame(edge_df, directed = TRUE, vertices = vertex_df)
+  return(redirected_graph)
+}
 
 # # ' score a path based on fitting a linear model of perturbation ~ geodesic distance
 # # ' @param ccs
@@ -1608,6 +1764,8 @@ build_timeseries_transition_graph <- function(ccm,
     G <- igraph::graph_from_data_frame(edge_support, directed = TRUE, vertices = data.frame(id = igraph::V(G)$name))
   }
 
+  G <- redirect_state_graph_edges_by_time(G, ccm@ccs, interval_col = interval_col)
+
   print("Finished building timeseries graph")
   return(G)
 }
@@ -1756,7 +1914,6 @@ get_paths_between_recip_time_nodes <- function(ccm,
   })
   return(NA)
 }
-
 
 
 #' @noRd
@@ -2953,13 +3110,10 @@ contract_state_graph <- function(ccs,
     mutate(order = row_number()) %>%
     left_join(group_by_metadata, by = c("name" = "cell_group"))
 
-  # node_metadata = left_join(node_metadata, group_by_metadata, by=c("id"="cell_group"))
-  # node_metadata = left_join(node_metadata, df, by = "id")%>% arrange(sort_id)
-  # node_metadata = node_metadata %>% mutate(sort_id = as.numeric(gsub("\\D", "", id))) %>% arrange(sort_id)
   contraction_mapping <- as.factor(node_metadata$group_nodes_by)
   contraction_mapping_names <- as.character(levels(contraction_mapping))
   contraction_mapping <- as.numeric(contraction_mapping)
-  names(contraction_mapping) <- node_metadata$id
+  names(contraction_mapping) <- node_metadata$name
   contracted_state_graph <- igraph::contract(state_graph, mapping = contraction_mapping, vertex.attr.comb = "ignore")
   igraph::V(contracted_state_graph)$name <- unlist(contraction_mapping_names[as.numeric(igraph::V(contracted_state_graph))])
   contracted_state_graph <- igraph::simplify(contracted_state_graph,

@@ -270,7 +270,6 @@ fit_genotype_ccm <- function(genotype,
     main_model_formula_str = main_model_formula_str,
     # main_model_formula_str = "~ splines::ns(timepoint, knots=c(24, 30, 36)) + knockout",
     # main_model_formula_str = "~ as.factor(timepoint) + knockout",
-
     nuisance_model_formula_str = nuisance_model_formula_str,
     allowlist = edge_allowlist,
     denylist = edge_denylist,
@@ -676,7 +675,6 @@ assemble_wt_graph <- function(cds,
 
   return(wt_state_transition_graph)
 }
-
 
 
 # FIXME: allow using WT graph as a prior?
