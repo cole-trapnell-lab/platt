@@ -954,6 +954,10 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ggplot2::scale_shape_manual(
                 values = c("Observed phenotype" = 21, "Expected phenotype" = 22),
                 name = "Shape",
+                labels = c(
+                    "Observed phenotype" = "Effect not expected",
+                    "Expected phenotype" = "Effect expected"
+                ),
                 guide = ggplot2::guide_legend(order = 4)
             )
     } else {
@@ -961,6 +965,10 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ggplot2::scale_shape_manual(
                 values = c("Observed phenotype" = 21, "Expected phenotype" = 22),
                 name = "Shape",
+                labels = c(
+                    "Observed phenotype" = "Effect not expected",
+                    "Expected phenotype" = "Effect expected"
+                ),
                 guide = ggplot2::guide_legend(order = 4)
             ) + guides(shape = "none")
     }
@@ -1062,6 +1070,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 aes(x = x, y = y, label = glyph, color = glyph_type),
                 inherit.aes = FALSE,
                 fontface = "bold",
+                key_glyph = ggplot2::draw_key_text,
                 show.legend = c(color = TRUE)
             ) +
             scale_color_manual(
@@ -1080,7 +1089,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                     override.aes = list(
                         label = c("", "<<", ">>", "!!", "<>", "##"),
                         size = 3,
-                        colour = "black"
+                        colour = "black",
+                        alpha = 1
                     ),
                     order = 6
                 )
@@ -1109,11 +1119,15 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     legend_text_size <- if (identical(render_mode, "global")) 11 else 8.5
     legend_key_size <- if (identical(render_mode, "global")) grid::unit(15, "pt") else grid::unit(10, "pt")
 
-    if (isTRUE(interactive) && identical(render_mode, "global") && !identical(legend_position, "none")) {
+    if (isTRUE(interactive) && !identical(legend_position, "none")) {
         legend_position_final <- "bottom"
         legend_box_final <- "horizontal"
         legend_direction_final <- "vertical"
-        legend_key_size <- grid::unit(18, "pt")
+        if (identical(render_mode, "global")) {
+            legend_title_size <- legend_title_size * 3
+            legend_text_size <- legend_text_size * 3
+            legend_key_size <- grid::unit(54, "pt")
+        }
     }
 
     legend_theme <- ggplot2::theme(
