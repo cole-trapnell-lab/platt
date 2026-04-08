@@ -900,7 +900,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 order = 1,
                 override.aes = list(
                     shape = 21,
-                    size = 7,
+                    size = 4,
                     colour = "black",
                     stroke = 0.5,
                     alpha = 1
@@ -928,7 +928,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             values = c("Powered" = node_size * 1.6, "Underpowered" = node_size * 0.8),
             guide = guide_legend(
                 order = 3,
-                override.aes = list(size = c(7, 4.5))
+                override.aes = list(size = c(1.6 * 2, 0.8 * 2))
             ),
             name = "Size"
         )
@@ -958,10 +958,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                     "Observed phenotype" = "Effect not expected",
                     "Expected phenotype" = "Effect expected"
                 ),
-                guide = ggplot2::guide_legend(
-                    order = 4,
-                    override.aes = list(size = 7, stroke = 0.6)
-                )
+                guide = ggplot2::guide_legend(order = 4)
             )
     } else {
         p <- p +
@@ -972,10 +969,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                     "Observed phenotype" = "Effect not expected",
                     "Expected phenotype" = "Effect expected"
                 ),
-                guide = ggplot2::guide_legend(
-                    order = 4,
-                    override.aes = list(size = 7, stroke = 0.6)
-                )
+                guide = ggplot2::guide_legend(order = 4)
             ) + guides(shape = "none")
     }
 
@@ -1010,7 +1004,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 name = "Transcriptional Identity",
                 values = c("Phenotype detected" = "black"),
                 guide = guide_legend(
-                    override.aes = list(shape = 8, size = 6),
+                    override.aes = list(shape = 8, size = 4),
                     order = 2
                 )
             )
@@ -1071,12 +1065,12 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         }
         p <- p +
             ggnewscale::new_scale_color() +
-            ggplot2::geom_point(
+            geom_text(
                 data = glyph_legend_df,
-                aes(x = x, y = y, color = glyph_type),
+                aes(x = x, y = y, label = glyph, color = glyph_type),
                 inherit.aes = FALSE,
-                alpha = 0,
-                size = 0,
+                fontface = "bold",
+                key_glyph = ggplot2::draw_key_text,
                 show.legend = c(color = TRUE)
             ) +
             scale_color_manual(
@@ -1084,18 +1078,19 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 breaks = glyph_order,
                 values = stats::setNames(rep("black", length(glyph_order)), glyph_order),
                 labels = c(
-                    "Identity intact" = "blank Identity intact",
-                    "Maturation delay" = "<< Maturation delay",
-                    "Precocious maturation" = ">> Precocious maturation",
-                    "Program failure" = "!! Program failure",
-                    "Fate switch / misspecification" = "<> Fate switch / misspecification",
-                    "Identity fragmentation" = "## Identity fragmentation"
+                    "Identity intact",
+                    "Maturation delay",
+                    "Precocious maturation",
+                    "Program failure",
+                    "Fate switch / misspecification",
+                    "Identity fragmentation"
                 ),
                 guide = guide_legend(
                     override.aes = list(
-                        alpha = 0,
-                        size = 0,
-                        shape = NA
+                        label = c("", "<<", ">>", "!!", "<>", "##"),
+                        size = 3,
+                        colour = "black",
+                        alpha = 1
                     ),
                     order = 6
                 )
@@ -1129,13 +1124,9 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         legend_box_final <- "horizontal"
         legend_direction_final <- "vertical"
         if (identical(render_mode, "global")) {
-            legend_title_size <- 10
-            legend_text_size <- 8.5
-            legend_key_size <- grid::unit(10, "pt")
-        } else {
-            legend_title_size <- 7.5
-            legend_text_size <- 6.375
-            legend_key_size <- grid::unit(7.5, "pt")
+            legend_title_size <- legend_title_size * 3
+            legend_text_size <- legend_text_size * 3
+            legend_key_size <- grid::unit(54, "pt")
         }
     }
 
