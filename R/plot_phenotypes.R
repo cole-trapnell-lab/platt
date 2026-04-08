@@ -1151,15 +1151,9 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     legend_position_final <- legend_position
     legend_box_final <- if (identical(legend_position, "bottom")) "horizontal" else "vertical"
     legend_direction_final <- "vertical"
-    if (identical(legend_position, "bottom")) {
-        legend_title_size <- 30
-        legend_text_size <- 25.5
-        legend_key_size <- grid::unit(30, "pt")
-    } else {
-        legend_title_size <- if (identical(render_mode, "global")) 13 else 10
-        legend_text_size <- if (identical(render_mode, "global")) 11 else 8.5
-        legend_key_size <- if (identical(render_mode, "global")) grid::unit(15, "pt") else grid::unit(10, "pt")
-    }
+    legend_title_size <- if (identical(render_mode, "global")) 13 else 10
+    legend_text_size <- if (identical(render_mode, "global")) 11 else 8.5
+    legend_key_size <- if (identical(render_mode, "global")) grid::unit(15, "pt") else grid::unit(10, "pt")
 
     legend_theme <- ggplot2::theme(
         legend.position = legend_position_final,
