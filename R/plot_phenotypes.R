@@ -833,8 +833,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 "Non-autonomous" = 0.45
             ),
             breaks = c("Cell-autonomous", "Non-autonomous"),
-            drop = FALSE,
-            guide = ggplot2::guide_legend(order = 5)
+            drop = FALSE
         ) +
         ggplot2::scale_size_identity(guide = "none") +
         ggplot2::scale_fill_manual(
@@ -927,7 +926,6 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         ggplot2::scale_size_manual(
             values = c("Powered" = node_size * 1.6, "Underpowered" = node_size * 0.8),
             guide = guide_legend(
-                order = 3,
                 override.aes = list(size = c(1.6 * 2, 0.8 * 2))
             ),
             name = "Size"
@@ -953,15 +951,13 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ) +
             ggplot2::scale_shape_manual(
                 values = c("Observed phenotype" = 21, "Expected phenotype" = 22),
-                name = "Shape",
-                guide = ggplot2::guide_legend(order = 4)
+                name = "Shape"
             )
     } else {
         p <- p +
             ggplot2::scale_shape_manual(
                 values = c("Observed phenotype" = 21, "Expected phenotype" = 22),
-                name = "Shape",
-                guide = ggplot2::guide_legend(order = 4)
+                name = "Shape"
             ) + guides(shape = "none")
     }
 
@@ -971,6 +967,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             x = NA_real_,
             y = NA_real_,
             identity_marker_label = "Phenotype detected",
+            identity_marker_glyph = "*",
             stringsAsFactors = FALSE
         )
         p <- p +
@@ -984,20 +981,21 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 hjust = 0.5
             ) +
             ggnewscale::new_scale_color() +
-            ggplot2::geom_point(
+            geom_text(
                 data = identity_marker_legend_df,
-                aes(x = x, y = y, color = identity_marker_label),
+                aes(x = x, y = y, label = identity_marker_glyph, color = identity_marker_label),
                 inherit.aes = FALSE,
                 show.legend = TRUE,
-                shape = 8,
-                size = 3
+                size = node_size,
+                vjust = 0.8,
+                hjust = 0.5
             ) +
             scale_color_manual(
                 name = "Transcriptional Identity",
                 values = c("Phenotype detected" = "black"),
                 guide = guide_legend(
-                    override.aes = list(shape = 8, size = 4),
-                    order = 2
+                    override.aes = list(label = "*", size = 6),
+                    order = 1
                 )
             )
     }
@@ -1007,33 +1005,6 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         g_draw$glyph_size <- case_when(
             g_draw$power_status == "Powered" ~ node_size * 1.6 * 0.5,
             TRUE ~ node_size * 0.8 * 0.6
-        )
-        glyph_legend_df <- data.frame(
-            x = NA_real_,
-            y = NA_real_,
-            glyph = c("", "<<", ">>", "!!", "<>", "##"),
-            glyph_type = c(
-                "Identity intact",
-                "Maturation delay",
-                "Precocious maturation",
-                "Program failure",
-                "Fate switch / misspecification",
-                "Identity fragmentation"
-            ),
-            stringsAsFactors = FALSE
-        )
-        glyph_order <- c(
-            "Identity intact",
-            "Maturation delay",
-            "Precocious maturation",
-            "Program failure",
-            "Fate switch / misspecification",
-            "Identity fragmentation"
-        )
-
-        glyph_legend_df$glyph_type <- factor(
-            glyph_legend_df$glyph_type,
-            levels = glyph_order
         )
         if (isTRUE(interactive)) {
             p <- p +
@@ -1054,21 +1025,12 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                     color = glyph_draw_color,
                     fontface = "bold", vjust = 0.43, hjust = 0.5, show.legend = FALSE
                 ) + ggplot2::scale_size_identity(guide = "none")
-        }
-        p <- p +
-            ggnewscale::new_scale_color() +
-            geom_text(
-                data = glyph_legend_df,
-                aes(x = x, y = y, label = glyph, color = glyph_type),
-                inherit.aes = FALSE,
-                fontface = "bold",
-                show.legend = c(color = TRUE)
-            ) +
-            scale_color_manual(
-                name = "Glyphs",
-                breaks = glyph_order,
-                values = stats::setNames(rep("black", length(glyph_order)), glyph_order),
-                labels = c(
+
+            glyph_legend_df <- data.frame(
+                x = NA_real_,
+                y = NA_real_,
+                glyph = c("", "<<", ">>", "!!", "<>", "##"),
+                glyph_type = c(
                     "Identity intact",
                     "Maturation delay",
                     "Precocious maturation",
@@ -1076,15 +1038,53 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                     "Fate switch / misspecification",
                     "Identity fragmentation"
                 ),
-                guide = guide_legend(
-                    override.aes = list(
-                        label = c("", "<<", ">>", "!!", "<>", "##"),
-                        size = 3,
-                        colour = "black"
-                    ),
-                    order = 6
-                )
+                stringsAsFactors = FALSE
             )
+            glyph_order <- c(
+                "Identity intact",
+                "Maturation delay",
+                "Precocious maturation",
+                "Program failure",
+                "Fate switch / misspecification",
+                "Identity fragmentation"
+            )
+
+            glyph_legend_df$glyph_type <- factor(
+                glyph_legend_df$glyph_type,
+                levels = glyph_order
+            )
+
+            p <- p +
+                ggnewscale::new_scale_color() +
+                geom_text(
+                    data = glyph_legend_df,
+                    aes(x = x, y = y, label = glyph, color = glyph_type),
+                    inherit.aes = FALSE,
+                    fontface = "bold",
+                    show.legend = TRUE
+                ) +
+                scale_color_manual(
+                    name = "Glyphs",
+                    breaks = glyph_order,
+                    values = stats::setNames(rep("black", length(glyph_order)), glyph_order),
+                    labels = c(
+                        "Identity intact",
+                        "Maturation delay",
+                        "Precocious maturation",
+                        "Program failure",
+                        "Fate switch / misspecification",
+                        "Identity fragmentation"
+                    ),
+                    guide = guide_legend(
+                        override.aes = list(
+                            label = c("", "<<", ">>", "!!", "<>", "##"),
+                            size = 3,
+                            colour = "black"
+                        ),
+                        order = 1
+                    )
+                )
+        }
     }
 
     label_target <- label_cell_types
@@ -1102,43 +1102,20 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         )
     }
 
-    legend_position_final <- legend_position
-    legend_box_final <- "vertical"
-    legend_direction_final <- "vertical"
-    legend_title_size <- if (identical(render_mode, "global")) 13 else 10
-    legend_text_size <- if (identical(render_mode, "global")) 11 else 8.5
-    legend_key_size <- if (identical(render_mode, "global")) grid::unit(15, "pt") else grid::unit(10, "pt")
-
-    if (isTRUE(interactive) && identical(render_mode, "global") && !identical(legend_position, "none")) {
-        legend_position_final <- "bottom"
-        legend_box_final <- "horizontal"
-        legend_direction_final <- "vertical"
-        legend_key_size <- grid::unit(18, "pt")
-    }
-
-    legend_theme <- ggplot2::theme(
-        legend.position = legend_position_final,
-        legend.box = legend_box_final,
-        legend.direction = legend_direction_final,
-        legend.title = ggplot2::element_text(size = legend_title_size),
-        legend.text = ggplot2::element_text(size = legend_text_size),
-        legend.key.size = legend_key_size
-    )
-
     if (isTRUE(interactive)) {
         if (is.null(width) || is.null(height)) {
-            p <- p + ggplot2::coord_equal() + legend_theme
+            p <- p + ggplot2::coord_equal() + theme(legend.position = legend_position)
             ggiraph::girafe(
                 ggobj = p
             )
         } else {
-            p <- p + legend_theme
+            p <- p + theme(legend.position = legend_position)
             p <- ggiraph::girafe(
                 ggobj = p,
                 width_svg = width, height_svg = height
             )
         }
     } else {
-        p + legend_theme
+        p + theme(legend.position = legend_position)
     }
 }
