@@ -841,7 +841,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                     size = 7,
                     fill = "black",
                     colour = "black",
-                    stroke = 0.5
+                    stroke = 0.5,
+                    alpha = c(1, 0.45)
                 )
             )
         ) +
@@ -874,8 +875,6 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             levels = c("severe", "medium", "mild", "none", "not_present")
         )
     )
-    fill_legend_outline <- if (identical(render_mode, "tissue")) NA else "black"
-    fill_legend_stroke <- if (identical(render_mode, "tissue")) 0 else 0.5
 
     p <- p +
         ggnewscale::new_scale_fill() +
@@ -885,8 +884,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             inherit.aes = FALSE,
             shape = 21,
             size = 4,
-            colour = fill_legend_outline,
-            stroke = fill_legend_stroke,
+            colour = "black",
+            stroke = 0.5,
             show.legend = c(color = TRUE, size = FALSE)
         ) +
         ggplot2::scale_fill_manual(
@@ -912,8 +911,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 override.aes = list(
                     shape = 21,
                     size = 7,
-                    colour = fill_legend_outline,
-                    stroke = fill_legend_stroke,
+                    colour = "black",
+                    stroke = 0.5,
                     alpha = 1
                 )
             )
@@ -1150,25 +1149,16 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     }
 
     legend_position_final <- legend_position
-    legend_box_final <- "vertical"
+    legend_box_final <- if (identical(legend_position, "bottom")) "horizontal" else "vertical"
     legend_direction_final <- "vertical"
-    legend_title_size <- if (identical(render_mode, "global")) 13 else 10
-    legend_text_size <- if (identical(render_mode, "global")) 11 else 8.5
-    legend_key_size <- if (identical(render_mode, "global")) grid::unit(15, "pt") else grid::unit(10, "pt")
-
-    if (isTRUE(interactive) && !identical(legend_position, "none")) {
-        legend_position_final <- "bottom"
-        legend_box_final <- "horizontal"
-        legend_direction_final <- "vertical"
-        if (identical(render_mode, "global")) {
-            legend_title_size <- 30
-            legend_text_size <- 25.5
-            legend_key_size <- grid::unit(30, "pt")
-        } else {
-            legend_title_size <- 7.5
-            legend_text_size <- 6.375
-            legend_key_size <- grid::unit(7.5, "pt")
-        }
+    if (identical(legend_position, "bottom")) {
+        legend_title_size <- 30
+        legend_text_size <- 25.5
+        legend_key_size <- grid::unit(30, "pt")
+    } else {
+        legend_title_size <- if (identical(render_mode, "global")) 13 else 10
+        legend_text_size <- if (identical(render_mode, "global")) 11 else 8.5
+        legend_key_size <- if (identical(render_mode, "global")) grid::unit(15, "pt") else grid::unit(10, "pt")
     }
 
     legend_theme <- ggplot2::theme(
