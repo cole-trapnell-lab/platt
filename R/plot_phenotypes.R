@@ -736,13 +736,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             expectation_norm = tolower(trimws(dplyr::coalesce(expectation, ""))),
             is_expected = expectation_norm %in% c("expected", "expected change"),
             expected_shape = dplyr::if_else(is_expected, "Expected phenotype", "Observed phenotype"),
-            present_above_thresh_flag = dplyr::coalesce(present_above_thresh, TRUE),
-            effect_type_norm = tolower(trimws(dplyr::coalesce(effect_type, ""))),
-            autonomy_display = dplyr::case_when(
-                effect_type_norm %in% c("cell-autonomous", "cell autonomous") ~ "Cell-autonomous",
-                stringr::str_detect(effect_type_norm, "non-autonomous|non autonomous") ~ "Non-autonomous",
-                TRUE ~ "Cell-autonomous"
-            )
+            present_above_thresh_flag = dplyr::coalesce(present_above_thresh, TRUE)
         )
 
     g <- g %>% mutate(severity_fill = ifelse(present_above_thresh_flag == FALSE, "not_present", severity_fill))
@@ -810,7 +804,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     if (isTRUE(interactive)) {
         p <- p +
             ggiraph::geom_point_interactive(
-                ggplot2::aes(x = x, y = y, tooltip = .tooltip, fill = severity_fill, shape = expected_shape, size = power_status, alpha = autonomy_display),
+                ggplot2::aes(x = x, y = y, tooltip = .tooltip, fill = severity_fill, shape = expected_shape, size = power_status),
                 data = g_draw,
                 color = "black",
                 stroke = if (identical(render_mode, "global")) 0.7 else 0.5
@@ -818,7 +812,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     } else {
         p <- p +
             ggplot2::geom_point(
-                ggplot2::aes(x = x, y = y, fill = severity_fill, shape = expected_shape, size = power_status, alpha = autonomy_display),
+                ggplot2::aes(x = x, y = y, fill = severity_fill, shape = expected_shape, size = power_status),
                 data = g_draw,
                 color = "black",
                 stroke = if (identical(render_mode, "global")) 0.7 else 0.5
@@ -826,15 +820,11 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     }
 
     p <- p +
-        ggplot2::scale_alpha_manual(
-            name = "Autonomy",
-            values = c(
-                "Cell-autonomous" = 1,
-                "Non-autonomous" = 0.45
-            ),
-            breaks = c("Cell-autonomous", "Non-autonomous"),
-            drop = FALSE
-        ) +
+        # ggplot2::geom_point(
+        #     aes(x = x, y = y, fill = severity_fill, shape = expected_shape, size = power_status),
+        #     data = g_draw,
+        #     stroke = if (identical(render_mode, "global")) 0.7 else 0.5
+        # ) +
         ggplot2::scale_size_identity(guide = "none") +
         ggplot2::scale_fill_manual(
             values = c(
@@ -963,39 +953,26 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
 
 
     if (isTRUE(global_identity_marker)) {
-        identity_marker_legend_df <- data.frame(
-            x = NA_real_,
-            y = NA_real_,
-            identity_marker_label = "Phenotype detected",
-            identity_marker_glyph = "*",
-            stringsAsFactors = FALSE
-        )
+        g$identity_change_marker <- ifelse(g$has_identity_change, "*", "")
         p <- p +
             geom_text(
                 data = g,
-                aes(x = x, y = y, label = ifelse(has_identity_change, "*", "")),
-                show.legend = FALSE,
+                aes(x = x, y = y, label = identity_change_marker, alpha = identity_change_marker),
+                show.legend = c(alpha = TRUE, color = FALSE),
                 color = glyph_color,
                 size = node_size,
                 vjust = 0.8,
                 hjust = 0.5
             ) +
-            ggnewscale::new_scale_color() +
-            geom_text(
-                data = identity_marker_legend_df,
-                aes(x = x, y = y, label = identity_marker_glyph, color = identity_marker_label),
-                inherit.aes = FALSE,
-                show.legend = TRUE,
-                size = node_size,
-                vjust = 0.8,
-                hjust = 0.5
-            ) +
-            scale_color_manual(
+            scale_alpha_manual(
                 name = "Transcriptional Identity",
-                values = c("Phenotype detected" = "black"),
-                guide = guide_legend(
-                    override.aes = list(label = "*", size = 6),
-                    order = 1
+                values = c("*" = 1),
+                labels = "Phenotype detected",
+                breaks = c("*")
+            ) +
+            guides(
+                alpha = guide_legend(
+                    override.aes = list(label = "*", size = 6, color = "black")
                 )
             )
     }
@@ -1010,20 +987,19 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             p <- p +
                 ggnewscale::new_scale("size") +
                 ggiraph::geom_text_interactive(
-                    ggplot2::aes(x = x, y = y, label = glyph, tooltip = .tooltip, size = glyph_size, alpha = autonomy_display),
+                    ggplot2::aes(x = x, y = y, label = glyph, tooltip = .tooltip, size = glyph_size),
                     data = g_draw,
                     color = glyph_draw_color,
-                    fontface = "bold", vjust = 0.43, hjust = 0.5,
-                    show.legend = FALSE
+                    fontface = "bold", vjust = 0.43, hjust = 0.5
                 ) + ggplot2::scale_size_identity(guide = "none")
         } else {
             p <- p +
                 ggnewscale::new_scale("size") +
                 ggplot2::geom_text(
-                    ggplot2::aes(x = x, y = y, label = glyph, size = glyph_size, alpha = autonomy_display),
+                    ggplot2::aes(x = x, y = y, label = glyph, size = glyph_size),
                     data = g_draw,
                     color = glyph_draw_color,
-                    fontface = "bold", vjust = 0.43, hjust = 0.5, show.legend = FALSE
+                    fontface = "bold", vjust = 0.43, hjust = 0.5, show.legend = F
                 ) + ggplot2::scale_size_identity(guide = "none")
 
             glyph_legend_df <- data.frame(
@@ -1055,18 +1031,25 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             )
 
             p <- p +
-                ggnewscale::new_scale_color() +
                 geom_text(
                     data = glyph_legend_df,
-                    aes(x = x, y = y, label = glyph, color = glyph_type),
+                    aes(x = x, y = y, label = glyph, alpha = glyph_type),
                     inherit.aes = FALSE,
                     fontface = "bold",
-                    show.legend = TRUE
+                    colour = "black",
+                    show.legend = c(alpha = TRUE, size = FALSE)
                 ) +
-                scale_color_manual(
+                scale_alpha_manual(
                     name = "Glyphs",
                     breaks = glyph_order,
-                    values = stats::setNames(rep("black", length(glyph_order)), glyph_order),
+                    values = c(
+                        "Identity intact" = 1,
+                        "Maturation delay" = 1,
+                        "Precocious maturation" = 1,
+                        "Program failure" = 1,
+                        "Fate switch / misspecification" = 1,
+                        "Identity fragmentation" = 1
+                    ),
                     labels = c(
                         "Identity intact",
                         "Maturation delay",
