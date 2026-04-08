@@ -834,16 +834,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ),
             breaks = c("Cell-autonomous", "Non-autonomous"),
             drop = FALSE,
-            guide = ggplot2::guide_legend(
-                order = 5,
-                override.aes = list(
-                    shape = 21,
-                    size = 7,
-                    fill = "black",
-                    colour = "black",
-                    stroke = 0.5
-                )
-            )
+            guide = ggplot2::guide_legend(order = 5)
         ) +
         ggplot2::scale_size_identity(guide = "none") +
         ggplot2::scale_fill_manual(
@@ -874,8 +865,6 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             levels = c("severe", "medium", "mild", "none", "not_present")
         )
     )
-    fill_legend_outline <- if (identical(render_mode, "tissue")) NA else "black"
-    fill_legend_stroke <- if (identical(render_mode, "tissue")) 0 else 0.5
 
     p <- p +
         ggnewscale::new_scale_fill() +
@@ -885,8 +874,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             inherit.aes = FALSE,
             shape = 21,
             size = 4,
-            colour = fill_legend_outline,
-            stroke = fill_legend_stroke,
+            colour = "black",
+            stroke = 0.5,
             show.legend = c(color = TRUE, size = FALSE)
         ) +
         ggplot2::scale_fill_manual(
@@ -912,8 +901,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 override.aes = list(
                     shape = 21,
                     size = 7,
-                    colour = fill_legend_outline,
-                    stroke = fill_legend_stroke,
+                    colour = "black",
+                    stroke = 0.5,
                     alpha = 1
                 )
             )
@@ -939,14 +928,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             values = c("Powered" = node_size * 1.6, "Underpowered" = node_size * 0.8),
             guide = guide_legend(
                 order = 3,
-                override.aes = list(
-                    shape = 21,
-                    fill = "black",
-                    colour = "black",
-                    stroke = 0.5,
-                    alpha = 1,
-                    size = c(7, 4.5)
-                )
+                override.aes = list(size = c(7, 4.5))
             ),
             name = "Size"
         )
@@ -978,14 +960,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 ),
                 guide = ggplot2::guide_legend(
                     order = 4,
-                    override.aes = list(
-                        shape = c(21, 22),
-                        size = 7,
-                        fill = "white",
-                        colour = "black",
-                        alpha = 1,
-                        stroke = 0.6
-                    )
+                    override.aes = list(size = 7, stroke = 0.6)
                 )
             )
     } else {
@@ -999,14 +974,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 ),
                 guide = ggplot2::guide_legend(
                     order = 4,
-                    override.aes = list(
-                        shape = c(21, 22),
-                        size = 7,
-                        fill = "white",
-                        colour = "black",
-                        alpha = 1,
-                        stroke = 0.6
-                    )
+                    override.aes = list(size = 7, stroke = 0.6)
                 )
             ) + guides(shape = "none")
     }
@@ -1116,7 +1084,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 breaks = glyph_order,
                 values = stats::setNames(rep("black", length(glyph_order)), glyph_order),
                 labels = c(
-                    "Identity intact" = "\u2003\u2003 Identity intact",
+                    "Identity intact" = "blank Identity intact",
                     "Maturation delay" = "<< Maturation delay",
                     "Precocious maturation" = ">> Precocious maturation",
                     "Program failure" = "!! Program failure",
@@ -1161,9 +1129,9 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         legend_box_final <- "horizontal"
         legend_direction_final <- "vertical"
         if (identical(render_mode, "global")) {
-            legend_title_size <- 30
-            legend_text_size <- 25.5
-            legend_key_size <- grid::unit(30, "pt")
+            legend_title_size <- 10
+            legend_text_size <- 8.5
+            legend_key_size <- grid::unit(10, "pt")
         } else {
             legend_title_size <- 7.5
             legend_text_size <- 6.375
@@ -1177,7 +1145,6 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         legend.direction = legend_direction_final,
         legend.title = ggplot2::element_text(size = legend_title_size),
         legend.text = ggplot2::element_text(size = legend_text_size),
-        legend.text.align = 0,
         legend.key.size = legend_key_size
     )
 
