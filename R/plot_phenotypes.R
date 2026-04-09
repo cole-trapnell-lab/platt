@@ -882,9 +882,10 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ggplot2::aes(x = x, y = y, fill = severity_fill),
             inherit.aes = FALSE,
             shape = 21,
-            size = 4,
-            colour = "black",
-            stroke = 0.5,
+            size = 0,
+            alpha = 0,
+            colour = NA,
+            stroke = 0,
             show.legend = c(fill = TRUE)
         ) +
         ggplot2::scale_fill_manual(
@@ -937,10 +938,13 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ggplot2::aes(x = x, y = y, size = size_value),
             inherit.aes = FALSE,
             shape = 21,
-                fill = "black",
-                stroke = 0.5,
-                show.legend = c(size = TRUE)
-            ) +
+            size = 0,
+            alpha = 0,
+            fill = NA,
+            colour = NA,
+            stroke = 0,
+            show.legend = c(size = TRUE)
+        ) +
         ggplot2::scale_size_manual(
             values = c("Powered" = node_size * 1.6, "Underpowered" = node_size * 0.8),
             guide = guide_legend(
@@ -970,10 +974,11 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 data = shape_legend_df,
                 ggplot2::aes(x = x, y = y, shape = shape_value),
                 inherit.aes = FALSE,
-                color = "black",
-                fill = "white",
-                stroke = 0.5,
-                size = 3,
+                color = NA,
+                fill = NA,
+                stroke = 0,
+                size = 0,
+                alpha = 0,
                 show.legend = c(shape = TRUE)
             ) +
             ggplot2::scale_shape_manual(
@@ -1035,10 +1040,11 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ggplot2::aes(x = x, y = y, alpha = autonomy_display),
             inherit.aes = FALSE,
             shape = 21,
-            size = 4,
-            fill = "black",
-            colour = "black",
-            stroke = 0.5,
+            size = 0,
+            fill = NA,
+            colour = NA,
+            stroke = 0,
+            alpha = 0,
             show.legend = c(alpha = TRUE)
         ) +
         ggplot2::scale_alpha_manual(
@@ -1087,6 +1093,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 inherit.aes = FALSE,
                 alpha = 0,
                 size = 0,
+                shape = NA,
                 show.legend = c(color = TRUE)
             ) +
             scale_color_manual(
@@ -1094,7 +1101,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 values = c("Phenotype detected" = "black"),
                 labels = c("Phenotype detected" = "* Phenotype detected"),
                 guide = guide_legend(
-                    override.aes = list(alpha = 0, size = 0, shape = NA),
+                    override.aes = list(alpha = 0, size = 0, shape = NA, colour = NA, fill = NA, stroke = 0),
                     order = 2
                 )
             )
@@ -1161,6 +1168,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 inherit.aes = FALSE,
                 alpha = 0,
                 size = 0,
+                shape = NA,
                 show.legend = c(color = TRUE)
             ) +
             scale_color_manual(
@@ -1179,7 +1187,10 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                     override.aes = list(
                         alpha = 0,
                         size = 0,
-                        shape = NA
+                        shape = NA,
+                        colour = NA,
+                        fill = NA,
+                        stroke = 0
                     ),
                     order = 6
                 )
