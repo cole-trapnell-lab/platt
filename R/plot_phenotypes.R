@@ -910,6 +910,13 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 override.aes = list(
                     shape = 21,
                     size = 7,
+                    fill = c(
+                        unname(phenotype_colors["abundance_loss"]),
+                        unname(phenotype_colors["identity"]),
+                        unname(phenotype_colors["abundance_gain"]),
+                        unname(phenotype_colors["none"]),
+                        unname(phenotype_colors["not_present"])
+                    ),
                     colour = "black",
                     stroke = 0.5,
                     alpha = 1
@@ -1061,6 +1068,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             x = NA_real_,
             y = NA_real_,
             identity_marker_label = "Phenotype detected",
+            identity_marker_glyph = "*",
             stringsAsFactors = FALSE
         )
         p <- p +
@@ -1074,19 +1082,19 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 hjust = 0.5
             ) +
             ggnewscale::new_scale_color() +
-            ggplot2::geom_point(
+            ggplot2::geom_text(
                 data = identity_marker_legend_df,
-                aes(x = x, y = y, color = identity_marker_label),
+                aes(x = x, y = y, label = identity_marker_glyph, color = identity_marker_label),
                 inherit.aes = FALSE,
-                show.legend = TRUE,
-                shape = 8,
-                size = 3
+                fontface = "bold",
+                key_glyph = ggplot2::draw_key_text,
+                show.legend = c(color = TRUE)
             ) +
             scale_color_manual(
                 name = "Transcriptional Identity",
                 values = c("Phenotype detected" = "black"),
                 guide = guide_legend(
-                    override.aes = list(shape = 8, size = 6),
+                    override.aes = list(label = "*", size = 6, alpha = 1),
                     order = 2
                 )
             )
@@ -1147,12 +1155,12 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         }
         p <- p +
             ggnewscale::new_scale_color() +
-            ggplot2::geom_point(
+            ggplot2::geom_text(
                 data = glyph_legend_df,
-                aes(x = x, y = y, color = glyph_type),
+                aes(x = x, y = y, label = glyph, color = glyph_type),
                 inherit.aes = FALSE,
-                alpha = 0,
-                size = 0,
+                fontface = "bold",
+                key_glyph = ggplot2::draw_key_text,
                 show.legend = c(color = TRUE)
             ) +
             scale_color_manual(
@@ -1169,9 +1177,9 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 ),
                 guide = guide_legend(
                     override.aes = list(
-                        alpha = 0,
-                        size = 0,
-                        shape = NA
+                        label = c("", "<<", ">>", "!!", "<>", "##"),
+                        size = 5,
+                        alpha = 1
                     ),
                     order = 6
                 )
