@@ -813,7 +813,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 ggplot2::aes(x = x, y = y, tooltip = .tooltip, fill = severity_fill, shape = expected_shape, size = power_status, alpha = autonomy_display),
                 data = g_draw,
                 color = "black",
-                stroke = if (identical(render_mode, "global")) 0.7 else 0.5
+                stroke = if (identical(render_mode, "global")) 0.7 else 0.5,
+                show.legend = FALSE
             )
     } else {
         p <- p +
@@ -821,11 +822,32 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 ggplot2::aes(x = x, y = y, fill = severity_fill, shape = expected_shape, size = power_status, alpha = autonomy_display),
                 data = g_draw,
                 color = "black",
-                stroke = if (identical(render_mode, "global")) 0.7 else 0.5
+                stroke = if (identical(render_mode, "global")) 0.7 else 0.5,
+                show.legend = FALSE
             )
     }
 
+    autonomy_legend_df <- data.frame(
+        x = NA_real_,
+        y = NA_real_,
+        autonomy_display = factor(
+            c("Cell-autonomous", "Non-autonomous"),
+            levels = c("Cell-autonomous", "Non-autonomous")
+        )
+    )
+
     p <- p +
+        ggplot2::geom_point(
+            data = autonomy_legend_df,
+            ggplot2::aes(x = x, y = y, alpha = autonomy_display),
+            inherit.aes = FALSE,
+            shape = 21,
+            size = 4,
+            fill = "black",
+            colour = "black",
+            stroke = 0.5,
+            show.legend = c(alpha = TRUE)
+        ) +
         ggplot2::scale_alpha_manual(
             name = "Autonomy",
             values = c(
@@ -886,7 +908,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             size = 4,
             colour = "black",
             stroke = 0.5,
-            show.legend = c(color = TRUE, size = FALSE)
+            show.legend = c(fill = TRUE)
         ) +
         ggplot2::scale_fill_manual(
             values = c(
@@ -930,10 +952,10 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ggplot2::aes(x = x, y = y, size = size_value),
             inherit.aes = FALSE,
             shape = 21,
-            fill = "black",
-            stroke = 0.5,
-            show.legend = c(color = FALSE, size = TRUE)
-        ) +
+                fill = "black",
+                stroke = 0.5,
+                show.legend = c(size = TRUE)
+            ) +
         ggplot2::scale_size_manual(
             values = c("Powered" = node_size * 1.6, "Underpowered" = node_size * 0.8),
             guide = guide_legend(
@@ -966,7 +988,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 fill = "white",
                 stroke = 0.5,
                 size = 3,
-                show.legend = c(color = FALSE, size = TRUE)
+                show.legend = c(shape = TRUE)
             ) +
             ggplot2::scale_shape_manual(
                 values = c("Observed phenotype" = 21, "Expected phenotype" = 22),
