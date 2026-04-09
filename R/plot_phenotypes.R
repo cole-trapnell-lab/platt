@@ -827,27 +827,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             )
     }
 
-    autonomy_legend_df <- data.frame(
-        x = NA_real_,
-        y = NA_real_,
-        autonomy_display = factor(
-            c("Cell-autonomous", "Non-autonomous"),
-            levels = c("Cell-autonomous", "Non-autonomous")
-        )
-    )
-
     p <- p +
-        ggplot2::geom_point(
-            data = autonomy_legend_df,
-            ggplot2::aes(x = x, y = y, alpha = autonomy_display),
-            inherit.aes = FALSE,
-            shape = 21,
-            size = 4,
-            fill = "black",
-            colour = "black",
-            stroke = 0.5,
-            show.legend = c(alpha = TRUE)
-        ) +
         ggplot2::scale_alpha_manual(
             name = "Autonomy",
             values = c(
@@ -856,19 +836,12 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ),
             breaks = c("Cell-autonomous", "Non-autonomous"),
             drop = FALSE,
-            guide = ggplot2::guide_legend(
-                order = 5,
-                override.aes = list(
-                    shape = 21,
-                    size = 7,
-                    fill = "black",
-                    colour = "black",
-                    stroke = 0.5,
-                    alpha = c(1, 0.45)
-                )
-            )
+            guide = "none"
         ) +
-        ggplot2::scale_size_identity(guide = "none") +
+        ggplot2::scale_size_manual(
+            values = c("Powered" = node_size * 1.6, "Underpowered" = node_size * 0.8),
+            guide = "none"
+        ) +
         ggplot2::scale_fill_manual(
             values = c(
                 severe = unname(phenotype_colors["abundance_loss"]),
@@ -886,6 +859,10 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 not_present = "Not present"
             ),
             name = if (identical(render_mode, "global")) NULL else "Node color",
+            guide = "none"
+        ) +
+        ggplot2::scale_shape_manual(
+            values = c("Observed phenotype" = 21, "Expected phenotype" = 22),
             guide = "none"
         )
 
@@ -947,6 +924,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     )
 
     p <- p +
+        ggnewscale::new_scale("size") +
         ggplot2::geom_point(
             data = size_legend_df,
             ggplot2::aes(x = x, y = y, size = size_value),
@@ -980,6 +958,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
 
     if ("Expected phenotype" %in% unique(g_draw$expected_shape)) {
         p <- p +
+            ggnewscale::new_scale("shape") +
             ggplot2::geom_point(
                 data = shape_legend_df,
                 ggplot2::aes(x = x, y = y, shape = shape_value),
@@ -1011,6 +990,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             )
     } else {
         p <- p +
+            ggnewscale::new_scale("shape") +
             ggplot2::scale_shape_manual(
                 values = c("Observed phenotype" = 21, "Expected phenotype" = 22),
                 name = "Shape",
@@ -1031,6 +1011,49 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 )
             ) + guides(shape = "none")
     }
+
+    autonomy_legend_df <- data.frame(
+        x = NA_real_,
+        y = NA_real_,
+        autonomy_display = factor(
+            c("Cell-autonomous", "Non-autonomous"),
+            levels = c("Cell-autonomous", "Non-autonomous")
+        )
+    )
+
+    p <- p +
+        ggnewscale::new_scale("alpha") +
+        ggplot2::geom_point(
+            data = autonomy_legend_df,
+            ggplot2::aes(x = x, y = y, alpha = autonomy_display),
+            inherit.aes = FALSE,
+            shape = 21,
+            size = 4,
+            fill = "black",
+            colour = "black",
+            stroke = 0.5,
+            show.legend = c(alpha = TRUE)
+        ) +
+        ggplot2::scale_alpha_manual(
+            name = "Autonomy",
+            values = c(
+                "Cell-autonomous" = 1,
+                "Non-autonomous" = 0.45
+            ),
+            breaks = c("Cell-autonomous", "Non-autonomous"),
+            drop = FALSE,
+            guide = ggplot2::guide_legend(
+                order = 5,
+                override.aes = list(
+                    shape = 21,
+                    size = 7,
+                    fill = "black",
+                    colour = "black",
+                    stroke = 0.5,
+                    alpha = c(1, 0.45)
+                )
+            )
+        )
 
 
     if (isTRUE(global_identity_marker)) {
