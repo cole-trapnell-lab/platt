@@ -1039,8 +1039,9 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             data = autonomy_legend_df,
             ggplot2::aes(x = x, y = y, alpha = autonomy_display),
             inherit.aes = FALSE,
-            shape = 16,
+            shape = 21,
             size = 0.01,
+            fill = "white",
             colour = "black",
             stroke = 0,
             show.legend = c(alpha = TRUE)
@@ -1056,10 +1057,11 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             guide = ggplot2::guide_legend(
                 order = 5,
                 override.aes = list(
-                    shape = 16,
+                    shape = 21,
                     size = 7,
+                    fill = "white",
                     colour = "black",
-                    stroke = 0,
+                    stroke = 0.5,
                     alpha = c(1, 0.45)
                 )
             )
