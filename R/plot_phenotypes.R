@@ -910,7 +910,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 order = 1,
                 override.aes = list(
                     shape = 21,
-                    size = 7,
+                    size = 10.5,
                     fill = c(
                         unname(phenotype_colors["abundance_loss"]),
                         unname(phenotype_colors["identity"]),
@@ -955,7 +955,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                     colour = "black",
                     stroke = 0.5,
                     alpha = 1,
-                    size = c(7, 4.5)
+                    size = c(10.5, 6.75)
                 )
             ),
             name = "Size"
@@ -992,7 +992,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                     order = 4,
                     override.aes = list(
                         shape = c(21, 22),
-                        size = 7,
+                        size = 10.5,
                         fill = "white",
                         colour = "black",
                         alpha = 1,
@@ -1014,7 +1014,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                     order = 4,
                     override.aes = list(
                         shape = c(21, 22),
-                        size = 7,
+                        size = 10.5,
                         fill = "white",
                         colour = "black",
                         alpha = 1,
@@ -1057,7 +1057,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 order = 5,
                 override.aes = list(
                     shape = 16,
-                    size = 7,
+                    size = 10.5,
                     colour = "black",
                     stroke = 0,
                     alpha = c(1, 0.45)
