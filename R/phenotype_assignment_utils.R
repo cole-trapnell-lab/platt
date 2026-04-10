@@ -28,7 +28,7 @@ run_fgsea_modules <- function(rank_vec,
     gs <- lapply(gene_sets, function(v) intersect(unique(v), names(rank_vec)))
     keep <- lengths(gs) >= minSize
     if (!any(keep)) {
-        return(tibble(path = character(), NES = numeric(), padj = numeric(), size = integer()))
+        return(tibble(path = character(), NES = numeric(), padj = numeric(), size = integer(), leading_edge = character()))
     }
     gs <- gs[keep]
     suppressWarnings({
@@ -39,7 +39,9 @@ run_fgsea_modules <- function(rank_vec,
     })
     res %>%
         as_tibble() %>%
-        select(pathway, size, NES, padj) %>%
+        select(pathway, size, NES, padj, leadingEdge) %>%
+        mutate(leading_edge = vapply(leadingEdge, function(x) paste(x, collapse = ";"), character(1))) %>%
+        select(pathway, size, NES, padj, leading_edge) %>%
         arrange(padj, desc(abs(NES))) %>%
         rename(path = pathway)
 }
