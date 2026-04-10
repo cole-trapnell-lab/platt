@@ -370,8 +370,8 @@ assign_phenotypes_to_cell_types <- function(
         dact_row <- dact_tbl %>% filter(cell_group == ct)
         abundance_code <- if (nrow(dact_row) > 0) assign_abundance_code(dact_row$change_when_present, dact_row$change_when_present_q_val) else NA_character_
         abundance_severity <- if (nrow(dact_row) > 0) assign_abundance_severity(dact_row$change_when_present, dact_row$change_when_present_q_val) else NA_character_
-        identity_labels <- assign_identity_maturation_labels(deg_tbl, ct, identity_gene_sets, combined_psg, minSize = minSize, nperm = nperm, maxSize = maxSize)
-        fitness_labels <- assign_fitness_labels(deg_tbl, ct, gene_sets, minSize = minSize, nperm = nperm, maxSize = maxSize)
+        identity_assignment <- assign_identity_maturation_labels(deg_tbl, ct, identity_gene_sets, combined_psg, minSize = minSize, nperm = nperm, maxSize = maxSize)
+        fitness_assignment <- assign_fitness_labels(deg_tbl, ct, gene_sets, minSize = minSize, nperm = nperm, maxSize = maxSize)
         if (!is.null(log_fn)) {
             elapsed <- as.numeric(difftime(Sys.time(), ct_start, units = "secs"))
             log_fn(sprintf(
@@ -388,8 +388,10 @@ assign_phenotypes_to_cell_types <- function(
             time_window_end = perturb_time_window$stop_time,
             abundance_code = abundance_code,
             abundance_severity = abundance_severity,
-            fitness_labels = list(fitness_labels),
-            identity_labels = list(identity_labels)
+            fitness_labels = list(fitness_assignment$labels),
+            fitness_fgsea = list(fitness_assignment$fgsea_res),
+            identity_labels = list(identity_assignment$labels),
+            identity_fgsea = list(identity_assignment$fgsea_res)
         )
     }
     results <- if (num_threads > 1) {
@@ -439,9 +441,15 @@ assign_fitness_labels <- function(deg_tbl, ct, gene_sets,
     if (nrow(degs_this_cell) > 0) {
         rank_vec <- make_rank(degs_this_cell, gene_col = "gene_short_name", logFC_col = "perturb_to_ctrl_shrunken_lfc")
         fgsea_res <- run_fgsea_modules(rank_vec, gene_sets, minSize = minSize, maxSize = maxSize, nperm = nperm)
-        classify_fitness(fgsea_res)
+        list(
+            labels = classify_fitness(fgsea_res),
+            fgsea_res = fgsea_res
+        )
     } else {
-        tibble(label = NA_character_, severity = NA_character_, evidence = NA_character_)
+        list(
+            labels = tibble(fitness_label = NA_character_, severity = NA_character_, evidence = NA_character_),
+            fgsea_res = tibble()
+        )
     }
 }
 
@@ -452,7 +460,10 @@ assign_identity_maturation_labels <- function(deg_tbl, ct, identity_gene_sets, c
                                               nperm = 10000) {
     degs_this_cell <- deg_tbl %>% filter(cell_group == ct)
     if (nrow(degs_this_cell) == 0) {
-        return(tibble(identity_label = "I0 Identity intact", evidence = NA_character_))
+        return(list(
+            labels = tibble(identity_label = "I0 Identity intact", evidence = NA_character_),
+            fgsea_res = tibble()
+        ))
     }
 
     # Get lineage info
@@ -567,7 +578,10 @@ assign_identity_maturation_labels <- function(deg_tbl, ct, identity_gene_sets, c
         evidence <- paste("Identity sets upregulated:", paste(identity_up$gene_set_name, collapse = ", "))
     }
 
-    tibble(identity_label = label, evidence = evidence)
+    list(
+        labels = tibble(identity_label = label, evidence = evidence),
+        fgsea_res = fgsea_res
+    )
 }
 
 write_phenotype_outputs <- function(phenotype_tbl, base_dir) {
@@ -595,6 +609,14 @@ write_phenotype_outputs <- function(phenotype_tbl, base_dir) {
                     readr::write_tsv(fitness_tsv)
             }
 
+            fitness_fgsea_tsv <- file.path(out_dir, "fitness_fgsea.tsv")
+            if ("fitness_fgsea" %in% colnames(.x)) {
+                .x %>%
+                    select(cell_group, fitness_fgsea) %>%
+                    unnest(fitness_fgsea) %>%
+                    readr::write_tsv(fitness_fgsea_tsv)
+            }
+
             # Write identity/maturation info (unnest identity_labels if present)
             identity_tsv <- file.path(out_dir, "identity_phenotypes.tsv")
             if ("identity_labels" %in% colnames(.x)) {
@@ -602,6 +624,14 @@ write_phenotype_outputs <- function(phenotype_tbl, base_dir) {
                     select(cell_group, identity_labels) %>%
                     unnest(identity_labels) %>%
                     readr::write_tsv(identity_tsv)
+            }
+
+            identity_fgsea_tsv <- file.path(out_dir, "identity_fgsea.tsv")
+            if ("identity_fgsea" %in% colnames(.x)) {
+                .x %>%
+                    select(cell_group, identity_fgsea) %>%
+                    unnest(identity_fgsea) %>%
+                    readr::write_tsv(identity_fgsea_tsv)
             }
         })
 }
