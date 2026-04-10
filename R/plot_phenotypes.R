@@ -17,7 +17,7 @@ phenotype_colors <- c(
     "apoptosis"      = "#000000",
     "stress"         = "#4daf4a",
     "senescence"     = "#a65628",
-    "not present"    = "#cccccc"
+    "not_present"    = "#cccccc"
 )
 
 
@@ -1040,11 +1040,10 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ggplot2::aes(x = x, y = y, alpha = autonomy_display),
             inherit.aes = FALSE,
             shape = 21,
-            size = 0,
-            fill = NA,
-            colour = NA,
+            size = 0.01,
+            fill = "black",
+            colour = "black",
             stroke = 0,
-            alpha = 0,
             show.legend = c(alpha = TRUE)
         ) +
         ggplot2::scale_alpha_manual(
