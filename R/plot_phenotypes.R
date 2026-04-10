@@ -882,9 +882,9 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ggplot2::aes(x = x, y = y, fill = severity_fill),
             inherit.aes = FALSE,
             shape = 21,
-            size = 0,
-            alpha = 0,
-            colour = NA,
+            size = 0.01,
+            alpha = 1,
+            colour = "black",
             stroke = 0,
             show.legend = c(fill = TRUE)
         ) +
@@ -911,13 +911,6 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 override.aes = list(
                     shape = 21,
                     size = 7,
-                    fill = c(
-                        unname(phenotype_colors["abundance_loss"]),
-                        unname(phenotype_colors["identity"]),
-                        unname(phenotype_colors["abundance_gain"]),
-                        unname(phenotype_colors["none"]),
-                        unname(phenotype_colors["not_present"])
-                    ),
                     colour = "black",
                     stroke = 0.5,
                     alpha = 1
@@ -1040,11 +1033,10 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ggplot2::aes(x = x, y = y, alpha = autonomy_display),
             inherit.aes = FALSE,
             shape = 21,
-            size = 0,
-            fill = NA,
-            colour = NA,
+            size = 0.01,
+            fill = "black",
+            colour = "black",
             stroke = 0,
-            alpha = 0,
             show.legend = c(alpha = TRUE)
         ) +
         ggplot2::scale_alpha_manual(
