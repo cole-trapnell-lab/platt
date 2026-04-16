@@ -571,6 +571,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     node_overlay <- match.arg(node_overlay)
     render_mode <- match.arg(render_mode)
     bottom_legend <- identical(legend_position, "bottom")
+    has_power_column <- "power" %in% names(phenos_df)
     legend_point_size <- 4 * legend_scale
     legend_shape_size <- 3 * legend_scale
     legend_text_size <- 6 * legend_scale
@@ -822,7 +823,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     if (isTRUE(interactive)) {
         p <- p +
             ggiraph::geom_point_interactive(
-                ggplot2::aes(x = x, y = y, tooltip = .tooltip, fill = node_fill_color, shape = expected_shape, size = power_status),
+                ggplot2::aes(x = x, y = y, tooltip = .tooltip, fill = node_fill_color, shape = expected_shape, size = node_size_plot),
                 data = g_draw,
                 color = "black",
                 stroke = if (identical(render_mode, "global")) 0.7 else 0.5
@@ -830,7 +831,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     } else {
         p <- p +
             ggplot2::geom_point(
-                ggplot2::aes(x = x, y = y, fill = node_fill_color, shape = expected_shape, size = power_status),
+                ggplot2::aes(x = x, y = y, fill = node_fill_color, shape = expected_shape, size = node_size_plot),
                 data = g_draw,
                 color = "black",
                 stroke = if (identical(render_mode, "global")) 0.7 else 0.5
@@ -839,7 +840,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
 
     p <- p +
         # ggplot2::geom_point(
-        #     aes(x = x, y = y, fill = severity_fill, shape = expected_shape, size = power_status),
+        #     aes(x = x, y = y, fill = severity_fill, shape = expected_shape, size = node_size_plot),
         #     data = g_draw,
         #     stroke = if (identical(render_mode, "global")) 0.7 else 0.5
         # ) +
@@ -937,31 +938,33 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             )
         )
 
-    size_legend_df <- data.frame(
-        x = NA_real_,
-        y = NA_real_,
-        size_value = c("Powered", "Underpowered")
-    )
-
-    p <- p +
-        ggplot2::geom_point(
-            data = size_legend_df,
-            ggplot2::aes(x = x, y = y, size = size_value),
-            inherit.aes = FALSE,
-            shape = 21,
-            fill = "black",
-            stroke = 0.5,
-            show.legend = c(color = FALSE, size = TRUE)
-        ) +
-        ggplot2::scale_size_manual(
-            values = c("Powered" = node_size * 1.6, "Underpowered" = node_size * 0.8),
-            guide = guide_legend(
-                ncol = if (bottom_legend) 1 else NULL,
-                title.position = if (bottom_legend) "top" else NULL,
-                override.aes = list(size = c(1.6 * 2, 0.8 * 2) * legend_scale)
-            ),
-            name = "Size"
+    if (has_power_column) {
+        size_legend_df <- data.frame(
+            x = NA_real_,
+            y = NA_real_,
+            size_value = c("Powered", "Underpowered")
         )
+
+        p <- p +
+            ggplot2::geom_point(
+                data = size_legend_df,
+                ggplot2::aes(x = x, y = y, size = size_value),
+                inherit.aes = FALSE,
+                shape = 21,
+                fill = "black",
+                stroke = 0.5,
+                show.legend = c(color = FALSE, size = TRUE)
+            ) +
+            ggplot2::scale_size_manual(
+                values = c("Powered" = node_size * 1.6, "Underpowered" = node_size * 0.8),
+                guide = guide_legend(
+                    ncol = if (bottom_legend) 1 else NULL,
+                    title.position = if (bottom_legend) "top" else NULL,
+                    override.aes = list(size = c(1.6 * 2, 0.8 * 2) * legend_scale)
+                ),
+                name = "Size"
+            )
+    }
 
     shape_legend_df <- data.frame(
         x = NA_real_,
@@ -1032,8 +1035,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     if (show_node_glyphs) {
         glyph_draw_color <- if (is.null(glyph_color)) g$glyph_col else glyph_color
         g_draw$glyph_size <- case_when(
-            g_draw$power_status == "Powered" ~ node_size * 1.6 * 0.5,
-            TRUE ~ node_size * 0.8 * 0.6
+            has_power_column & g_draw$power_status == "Underpowered" ~ node_size * 0.8 * 0.6,
+            TRUE ~ node_size * 1.6 * 0.5
         )
         if (isTRUE(interactive)) {
             p <- p +
