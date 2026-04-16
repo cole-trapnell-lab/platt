@@ -832,6 +832,7 @@ plot_annotations <- function(cell_state_graph,
                              arrow_unit = 7,
                              node_size = 2,
                              arrow_color = "darkgrey",
+                             box_color = "lightgrey",
                              legend_position = "none",
                              min_edge_size = 0.1,
                              max_edge_size = 2,
@@ -885,20 +886,21 @@ plot_annotations <- function(cell_state_graph,
     )
 
   if (is.null(grouping_df) == FALSE && identical(grouping_df$group_nodes_by, grouping_df$id) == FALSE) {
-    p <- p + ggforce::geom_mark_rect(aes(x, y, group = group_nodes_by, color = I("lightgrey")),
+    p <- p + ggforce::geom_mark_rect(aes(x, y, group = group_nodes_by, color = I(box_color)),
       size = 0.25,
       radius = unit(0.5, "mm"),
       expand = unit(1, "mm"),
       # con.linetype="dotted",
       con.type = "straight",
-      con.colour = "lightgrey",
+      con.colour = box_color,
       con.size = 0.25,
       con.border = "one",
       na.rm = TRUE,
       data = g
     )
-
-    p <- p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_size)
+    if (plot_labels) {
+      p <- p + geom_text(data = group_label_position_df, aes(x, y, label = group_nodes_by), size = group_label_size)
+    }
     plot_labels <- FALSE
     color_nodes_by <- group_nodes_by
   }
