@@ -140,7 +140,7 @@ impact_to_phenos <- function(impact_table,
                                  "I1 Maturation delay" = "<<",
                                  "I2 Precocious maturation" = ">>",
                                  "I3 Program failure within identity" = "!!",
-                                 "I4 Fate switch / misspecification" = "⬌",
+                                 "I4 Fate switch / misspecification" = "<>",
                                  "I5 Identity fragmentation" = ""
                              )) {
     stopifnot(all(c(
@@ -194,7 +194,7 @@ impact_to_phenos <- function(impact_table,
     tab$identity_code <- ident_code
     id_map_full <- c(
         setNames(identity_glyph_map, names(identity_glyph_map)),
-        c(I0 = "", I1 = "<<", I2 = ">>", I3 = "!!", I4 = "⬌", I5 = "")
+        c(I0 = "", I1 = "<<", I2 = ">>", I3 = "!!", I4 = "<>", I5 = "")
     )
     tab$identity_glyph <- unname(id_map_full[ifelse(grepl("^I[0-5]$", ident_code), ident_code, tab$identity_label)])
     tab$identity_glyph[is.na(tab$identity_glyph)] <- ""
@@ -562,6 +562,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                                    height = NULL) {
     node_overlay <- match.arg(node_overlay)
     render_mode <- match.arg(render_mode)
+    bottom_legend <- identical(legend_position, "bottom")
     show_node_glyphs <- node_overlay %in% c("glyphs", "both")
     global_identity_marker <- identical(render_mode, "global")
 
@@ -878,6 +879,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             name = "Node color",
             guide = ggplot2::guide_legend(
                 order = 1,
+                ncol = if (bottom_legend) 1 else NULL,
+                title.position = if (bottom_legend) "top" else NULL,
                 override.aes = list(
                     shape = 21,
                     size = 4,
@@ -907,6 +910,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         ggplot2::scale_size_manual(
             values = c("Powered" = node_size * 1.6, "Underpowered" = node_size * 0.8),
             guide = guide_legend(
+                ncol = if (bottom_legend) 1 else NULL,
+                title.position = if (bottom_legend) "top" else NULL,
                 override.aes = list(size = c(1.6 * 2, 0.8 * 2))
             ),
             name = "Size"
@@ -932,13 +937,21 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ) +
             ggplot2::scale_shape_manual(
                 values = c("Observed phenotype" = 21, "Expected phenotype" = 22),
-                name = "Shape"
+                name = "Shape",
+                guide = ggplot2::guide_legend(
+                    ncol = if (bottom_legend) 1 else NULL,
+                    title.position = if (bottom_legend) "top" else NULL
+                )
             )
     } else {
         p <- p +
             ggplot2::scale_shape_manual(
                 values = c("Observed phenotype" = 21, "Expected phenotype" = 22),
-                name = "Shape"
+                name = "Shape",
+                guide = ggplot2::guide_legend(
+                    ncol = if (bottom_legend) 1 else NULL,
+                    title.position = if (bottom_legend) "top" else NULL
+                )
             ) + guides(shape = "none")
     }
 
@@ -963,6 +976,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ) +
             guides(
                 alpha = guide_legend(
+                    ncol = if (bottom_legend) 1 else NULL,
+                    title.position = if (bottom_legend) "top" else NULL,
                     override.aes = list(label = "*", size = 6, color = "black")
                 )
             )
@@ -992,12 +1007,57 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                     color = glyph_draw_color,
                     fontface = "bold", vjust = 0.43, hjust = 0.5, show.legend = F
                 ) + ggplot2::scale_size_identity(guide = "none")
+        }
 
-            glyph_legend_df <- data.frame(
-                x = NA_real_,
-                y = NA_real_,
-                glyph = c("", "<<", ">>", "!!", "<>", "##"),
-                glyph_type = c(
+        glyph_legend_df <- data.frame(
+            x = NA_real_,
+            y = NA_real_,
+            glyph = c("", "<<", ">>", "!!", "<>", "##"),
+            glyph_type = c(
+                "Identity intact",
+                "Maturation delay",
+                "Precocious maturation",
+                "Program failure",
+                "Fate switch / misspecification",
+                "Identity fragmentation"
+            ),
+            stringsAsFactors = FALSE
+        )
+        glyph_order <- c(
+            "Identity intact",
+            "Maturation delay",
+            "Precocious maturation",
+            "Program failure",
+            "Fate switch / misspecification",
+            "Identity fragmentation"
+        )
+
+        glyph_legend_df$glyph_type <- factor(
+            glyph_legend_df$glyph_type,
+            levels = glyph_order
+        )
+
+        p <- p +
+            geom_text(
+                data = glyph_legend_df,
+                aes(x = x, y = y, label = glyph, alpha = glyph_type),
+                inherit.aes = FALSE,
+                fontface = "bold",
+                colour = "black",
+                show.legend = c(alpha = TRUE, size = FALSE)
+            ) +
+            scale_alpha_manual(
+                name = "Glyphs",
+                breaks = glyph_order,
+                values = c(
+                    "Identity intact" = 1,
+                    "Maturation delay" = 1,
+                    "Precocious maturation" = 1,
+                    "Program failure" = 1,
+                    "Fate switch / misspecification" = 1,
+                    "Identity fragmentation" = 1
+                ),
+                labels = c(
                     "Identity intact",
                     "Maturation delay",
                     "Precocious maturation",
@@ -1005,60 +1065,17 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                     "Fate switch / misspecification",
                     "Identity fragmentation"
                 ),
-                stringsAsFactors = FALSE
-            )
-            glyph_order <- c(
-                "Identity intact",
-                "Maturation delay",
-                "Precocious maturation",
-                "Program failure",
-                "Fate switch / misspecification",
-                "Identity fragmentation"
-            )
-
-            glyph_legend_df$glyph_type <- factor(
-                glyph_legend_df$glyph_type,
-                levels = glyph_order
-            )
-
-            p <- p +
-                geom_text(
-                    data = glyph_legend_df,
-                    aes(x = x, y = y, label = glyph, alpha = glyph_type),
-                    inherit.aes = FALSE,
-                    fontface = "bold",
-                    colour = "black",
-                    show.legend = c(alpha = TRUE, size = FALSE)
-                ) +
-                scale_alpha_manual(
-                    name = "Glyphs",
-                    breaks = glyph_order,
-                    values = c(
-                        "Identity intact" = 1,
-                        "Maturation delay" = 1,
-                        "Precocious maturation" = 1,
-                        "Program failure" = 1,
-                        "Fate switch / misspecification" = 1,
-                        "Identity fragmentation" = 1
+                guide = guide_legend(
+                    ncol = if (bottom_legend) 1 else NULL,
+                    title.position = if (bottom_legend) "top" else NULL,
+                    override.aes = list(
+                        label = c("", "<<", ">>", "!!", "<>", "##"),
+                        size = 3,
+                        colour = "black"
                     ),
-                    labels = c(
-                        "Identity intact",
-                        "Maturation delay",
-                        "Precocious maturation",
-                        "Program failure",
-                        "Fate switch / misspecification",
-                        "Identity fragmentation"
-                    ),
-                    guide = guide_legend(
-                        override.aes = list(
-                            label = c("", "<<", ">>", "!!", "<>", "##"),
-                            size = 3,
-                            colour = "black"
-                        ),
-                        order = 1
-                    )
+                    order = 1
                 )
-        }
+            )
     }
 
     label_target <- label_cell_types
