@@ -731,6 +731,17 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 primary_phenotype %in% c("abundance_gain", "fitness") ~ "mild",
                 TRUE ~ "none"
             ),
+            effect_type_norm = tolower(trimws(dplyr::coalesce(effect_type, ""))),
+            effect_fill_alpha = dplyr::case_when(
+                effect_type_norm == "non-autonomous" ~ 0.45,
+                TRUE ~ 1
+            ),
+            node_fill_color = dplyr::case_when(
+                severity_fill == "severe" ~ scales::alpha(unname(phenotype_colors["abundance_loss"]), effect_fill_alpha),
+                severity_fill == "medium" ~ scales::alpha(unname(phenotype_colors["identity"]), effect_fill_alpha),
+                severity_fill == "mild" ~ scales::alpha(unname(phenotype_colors["abundance_gain"]), effect_fill_alpha),
+                TRUE ~ scales::alpha(unname(phenotype_colors["none"]), effect_fill_alpha)
+            ),
             has_identity_change = !is.na(ident) & !(ident %in% c("I0", "I0 Identity intact", "Identity intact", "", NA)),
             expectation_norm = tolower(trimws(dplyr::coalesce(expectation, ""))),
             is_expected = expectation_norm %in% c("expected", "expected change"),
@@ -800,7 +811,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     if (isTRUE(interactive)) {
         p <- p +
             ggiraph::geom_point_interactive(
-                ggplot2::aes(x = x, y = y, tooltip = .tooltip, fill = severity_fill, shape = expected_shape, size = power_status),
+                ggplot2::aes(x = x, y = y, tooltip = .tooltip, fill = node_fill_color, shape = expected_shape, size = power_status),
                 data = g_draw,
                 color = "black",
                 stroke = if (identical(render_mode, "global")) 0.7 else 0.5
@@ -808,7 +819,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     } else {
         p <- p +
             ggplot2::geom_point(
-                ggplot2::aes(x = x, y = y, fill = severity_fill, shape = expected_shape, size = power_status),
+                ggplot2::aes(x = x, y = y, fill = node_fill_color, shape = expected_shape, size = power_status),
                 data = g_draw,
                 color = "black",
                 stroke = if (identical(render_mode, "global")) 0.7 else 0.5
@@ -822,23 +833,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         #     stroke = if (identical(render_mode, "global")) 0.7 else 0.5
         # ) +
         ggplot2::scale_size_identity(guide = "none") +
-        ggplot2::scale_fill_manual(
-            values = c(
-                severe = unname(phenotype_colors["abundance_loss"]),
-                medium = unname(phenotype_colors["identity"]),
-                mild = unname(phenotype_colors["abundance_gain"]),
-                none = unname(phenotype_colors["none"])
-            ),
-            breaks = color_priority,
-            labels = c(
-                severe = "Severe phenotype",
-                medium = "Medium phenotype",
-                mild = "Mild phenotype",
-                none = "No phenotype"
-            ),
-            name = if (identical(render_mode, "global")) NULL else "Node color",
-            guide = "none"
-        )
+        ggplot2::scale_fill_identity(guide = "none")
 
     fill_legend_df <- data.frame(
         x = NA_real_,
@@ -887,6 +882,46 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                     colour = "black",
                     stroke = 0.5,
                     alpha = 1
+                )
+            )
+        )
+
+    effect_legend_df <- data.frame(
+        x = NA_real_,
+        y = NA_real_,
+        effect_type_value = c("Cell-autonomous", "Non-autonomous")
+    )
+
+    p <- p +
+        ggnewscale::new_scale_fill() +
+        ggplot2::geom_point(
+            data = effect_legend_df,
+            ggplot2::aes(x = x, y = y, fill = effect_type_value),
+            inherit.aes = FALSE,
+            shape = 21,
+            size = 4,
+            colour = "black",
+            stroke = 0.5,
+            show.legend = c(color = FALSE, size = FALSE)
+        ) +
+        ggplot2::scale_fill_manual(
+            values = c(
+                "Cell-autonomous" = "#000000",
+                "Non-autonomous" = "#000000"
+            ),
+            breaks = c("Cell-autonomous", "Non-autonomous"),
+            drop = FALSE,
+            name = "Effect type",
+            guide = ggplot2::guide_legend(
+                order = 2,
+                ncol = if (bottom_legend) 1 else NULL,
+                title.position = if (bottom_legend) "top" else NULL,
+                override.aes = list(
+                    shape = 21,
+                    size = 4,
+                    colour = "black",
+                    stroke = 0.5,
+                    alpha = c(1, 0.45)
                 )
             )
         )
