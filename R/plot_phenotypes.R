@@ -499,6 +499,12 @@ phenotype_tooltip_builder <- function(g, render_mode = c("tissue", "global")) {
 #' @param legend_position Legend position passed to `theme(legend.position=...)`.
 #'   Default is `"none"` to preserve historical no-legend behavior.
 #'   (e.g. `"right"`, `"bottom"`, `"top"`, `"left"`, or `"none"` to hide).
+#' @param legend_scale Numeric multiplier applied to legend symbol, key, and
+#'   text sizing. Use values above `1` to enlarge the legend and below `1` to
+#'   shrink it.
+#' @param non_autonomous_alpha Numeric alpha used for nodes with
+#'   `effect_type == "Non-autonomous"`. `Cell-autonomous` nodes remain fully
+#'   opaque.
 #' @param label_cell_types Optional character vector of node names to label, or
 #'   `"all"`.
 #' @param show_node_labels Logical. If `TRUE` and `label_cell_types` is `NULL`,
@@ -541,6 +547,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                                    node_size = 2.2,
                                    con_colour = "darkgrey",
                                    legend_position = "right",
+                                   legend_scale = 1,
+                                   non_autonomous_alpha = 0.6,
                                    label_cell_types = NULL,
                                    show_node_labels = FALSE,
                                    label_font_size = 3,
@@ -563,6 +571,9 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     node_overlay <- match.arg(node_overlay)
     render_mode <- match.arg(render_mode)
     bottom_legend <- identical(legend_position, "bottom")
+    legend_point_size <- 4 * legend_scale
+    legend_shape_size <- 3 * legend_scale
+    legend_text_size <- 6 * legend_scale
     show_node_glyphs <- node_overlay %in% c("glyphs", "both")
     global_identity_marker <- identical(render_mode, "global")
 
@@ -733,7 +744,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ),
             effect_type_norm = tolower(trimws(dplyr::coalesce(effect_type, ""))),
             effect_fill_alpha = dplyr::case_when(
-                effect_type_norm == "non-autonomous" ~ 0.45,
+                effect_type_norm == "non-autonomous" ~ non_autonomous_alpha,
                 TRUE ~ 1
             ),
             node_fill_color = dplyr::case_when(
@@ -851,7 +862,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ggplot2::aes(x = x, y = y, fill = severity_fill),
             inherit.aes = FALSE,
             shape = 21,
-            size = 4,
+            size = legend_point_size,
             colour = "black",
             stroke = 0.5,
             show.legend = c(color = TRUE, size = FALSE)
@@ -878,7 +889,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 title.position = if (bottom_legend) "top" else NULL,
                 override.aes = list(
                     shape = 21,
-                    size = 4,
+                    size = legend_point_size,
                     colour = "black",
                     stroke = 0.5,
                     alpha = 1
@@ -899,7 +910,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             ggplot2::aes(x = x, y = y, fill = effect_type_value),
             inherit.aes = FALSE,
             shape = 21,
-            size = 4,
+            size = legend_point_size,
             colour = "black",
             stroke = 0.5,
             show.legend = c(color = FALSE, size = FALSE)
@@ -918,10 +929,10 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 title.position = if (bottom_legend) "top" else NULL,
                 override.aes = list(
                     shape = 21,
-                    size = 4,
+                    size = legend_point_size,
                     colour = "black",
                     stroke = 0.5,
-                    alpha = c(1, 0.45)
+                    alpha = c(1, non_autonomous_alpha)
                 )
             )
         )
@@ -947,7 +958,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             guide = guide_legend(
                 ncol = if (bottom_legend) 1 else NULL,
                 title.position = if (bottom_legend) "top" else NULL,
-                override.aes = list(size = c(1.6 * 2, 0.8 * 2))
+                override.aes = list(size = c(1.6 * 2, 0.8 * 2) * legend_scale)
             ),
             name = "Size"
         )
@@ -967,7 +978,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 color = "black",
                 fill = "white",
                 stroke = 0.5,
-                size = 3,
+                size = legend_shape_size,
                 show.legend = c(color = FALSE, size = TRUE)
             ) +
             ggplot2::scale_shape_manual(
@@ -1013,7 +1024,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 alpha = guide_legend(
                     ncol = if (bottom_legend) 1 else NULL,
                     title.position = if (bottom_legend) "top" else NULL,
-                    override.aes = list(label = "*", size = 6, color = "black")
+                    override.aes = list(label = "*", size = legend_text_size, color = "black")
                 )
             )
     }
@@ -1079,6 +1090,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 inherit.aes = FALSE,
                 fontface = "bold",
                 colour = "black",
+                size = legend_shape_size,
                 show.legend = c(alpha = TRUE, size = FALSE)
             ) +
             scale_alpha_manual(
@@ -1105,7 +1117,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                     title.position = if (bottom_legend) "top" else NULL,
                     override.aes = list(
                         label = c("", "<<", ">>", "!!", "<>", "##"),
-                        size = 3,
+                        size = legend_shape_size,
                         colour = "black"
                     ),
                     order = 1
@@ -1130,18 +1142,33 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
 
     if (isTRUE(interactive)) {
         if (is.null(width) || is.null(height)) {
-            p <- p + ggplot2::coord_equal() + theme(legend.position = legend_position)
+            p <- p + ggplot2::coord_equal() + theme(
+                legend.position = legend_position,
+                legend.key.size = grid::unit(4 * legend_scale, "mm"),
+                legend.text = ggplot2::element_text(size = ggplot2::rel(legend_scale)),
+                legend.title = ggplot2::element_text(size = ggplot2::rel(legend_scale))
+            )
             ggiraph::girafe(
                 ggobj = p
             )
         } else {
-            p <- p + theme(legend.position = legend_position)
+            p <- p + theme(
+                legend.position = legend_position,
+                legend.key.size = grid::unit(4 * legend_scale, "mm"),
+                legend.text = ggplot2::element_text(size = ggplot2::rel(legend_scale)),
+                legend.title = ggplot2::element_text(size = ggplot2::rel(legend_scale))
+            )
             ggiraph::girafe(
                 ggobj = p,
                 width_svg = width, height_svg = height
             )
         }
     } else {
-        p + theme(legend.position = legend_position)
+        p + theme(
+            legend.position = legend_position,
+            legend.key.size = grid::unit(4 * legend_scale, "mm"),
+            legend.text = ggplot2::element_text(size = ggplot2::rel(legend_scale)),
+            legend.title = ggplot2::element_text(size = ggplot2::rel(legend_scale))
+        )
     }
 }
