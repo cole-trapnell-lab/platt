@@ -1162,10 +1162,6 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 ggobj = p
             )
         } else {
-<<<<<<< HEAD
-            p <- p + theme(legend.position = legend_position)
-            p <- ggiraph::girafe(
-=======
             p <- p + theme(
                 legend.position = legend_position,
                 legend.key.size = grid::unit(4 * legend_scale, "mm"),
@@ -1173,7 +1169,6 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 legend.title = ggplot2::element_text(size = ggplot2::rel(legend_scale))
             )
             ggiraph::girafe(
->>>>>>> a767b41 (control alpha for non-autonomous)
                 ggobj = p,
                 width_svg = width, height_svg = height
             )
