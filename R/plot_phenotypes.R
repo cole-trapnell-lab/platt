@@ -1275,7 +1275,7 @@ plot_phenotype_counts <- function(impact_table, facet_by = NULL) {
         xlab("Number of phenotypes") +
         monocle3:::monocle_theme_opts() +
         theme(
-            strip.text.x = element_blank(),
+            strip.text.x = element_text(face = "bold"),
             strip.text.y = element_text(face = "bold", angle = 0, hjust = 0.5, vjust = 0.5),
             strip.placement = "outside"
         )
