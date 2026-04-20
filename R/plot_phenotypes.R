@@ -1182,3 +1182,111 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         )
     }
 }
+
+#' Plot Counts of Phenotyped Cell Types
+#'
+#' Summarize the number of distinct cell types with abundance, fitness, or
+#' identity phenotypes within each `projection_group`, and display the counts as
+#' stacked bars. The plot always facets vertically by `effect_type` and can add
+#' optional horizontal facets from additional columns in `impact_table`.
+#'
+#' @param impact_table A data frame containing at least `cell_type`,
+#'   `projection_group`, `effect_type`, `abundance_code`, `fitness_label`, and
+#'   `identity_label`. Additional columns referenced in `facet_by` must also be
+#'   present.
+#' @param facet_by Optional character vector of column names to facet across
+#'   horizontally. `effect_type` is always used as the vertical facet.
+#'
+#' @return A `ggplot` object showing stacked phenotype counts by
+#'   `projection_group`.
+#' @export
+plot_phenotype_counts <- function(impact_table, facet_by = NULL) {
+    facet_by <- unique(facet_by)
+    facet_cols <- unique(c("effect_type", facet_by))
+    if (length(facet_cols) > 0) {
+        missing_facet_cols <- setdiff(facet_cols, names(impact_table))
+        if (length(missing_facet_cols) > 0) {
+            stop(
+                "Missing facet columns in `impact_table`: ",
+                paste(missing_facet_cols, collapse = ", "),
+                call. = FALSE
+            )
+        }
+    }
+
+    phenotype_counts <- impact_table %>%
+        mutate(
+            abundance_gain = !is.na(abundance_code) & abundance_code %in% c("A1 Expansion", "A4 Ectopic/extra state"),
+            abundance_loss = !is.na(abundance_code) & abundance_code %in% c("A2 Depletion", "A3 Ablation/Loss"),
+            fitness_phenotype = !is.na(fitness_label) & !(fitness_label %in% c("F0 No significant phenotype", "F0 Normal")),
+            identity_phenotype = !is.na(identity_label) & identity_label != "I0 Identity intact"
+        ) %>%
+        select(
+            cell_type,
+            projection_group,
+            dplyr::all_of(facet_cols),
+            abundance_gain,
+            abundance_loss,
+            fitness_phenotype,
+            identity_phenotype
+        ) %>%
+        tidyr::pivot_longer(
+            cols = c(abundance_gain, abundance_loss, fitness_phenotype, identity_phenotype),
+            names_to = "phenotype_type",
+            values_to = "has_phenotype"
+        ) %>%
+        filter(has_phenotype, !is.na(projection_group)) %>%
+        group_by(dplyr::across(dplyr::all_of(c("projection_group", facet_cols, "phenotype_type")))) %>%
+        summarize(n_phenotyped = n_distinct(cell_type), .groups = "drop")
+
+
+    phenotype_colors <- c(
+        "none"           = "#b9b9b9",
+        "abundance_gain" = "#f6c141",
+        "abundance_loss" = "#e41a1c",
+        "identity"       = "#ff8c00",
+        "fitness"        = "#f6c141",
+        "apoptosis"      = "#000000",
+        "stress"         = "#4daf4a",
+        "senescence"     = "#a65628"
+    )
+
+    phenotype_type_colors <- c(
+        "Severe phenotype" = unname(phenotype_colors["abundance_loss"]),
+        "Medium phenotype" = unname(phenotype_colors["identity"]),
+        "Mild phenotype" = unname(phenotype_colors["abundance_gain"])
+    )
+
+
+    p <- phenotype_counts %>%
+        mutate(
+            phenotype_type = dplyr::case_when(
+                phenotype_type == "abundance_loss" ~ "Severe phenotype",
+                phenotype_type == "identity_phenotype" ~ "Medium phenotype",
+                phenotype_type %in% c("abundance_gain", "fitness_phenotype") ~ "Mild phenotype",
+                TRUE ~ phenotype_type
+            )
+        ) %>%
+        ggplot(aes(n_phenotyped, projection_group, fill = phenotype_type)) +
+        geom_bar(stat = "identity", position = "stack") +
+        scale_fill_manual(values = phenotype_type_colors, name = "Phenotype type") +
+        scale_x_continuous() +
+        ylab(NULL) +
+        xlab("Number of phenotypes") +
+        monocle3:::monocle_theme_opts() +
+        theme(
+            strip.text.x = element_blank(),
+            strip.text.y = element_text(face = "bold", angle = 0, hjust = 0.5, vjust = 0.5),
+            strip.placement = "outside"
+        )
+
+    p <- p + facet_grid(
+        rows = ggplot2::vars(effect_type),
+        cols = ggplot2::vars(!!!rlang::syms(facet_by)),
+        scales = "free_y",
+        space = "free_y",
+        switch = "y"
+    )
+
+    p
+}
