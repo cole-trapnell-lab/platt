@@ -160,6 +160,38 @@ format_pathway_regulatory_genes <- function(goi_in_pathway, degs_of_interest) {
   paste(goi_arrows_sorted, collapse = ", ")
 }
 
+# Build a gene-allowlist map for the LLM impact call.
+# Returns a named list keyed by lowercase gene symbol, with values
+# "up" / "down" / "any" based on the sign of perturb_to_ctrl_shrunken_lfc.
+# Empty list when the DEG tibble is absent or has no gene column.
+build_allowed_degs_map <- function(deg_tbl) {
+  if (is.null(deg_tbl) || !is.data.frame(deg_tbl) || nrow(deg_tbl) == 0) {
+    return(list())
+  }
+  if (!"gene_short_name" %in% colnames(deg_tbl)) {
+    return(list())
+  }
+  lfc_col <- "perturb_to_ctrl_shrunken_lfc"
+  tbl <- deg_tbl %>%
+    dplyr::filter(!is.na(gene_short_name), nzchar(gene_short_name)) %>%
+    dplyr::distinct(gene_short_name, .keep_all = TRUE)
+  if (nrow(tbl) == 0) {
+    return(list())
+  }
+  direction <- if (lfc_col %in% colnames(tbl)) {
+    lfc <- tbl[[lfc_col]]
+    dplyr::case_when(
+      is.na(lfc) ~ "any",
+      lfc > 0 ~ "up",
+      lfc < 0 ~ "down",
+      TRUE ~ "any"
+    )
+  } else {
+    rep("any", nrow(tbl))
+  }
+  setNames(as.list(direction), tolower(tbl$gene_short_name))
+}
+
 # Helper: Build pathway_tbl for an ancestor
 build_pathway_tbl <- function(info, sig_p_val_thresh, top_n_pathways) {
   pathway_tbl <- tibble()
@@ -343,13 +375,17 @@ summarize_cell_type_impact <- function(
     "none"
   }
 
-  # 7. Pathway summary lines (top N by p-value, only significant)
+  # 7. Pathway summary lines (top N by adjusted p-value, FDR-significant only).
+  # Was raw `pval`; switched to `padj` so pathways shown to the LLM are
+  # multiple-testing-corrected. Empirically this drops ~85-95% of the prior
+  # candidate set (most fora hits in this run had padj ~ 0.99 despite raw
+  # pval < 0.05), cutting noise the LLM was previously grasping at.
   pathway_lines <- ""
   pathway_genes_in_pathways <- character(0)
   if (!is.null(fora_res) && nrow(fora_res) > 0) {
     sig_pathways <- fora_res %>%
-      filter(pval < sig_p_val_thresh) %>%
-      arrange(pval) %>%
+      filter(padj < sig_p_val_thresh) %>%
+      arrange(padj) %>%
       group_by(ontology) %>%
       slice_head(n = top_n_pathways) %>%
       ungroup()
@@ -358,7 +394,7 @@ summarize_cell_type_impact <- function(
         apply(sig_pathways, 1, function(row) {
           pathway_name <- humanize_pathway_name(row[["pathway"]])
           ontology <- row[["ontology"]]
-          pval <- signif(as.numeric(row[["pval"]]), 2)
+          padj <- signif(as.numeric(row[["padj"]]), 2)
           # Genes of interest in this pathway
           pathway_genes <- if ("overlapGenes" %in% names(row)) row[["overlapGenes"]] else character(0)
           goi_in_pathway <- intersect(pathway_genes, degs_of_interest$gene_short_name)
@@ -371,7 +407,7 @@ summarize_cell_type_impact <- function(
           pathway_genes_in_pathways <<- union(pathway_genes_in_pathways, goi_in_pathway)
           paste0(
             "- [", ontology, "] ", pathway_name,
-            " (p=", pval,
+            " (padj=", padj,
             if (goi_arrows != "") paste0(", regulatory genes: ", goi_arrows) else "",
             ")"
           )
@@ -516,8 +552,15 @@ py_disrupted_pathways_to_tibble <- function(x) {
         name = purrr::map_chr(x, ~ .x$name %||% NA_character_),
         description = purrr::map_chr(x, ~ .x$description %||% NA_character_),
         dysregulated_genes = purrr::map_chr(x, ~ {
-          dg <- .x$dysregulated_genes %||% NA_character_
-          if (is.character(dg) && length(dg) > 1) paste(dg, collapse = ", ") else dg
+          dg <- .x$dysregulated_genes
+          # Empty list / NULL — happens when the LLM correctly returns no genes
+          # for a pathway (per the Phase-2 prompt). Treat as NA, not as an
+          # error, so other pathways for this cell still survive.
+          if (is.null(dg) || length(dg) == 0) return(NA_character_)
+          if (is.list(dg)) dg <- unlist(dg)
+          dg <- as.character(dg)
+          dg <- dg[!is.na(dg) & nzchar(dg)]
+          if (length(dg) == 0) NA_character_ else paste(dg, collapse = ", ")
         })
       )
     },
@@ -548,6 +591,7 @@ summarize_impact_in_lineage_context <- function(
   abundance_phenotypes = NULL,
   fitness_phenotypes = NULL,
   identity_phenotypes = NULL,
+  pre_cited_gene_claims = NULL,
   verbose = FALSE,
   ...
 ) {
@@ -618,6 +662,14 @@ summarize_impact_in_lineage_context <- function(
         identity_phenotypes = identity_phenotypes
       )
       cell_impact_text <- build_lineage_context(ct, parents, results, all_types)
+      if (!is.null(pre_cited_gene_claims) && nzchar(pre_cited_gene_claims)) {
+        cell_impact_text <- paste0(
+          "<pre_cited_claims>\n",
+          pre_cited_gene_claims,
+          "\n</pre_cited_claims>\n\n",
+          cell_impact_text
+        )
+      }
 
       expresses_target <- !is.null(target_gene_expression) && ct %in% target_gene_expression$cell_group
       has_abundance <- !is.null(abundance_phenotypes) &&
@@ -639,6 +691,10 @@ summarize_impact_in_lineage_context <- function(
         other_dysregulated_genes <- NULL
       } else if (has_abundance || has_fitness || has_identity) {
         if (verbose) message(sprintf("[DEBUG] Calling LLM for cell type: %s (expresses_target: %s, has_abundance: %s, has_fitness: %s, has_identity: %s)", ct, expresses_target, has_abundance, has_fitness, has_identity))
+        allowed_degs_map <- build_allowed_degs_map(results[[ct]]$degs)
+        if (verbose) {
+          message(sprintf("[DEBUG] allowed_degs for %s: %d genes", ct, length(allowed_degs_map)))
+        }
         llm_structured <- tryCatch(
           {
             if (!is.null(llm_fun)) {
@@ -647,6 +703,7 @@ summarize_impact_in_lineage_context <- function(
                   cell_type = ct,
                   cell_impact_text = cell_impact_text,
                   primary_effect_summary = primary_impact_summary,
+                  allowed_degs = allowed_degs_map,
                   ...
                 )
               )
