@@ -952,7 +952,13 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             size_value = c("Powered", "Underpowered")
         )
 
+        # Data layer above maps `size = node_size_plot` (continuous) and is
+        # captured by `scale_size_identity()`. The discrete legend below uses a
+        # different scale_size_manual; without ggnewscale's reset, the data
+        # layer's continuous values would also flow into the manual scale and
+        # trip "Continuous value supplied to a discrete scale".
         p <- p +
+            ggnewscale::new_scale("size") +
             ggplot2::geom_point(
                 data = size_legend_df,
                 ggplot2::aes(x = x, y = y, size = size_value),
