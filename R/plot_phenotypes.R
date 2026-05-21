@@ -1226,16 +1226,21 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
 
     if (isTRUE(global_identity_marker)) {
         g$identity_change_marker <- ifelse(g$has_identity_change, "*", "")
+        g$identity_marker_size <- dplyr::case_when(
+            has_power_column & g$power_status == "Underpowered" ~ node_size * 0.8 * 0.7,
+            TRUE ~ node_size * 1.6 * 0.7
+        )
         p <- p +
+            ggnewscale::new_scale("size") +
             geom_text(
                 data = g,
-                aes(x = x, y = y, label = identity_change_marker, alpha = identity_change_marker),
-                show.legend = c(alpha = TRUE, color = FALSE),
+                aes(x = x, y = y, label = identity_change_marker, alpha = identity_change_marker, size = identity_marker_size),
+                show.legend = c(alpha = TRUE, color = FALSE, size = FALSE),
                 color = glyph_color,
-                size = node_size,
                 vjust = 0.8,
                 hjust = 0.5
             ) +
+            ggplot2::scale_size_identity(guide = "none") +
             scale_alpha_manual(
                 name = "Transcriptional Identity",
                 values = c("*" = 1),
