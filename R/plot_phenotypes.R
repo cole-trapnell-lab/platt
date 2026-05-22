@@ -142,17 +142,19 @@ plot_phenotypes_from_impact <- function(cell_state_graph,
 .augment_phenos_with_presence <- function(phenos_df, power_tbl) {
     power_cell_col <- dplyr::case_when(
         "cell_group" %in% names(power_tbl) ~ "cell_group",
-        "cell_type"  %in% names(power_tbl) ~ "cell_type",
+        "cell_type" %in% names(power_tbl) ~ "cell_type",
         TRUE ~ NA_character_
     )
     power_presence_col <- dplyr::case_when(
-        "present_above_thresh"   %in% names(power_tbl) ~ "present_above_thresh",
+        "present_above_thresh" %in% names(power_tbl) ~ "present_above_thresh",
         "present_above_thresh.x" %in% names(power_tbl) ~ "present_above_thresh.x",
         "present_above_thresh.y" %in% names(power_tbl) ~ "present_above_thresh.y",
-        "PRESENT_ABOVE_THRES"    %in% names(power_tbl) ~ "PRESENT_ABOVE_THRES",
+        "PRESENT_ABOVE_THRES" %in% names(power_tbl) ~ "PRESENT_ABOVE_THRES",
         TRUE ~ NA_character_
     )
-    if (is.na(power_cell_col) || is.na(power_presence_col)) return(phenos_df)
+    if (is.na(power_cell_col) || is.na(power_presence_col)) {
+        return(phenos_df)
+    }
 
     presence_tbl <- power_tbl %>%
         dplyr::transmute(
@@ -179,24 +181,30 @@ plot_phenotypes_from_impact <- function(cell_state_graph,
         igraph::V(cell_state_graph@graph)$name,
         error = function(e) character(0)
     )
-    if (length(graph_nodes) == 0) return(phenos_df)
+    if (length(graph_nodes) == 0) {
+        return(phenos_df)
+    }
 
     nodes_in_phenos <- unique(as.character(phenos_df$cell_group))
     nodes_not_in_phenos <- setdiff(graph_nodes, nodes_in_phenos)
-    if (length(nodes_not_in_phenos) == 0) return(phenos_df)
+    if (length(nodes_not_in_phenos) == 0) {
+        return(phenos_df)
+    }
 
     cell_col <- dplyr::case_when(
         "cell_group" %in% names(presence_tbl) ~ "cell_group",
-        "cell_type"  %in% names(presence_tbl) ~ "cell_type",
+        "cell_type" %in% names(presence_tbl) ~ "cell_type",
         TRUE ~ NA_character_
     )
     presence_col <- dplyr::case_when(
-        "present_above_thresh"   %in% names(presence_tbl) ~ "present_above_thresh",
+        "present_above_thresh" %in% names(presence_tbl) ~ "present_above_thresh",
         "present_above_thresh.x" %in% names(presence_tbl) ~ "present_above_thresh.x",
         "present_above_thresh.y" %in% names(presence_tbl) ~ "present_above_thresh.y",
         TRUE ~ NA_character_
     )
-    if (is.na(cell_col) || is.na(presence_col)) return(phenos_df)
+    if (is.na(cell_col) || is.na(presence_col)) {
+        return(phenos_df)
+    }
 
     absent_nodes <- presence_tbl %>%
         dplyr::filter(as.character(.data[[cell_col]]) %in% nodes_not_in_phenos) %>%
@@ -204,23 +212,25 @@ plot_phenotypes_from_impact <- function(cell_state_graph,
         dplyr::distinct(cell_group = as.character(.data[[cell_col]])) %>%
         dplyr::pull(cell_group)
 
-    if (length(absent_nodes) == 0) return(phenos_df)
+    if (length(absent_nodes) == 0) {
+        return(phenos_df)
+    }
 
     absent_rows <- tibble::tibble(
-        cell_group         = absent_nodes,
-        abundance_code     = "A0 No change",
+        cell_group = absent_nodes,
+        abundance_code = "A0 No change",
         abundance_severity = "none",
-        abundance_log2fc   = 0,
-        abundance_q        = NA_real_,
-        identity_label     = "I0",
-        identity_glyph     = "",
-        F1_dir             = NA_character_,
-        F2_apoptosis       = FALSE,
-        F3_stress_score    = NA_real_,
-        F4_senescence      = FALSE,
-        stress_evidence    = NA_character_,
-        identity_evidence  = NA_character_,
-        effect_type        = NA_character_,
+        abundance_log2fc = 0,
+        abundance_q = NA_real_,
+        identity_label = "I0",
+        identity_glyph = "",
+        F1_dir = NA_character_,
+        F2_apoptosis = FALSE,
+        F3_stress_score = NA_real_,
+        F4_senescence = FALSE,
+        stress_evidence = NA_character_,
+        identity_evidence = NA_character_,
+        effect_type = NA_character_,
         present_above_thresh = FALSE
     )
 
@@ -235,16 +245,18 @@ plot_phenotypes_from_impact <- function(cell_state_graph,
 
     power_cell_col <- dplyr::case_when(
         "cell_group" %in% names(power_tbl) ~ "cell_group",
-        "cell_type"  %in% names(power_tbl) ~ "cell_type",
+        "cell_type" %in% names(power_tbl) ~ "cell_type",
         TRUE ~ NA_character_
     )
-    if (is.na(power_cell_col)) return(phenos_df %>% dplyr::mutate(powered_thresh = powered_thresh))
+    if (is.na(power_cell_col)) {
+        return(phenos_df %>% dplyr::mutate(powered_thresh = powered_thresh))
+    }
     if (!("delta_log_abund" %in% names(power_tbl)) || !("delta_q_value" %in% names(power_tbl))) {
         stop("power_tbl must contain 'delta_log_abund' and 'delta_q_value'.")
     }
 
     impact_cell_col <- dplyr::case_when(
-        "cell_type"  %in% names(impact_table) ~ "cell_type",
+        "cell_type" %in% names(impact_table) ~ "cell_type",
         "cell_group" %in% names(impact_table) ~ "cell_group",
         TRUE ~ NA_character_
     )
@@ -265,16 +277,16 @@ plot_phenotypes_from_impact <- function(cell_state_graph,
 
     power_join_tbl <- power_tbl %>%
         dplyr::transmute(
-            cell_group      = as.character(.data[[power_cell_col]]),
-            power           = if ("power" %in% names(power_tbl)) as.numeric(power) else NA_real_,
+            cell_group = as.character(.data[[power_cell_col]]),
+            power = if ("power" %in% names(power_tbl)) as.numeric(power) else NA_real_,
             abundance_log2fc = as.numeric(delta_log_abund),
-            abundance_q     = as.numeric(delta_q_value)
+            abundance_q = as.numeric(delta_q_value)
         ) %>%
         dplyr::group_by(cell_group) %>%
         dplyr::summarise(
-            power            = first_non_missing(power, NA_real_),
+            power = first_non_missing(power, NA_real_),
             abundance_log2fc = first_non_missing(abundance_log2fc, NA_real_),
-            abundance_q      = first_non_missing(abundance_q, NA_real_),
+            abundance_q = first_non_missing(abundance_q, NA_real_),
             .groups = "drop"
         )
 
@@ -290,9 +302,9 @@ plot_phenotypes_from_impact <- function(cell_state_graph,
         dplyr::select(-dplyr::any_of(c("power", "abundance_log2fc", "abundance_q"))) %>%
         dplyr::left_join(power_join_tbl, by = "cell_group") %>%
         dplyr::mutate(
-            abundance_q      = dplyr::if_else(has_real_abundance_change, dplyr::coalesce(abundance_q, 1), 1),
+            abundance_q = dplyr::if_else(has_real_abundance_change, dplyr::coalesce(abundance_q, 1), 1),
             abundance_log2fc = dplyr::if_else(has_real_abundance_change & abundance_q < 0.05, abundance_log2fc, 0),
-            abundance_code   = dplyr::if_else(
+            abundance_code = dplyr::if_else(
                 has_real_abundance_change & abundance_q < 0.05,
                 as.character(abundance_code),
                 "A0 No change"
@@ -1238,8 +1250,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
     if (isTRUE(global_identity_marker)) {
         g$identity_change_marker <- ifelse(g$has_identity_change, "*", "")
         g$identity_marker_size <- dplyr::case_when(
-            has_power_column & g$power_status == "Underpowered" ~ node_size * 0.8 * 0.7,
-            TRUE ~ node_size * 1.6 * 0.7
+            has_power_column & g$power_status == "Underpowered" ~ node_size * 0.8 * 1.2,
+            TRUE ~ node_size * 1.6 * 1.2
         )
         p <- p +
             ggnewscale::new_scale("size") +
