@@ -1402,9 +1402,17 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 legend.title = ggplot2::element_text(size = ggplot2::rel(legend_scale)),
                 text = ggplot2::element_text(family = plot_font_family)
             )
+            # Expand SVG beyond the requested graph dimensions to
+            # accommodate the legend, so width/height refer to the
+            # graph area only.
+            legend_pad_h <- if (legend_position %in% c("bottom", "top"))
+                2.0 * legend_scale else 0
+            legend_pad_w <- if (legend_position %in% c("left", "right"))
+                2.0 * legend_scale else 0
             ggiraph::girafe(
                 ggobj = p,
-                width_svg = width, height_svg = height,
+                width_svg = width + legend_pad_w,
+                height_svg = height + legend_pad_h,
                 fonts = list(sans = plot_font_family)
             )
         }
