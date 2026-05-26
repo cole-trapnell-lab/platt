@@ -1379,27 +1379,33 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         )
     }
 
+    plot_font_family <- getOption("zscape.plot_font_family", "Arial")
+
     if (isTRUE(interactive)) {
         if (is.null(width) || is.null(height)) {
             p <- p + ggplot2::coord_equal() + theme(
                 legend.position = legend_position,
                 legend.key.size = grid::unit(4 * legend_scale, "mm"),
                 legend.text = ggplot2::element_text(size = ggplot2::rel(legend_scale)),
-                legend.title = ggplot2::element_text(size = ggplot2::rel(legend_scale))
+                legend.title = ggplot2::element_text(size = ggplot2::rel(legend_scale)),
+                text = ggplot2::element_text(family = plot_font_family)
             )
             ggiraph::girafe(
-                ggobj = p
+                ggobj = p,
+                fonts = list(sans = plot_font_family)
             )
         } else {
             p <- p + theme(
                 legend.position = legend_position,
                 legend.key.size = grid::unit(4 * legend_scale, "mm"),
                 legend.text = ggplot2::element_text(size = ggplot2::rel(legend_scale)),
-                legend.title = ggplot2::element_text(size = ggplot2::rel(legend_scale))
+                legend.title = ggplot2::element_text(size = ggplot2::rel(legend_scale)),
+                text = ggplot2::element_text(family = plot_font_family)
             )
             ggiraph::girafe(
                 ggobj = p,
-                width_svg = width, height_svg = height
+                width_svg = width, height_svg = height,
+                fonts = list(sans = plot_font_family)
             )
         }
     } else {
@@ -1407,7 +1413,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             legend.position = legend_position,
             legend.key.size = grid::unit(4 * legend_scale, "mm"),
             legend.text = ggplot2::element_text(size = ggplot2::rel(legend_scale)),
-            legend.title = ggplot2::element_text(size = ggplot2::rel(legend_scale))
+            legend.title = ggplot2::element_text(size = ggplot2::rel(legend_scale)),
+            text = ggplot2::element_text(family = plot_font_family)
         )
     }
 }
