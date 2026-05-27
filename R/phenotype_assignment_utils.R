@@ -420,8 +420,8 @@ assign_abundance_code <- function(change_when_present, change_when_present_q_val
     case_when(
         is.na(change_when_present) | is.na(change_when_present_q_val) ~ "A0 No change",
         change_when_present >= 0.5 & change_when_present_q_val < 0.1 ~ "A1 Expansion",
-        change_when_present <= -0.5 & change_when_present_q_val < 0.1 ~ "A2 Depletion",
         change_when_present <= -2.0 & change_when_present_q_val < 0.01 ~ "A3 Near-loss",
+        change_when_present <= -0.5 & change_when_present_q_val < 0.1 ~ "A2 Depletion",
         TRUE ~ "A0 No change"
     )
 }
