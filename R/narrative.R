@@ -259,7 +259,7 @@ summarize_cell_type_impact <- function(
   ai_notes_path,
   sig_p_val_thresh = 0.05,
   genes_of_interest = NULL,
-  empirical_fdr_thresh = 1.0,
+  empirical_p_thresh = 1.0,
   power_thresh = 0.8,
   top_n_pathways = 5,
   abundance_phenotypes = NULL,
@@ -318,23 +318,27 @@ summarize_cell_type_impact <- function(
   identity_label <- if (nrow(identity_rows) > 0) paste(unique(identity_rows$identity_label), collapse = "; ") else NA_character_
   identity_evidence <- if (nrow(identity_rows) > 0) paste(unique(identity_rows$evidence), collapse = "; ") else NA_character_
 
-  # 4. DEGs and key regulatory genes
-  cell_type_degs <- degs %>%
-    filter(cell_group == ct, perturb_to_ctrl_p_value < sig_p_val_thresh)
+  # 4. DEGs and key regulatory genes.
+  # Foreground for BOTH the FORA/GO enrichment and the named genes-of-interest is
+  # the artifact-aware set: genes whose standardized effect stands out beyond the
+  # control-sampling-artifact null (empirical_p <= empirical_p_thresh). Unlike a
+  # nominal-p foreground, this drops the low-expression artifact calls that
+  # otherwise drown real on-lineage programs; unlike the BH empirical_fdr, it
+  # resolves per gene and does not hit the per-cell FDR floor. Falls back to
+  # nominal p when the empirical_p column is absent (undecorated tables).
+  cell_type_degs <- degs %>% filter(cell_group == ct)
+  if (!is.null(empirical_p_thresh) && empirical_p_thresh < 1 &&
+      "empirical_p" %in% colnames(cell_type_degs)) {
+    cell_type_degs <- cell_type_degs %>%
+      filter(!is.na(empirical_p), empirical_p <= empirical_p_thresh)
+  } else {
+    cell_type_degs <- cell_type_degs %>%
+      filter(perturb_to_ctrl_p_value < sig_p_val_thresh)
+  }
   degs_of_interest <- if (!is.null(genes_of_interest)) {
     cell_type_degs %>% filter(gene_short_name %in% genes_of_interest)
   } else {
     cell_type_degs
-  }
-  # Genes of interest are named, per-gene claims handed to the LLM (esp. TFs), so
-  # gate them on the empirical-FDR control-sampling-artifact estimate. The FORA
-  # foreground (deg_genes, below) is deliberately left on the relaxed nominal-p
-  # set -- enrichment is a set-level test with its own pathway-level padj, and
-  # gating individual genes would defeat it. NA (undecorated) rows are kept.
-  if (!is.null(empirical_fdr_thresh) && empirical_fdr_thresh < 1 &&
-      "empirical_fdr" %in% colnames(degs_of_interest)) {
-    degs_of_interest <- degs_of_interest %>%
-      filter(is.na(empirical_fdr) | empirical_fdr <= empirical_fdr_thresh)
   }
   goi <- format_goi(degs_of_interest)
 
@@ -604,7 +608,7 @@ summarize_impact_in_lineage_context <- function(
   ai_notes_path,
   sig_p_val_thresh = 0.05,
   genes_of_interest = NULL,
-  empirical_fdr_thresh = 1.0,
+  empirical_p_thresh = 1.0,
   llm_fun = NULL,
   max_lineage_depth = Inf,
   cell_types = NULL,
@@ -679,7 +683,7 @@ summarize_impact_in_lineage_context <- function(
         ai_notes_path,
         sig_p_val_thresh,
         genes_of_interest,
-        empirical_fdr_thresh = empirical_fdr_thresh,
+        empirical_p_thresh = empirical_p_thresh,
         abundance_phenotypes = abundance_phenotypes,
         fitness_phenotypes = fitness_phenotypes,
         identity_phenotypes = identity_phenotypes
