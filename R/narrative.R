@@ -259,6 +259,7 @@ summarize_cell_type_impact <- function(
   ai_notes_path,
   sig_p_val_thresh = 0.05,
   genes_of_interest = NULL,
+  empirical_fdr_thresh = 1.0,
   power_thresh = 0.8,
   top_n_pathways = 5,
   abundance_phenotypes = NULL,
@@ -324,6 +325,16 @@ summarize_cell_type_impact <- function(
     cell_type_degs %>% filter(gene_short_name %in% genes_of_interest)
   } else {
     cell_type_degs
+  }
+  # Genes of interest are named, per-gene claims handed to the LLM (esp. TFs), so
+  # gate them on the empirical-FDR control-sampling-artifact estimate. The FORA
+  # foreground (deg_genes, below) is deliberately left on the relaxed nominal-p
+  # set -- enrichment is a set-level test with its own pathway-level padj, and
+  # gating individual genes would defeat it. NA (undecorated) rows are kept.
+  if (!is.null(empirical_fdr_thresh) && empirical_fdr_thresh < 1 &&
+      "empirical_fdr" %in% colnames(degs_of_interest)) {
+    degs_of_interest <- degs_of_interest %>%
+      filter(is.na(empirical_fdr) | empirical_fdr <= empirical_fdr_thresh)
   }
   goi <- format_goi(degs_of_interest)
 
@@ -474,7 +485,17 @@ summarize_cell_type_impact <- function(
     identity_evidence = identity_evidence, # <-- NEW FIELD
     degs = cell_type_degs,
     goi_line = goi$goi_line,
-    pathways = fora_res
+    # Store only FDR-significant, non-empty-overlap pathways (same bar the LLM
+    # prompt uses) instead of the raw fora dump -- the unfiltered result is
+    # ~90%+ padj~1 / zero-overlap padding that bloats the impact table and any
+    # downstream consumer without adding signal.
+    pathways = if (!is.null(fora_res) && nrow(fora_res) > 0) {
+      fora_res %>%
+        dplyr::filter(!is.na(padj), padj < sig_p_val_thresh, overlap > 0) %>%
+        dplyr::arrange(padj)
+    } else {
+      fora_res
+    }
   )
 }
 
@@ -583,6 +604,7 @@ summarize_impact_in_lineage_context <- function(
   ai_notes_path,
   sig_p_val_thresh = 0.05,
   genes_of_interest = NULL,
+  empirical_fdr_thresh = 1.0,
   llm_fun = NULL,
   max_lineage_depth = Inf,
   cell_types = NULL,
@@ -657,6 +679,7 @@ summarize_impact_in_lineage_context <- function(
         ai_notes_path,
         sig_p_val_thresh,
         genes_of_interest,
+        empirical_fdr_thresh = empirical_fdr_thresh,
         abundance_phenotypes = abundance_phenotypes,
         fitness_phenotypes = fitness_phenotypes,
         identity_phenotypes = identity_phenotypes
