@@ -1,19 +1,36 @@
 # Build a robust preranked vector from a DEG table
 # deg_tbl columns (customize names via args):
-#   gene, logFC
+#   gene, logFC, and (optionally) an empirical-p weight column
+#
+# When `weight_col` (default "empirical_p", written by the per-experiment
+# empirical-FDR model) is present, genes are ranked by the MODEL-WEIGHTED
+# statistic logFC * (1 - empirical_p): artifact-consistent genes (empirical_p
+# near 1) are compressed toward the middle of the ranking, which halves the
+# fitness/identity phenotype FDR without amplifying anything. Genes with no
+# empirical_p (NA) are left un-compressed (weight 1). When the column is absent
+# the ranking falls back to the raw shrunken logFC (backward compatible).
 make_rank <- function(deg_tbl,
                       gene_col = "gene_short_name",
-                      logFC_col = "perturb_to_ctrl_shrunken_lfc") {
+                      logFC_col = "perturb_to_ctrl_shrunken_lfc",
+                      weight_col = "empirical_p") {
     stopifnot(all(c(gene_col, logFC_col) %in% names(deg_tbl)))
+    use_weight <- !is.null(weight_col) && weight_col %in% names(deg_tbl)
     x <- deg_tbl %>%
         transmute(
             gene = .data[[gene_col]] %>% as.character(),
-            logFC = as.numeric(.data[[logFC_col]])
+            logFC = as.numeric(.data[[logFC_col]]),
+            w = if (use_weight) {
+                p <- as.numeric(.data[[weight_col]])
+                1 - pmin(pmax(replace(p, !is.finite(p), 0), 0), 1)
+            } else {
+                1
+            }
         ) %>%
         distinct(gene, .keep_all = TRUE) %>%
         filter(is.finite(logFC))
-    # Use shrunken logFC directly for ranking
-    r <- x$logFC
+    # Rank by the model-weighted statistic (logFC * (1 - empirical_p)); with no
+    # weight column this reduces to the shrunken logFC.
+    r <- x$logFC * x$w
     names(r) <- x$gene
     sort(r, decreasing = TRUE)
 }
