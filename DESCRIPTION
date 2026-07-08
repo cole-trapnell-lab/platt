@@ -25,6 +25,9 @@ Imports:
     dplyr,
     fgsea,
     magrittr,
+    Matrix,
+    mgcv,
+    scam,
     speedglm,
     splines
 Remotes:
