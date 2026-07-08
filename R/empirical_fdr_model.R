@@ -19,7 +19,13 @@
 # @importFrom magrittr %>%
 NULL
 
-.EFDR_BREAKS <- c(-Inf, seq(-8, 0.5, 0.5), Inf)
+.EFDR_BREAKS <- c(-Inf, seq(-8, 0.5, 0.5), Inf)   # retained for back-compat / bin midpoints
+# The null tail is a rare, upper-tail phenomenon (the lower quantiles are a flat,
+# shot-noise-dominated bulk), so the tau grid is concentrated above 0.9 with a
+# couple of low anchors for interpolation.
+.EFDR_TAUS   <- c(0.5, 0.8, 0.9, 0.95, 0.975, 0.99, 0.995, 0.999)
+.EFDR_EGRID  <- seq(-9, 1, 0.25)      # expression grid the tail surface is evaluated on
+.EFDR_PEGRID <- seq(0, 100, 10)       # %embryos grid (control detection rate)
 
 #' Build a control-split empirical null for the DEG artifact.
 #'
@@ -112,70 +118,208 @@ build_empirical_null <- function(cds,
     dplyr::filter(is.finite(.data$perturb_to_ctrl_shrunken_lfc),
                   .data$perturb_to_ctrl_shrunken_lfc_se > 0,
                   is.finite(.data$log_mean_expression)) %>%
-    dplyr::transmute(.data$cell_group, .data$log_mean_expression,
+    dplyr::transmute(.data$gene_short_name, .data$cell_group, .data$log_mean_expression,
                      z = .data$perturb_to_ctrl_shrunken_lfc / .data$perturb_to_ctrl_shrunken_lfc_se) %>%
     dplyr::filter(is.finite(.data$z))
 }
 
-#' Train the empirical-FDR null model from control-split null draws.
-#' @param null Output of [build_empirical_null()] (log_mean_expression, z, log_ratio).
-#' @param expr_breaks Expression bin edges.
-#' @return An `efdr_model` object (a tibble of per-stratum sorted |z| references).
+#' Per-(gene, cell-type) control detection rate (%embryos with detectable expression).
+#'
+#' The empirical null's second covariate. A gene carried by few embryos has
+#' between-embryo variance the mean-dispersion trend under-prices (the DESeq-style
+#' shrinkage used in the DEG fit), which inflates |z|; %embryos is a scale-free,
+#' per-experiment proxy for that dispersion excess. Computed from control cells
+#' only (the null is control-split), so the same table applies to the null draws
+#' and to the real DEG table.
+#'
+#' @param cds cell_data_set (control cells are selected internally).
+#' @param sample_group,cell_group,control_ids,perturbation_col colData columns/values.
+#' @return tibble(gene_short_name, cell_group, pct_emb) with pct_emb in [0, 100].
 #' @export
-train_efdr_model <- function(null, expr_breaks = .EFDR_BREAKS) {
-  ref <- null %>%
+efdr_detection_rate <- function(cds,
+                                sample_group = "embryo_ID",
+                                cell_group = "cell_type",
+                                control_ids = c("ctrl-inj"),
+                                perturbation_col = "perturbation") {
+  cd <- SummarizedExperiment::colData(cds)
+  keep <- as.character(cd[[perturbation_col]]) %in% control_ids
+  cds <- cds[, keep]; cd <- SummarizedExperiment::colData(cds)
+  M <- monocle3::exprs(cds)
+  gsym <- SummarizedExperiment::rowData(cds)$gene_short_name
+  if (is.null(gsym)) gsym <- rownames(cds)
+  ct <- as.character(cd[[cell_group]]); emb <- as.character(cd[[sample_group]])
+  purrr::map_dfr(unique(ct), function(g) {
+    idx <- which(ct == g); if (length(idx) < 2L) return(NULL)
+    e <- factor(emb[idx])
+    B <- methods::as(M[, idx, drop = FALSE], "dgCMatrix"); B@x[] <- 1  # binarise detection (BPCells -> sparse)
+    # cells x embryos indicator, built directly (robust to a single-embryo cell type,
+    # where sparse.model.matrix's contrasts machinery fails)
+    E <- Matrix::sparseMatrix(i = seq_along(e), j = as.integer(e), x = 1,
+                              dims = c(length(e), nlevels(e)))
+    detc <- as.matrix(B %*% E)                                            # genes x embryos: #cells detecting
+    tibble::tibble(gene_short_name = gsym, cell_group = g,
+                   pct_emb = 100 * Matrix::rowMeans(detc > 0))
+  }) %>%
+    dplyr::group_by(.data$gene_short_name, .data$cell_group) %>%   # collapse duplicate symbols
+    dplyr::summarise(pct_emb = max(.data$pct_emb), .groups = "drop")
+}
+
+#' Train the empirical-FDR null model from control-split null draws.
+#'
+#' Models the null upper tail of |z| as a smooth function of **expression and
+#' control %embryos**, per (direction, sampling log-ratio):
+#'   - **monotone-decreasing in expression** (scam `bs="mpd"`): the dispersion
+#'     mis-pricing that inflates |z| worsens monotonically as expression -> 0, so
+#'     the tail must not droop back toward zero in the sparse extreme-low region.
+#'   - **decreasing in %embryos** (scam `bs="mpd"`): broadly-detected genes have
+#'     well-estimated dispersion (light tail); narrowly-detected genes carry the
+#'     under-priced between-embryo variance (heavy tail).
+#' Direction is kept separate (the control-depth artifact is one-directional).
+#'
+#' @param null Output of [build_empirical_null()] (gene_short_name, cell_group,
+#'   log_mean_expression, z, log_ratio).
+#' @param detection Output of [efdr_detection_rate()] (gene_short_name, cell_group,
+#'   pct_emb); joined to the null to supply the %embryos covariate.
+#' @param taus Quantile levels (tail-concentrated) the surface is evaluated at.
+#' @param egrid,pegrid Expression and %embryos grids the surface is evaluated on.
+#' @param bin_width Expression bin width for the per-cell empirical quantiles.
+#' @param pe_bin %embryos bin width for the per-cell empirical quantiles.
+#' @return An `efdr_model`: per-(direction, log-ratio) 2-D tail surfaces on the
+#'   (egrid x pegrid) grid, one column per tau.
+#' @export
+train_efdr_model <- function(null, detection = NULL, taus = .EFDR_TAUS,
+                             egrid = .EFDR_EGRID, pegrid = .EFDR_PEGRID,
+                             bin_width = 0.5, pe_bin = 10) {
+  if (!is.null(detection)) {
+    null <- dplyr::left_join(null, detection, by = c("gene_short_name", "cell_group"))
+  }
+  if (!"pct_emb" %in% names(null)) null$pct_emb <- NA_real_
+  null <- null %>%
     dplyr::filter(is.finite(.data$log_mean_expression), is.finite(.data$z)) %>%
-    dplyr::mutate(eb = cut(.data$log_mean_expression, expr_breaks),
-                  dir = dplyr::if_else(.data$z < 0, "dn", "up"),
-                  a = abs(.data$z)) %>%
-    dplyr::group_by(.data$eb, .data$dir, .data$log_ratio) %>%
-    dplyr::summarise(ref = list(sort(.data$a)), .groups = "drop")
-  structure(list(ref = ref, ratios = sort(unique(ref$log_ratio)), expr_breaks = expr_breaks),
+    dplyr::mutate(dir = dplyr::if_else(.data$z < 0, "dn", "up"), a = abs(.data$z))
+  ratios <- sort(unique(null$log_ratio))
+  GR <- expand.grid(eb = egrid, pe = pegrid)          # eb varies fastest
+  surf <- list()
+  for (r in ratios) for (d in c("dn", "up")) {
+    key <- paste(d, r)
+    sub <- null %>% dplyr::filter(.data$log_ratio == r, .data$dir == d)
+    use_pe <- mean(is.finite(sub$pct_emb)) > 0.5 &&
+              length(unique(round(sub$pct_emb[is.finite(sub$pct_emb)] / pe_bin))) >= 3L
+    pb <- sub %>%
+      dplyr::mutate(eb = round(.data$log_mean_expression / bin_width) * bin_width,
+                    pe = round(.data$pct_emb / pe_bin) * pe_bin) %>%
+      { if (use_pe) dplyr::group_by(., .data$eb, .data$pe) else dplyr::group_by(., .data$eb) } %>%
+      dplyr::summarise(q = list(stats::quantile(.data$a, taus, names = FALSE)),
+                       n = dplyr::n(), .groups = "drop") %>%
+      dplyr::filter(.data$n >= 30L)
+    if (nrow(pb) < 8L) { surf[[key]] <- NULL; next }   # too sparse -> caller defers to ashr
+    qmat <- do.call(rbind, pb$q)                       # cells x taus
+    Q <- vapply(seq_along(taus), function(i) {
+      if (use_pe) {
+        df <- data.frame(q = qmat[, i], eb = pb$eb, pe = pb$pe, n = pb$n)
+        m <- tryCatch(
+          scam::scam(q ~ s(eb, bs = "mpd") + s(pe, bs = "mpd"), weights = n, data = df),
+          error = function(e1) tryCatch(
+            scam::scam(q ~ s(eb, bs = "mpd"), weights = n, data = df),
+            error = function(e2) mgcv::gam(q ~ s(eb), weights = n, data = df)))
+        pmax(as.numeric(stats::predict(m, newdata = GR)), 0)
+      } else {
+        # no usable %embryos -> 1-D monotone in expression, tiled across the pe grid
+        df <- data.frame(q = qmat[, i], eb = pb$eb, n = pb$n)
+        m <- tryCatch(scam::scam(q ~ s(eb, bs = "mpd"), weights = n, data = df),
+                      error = function(e2) mgcv::gam(q ~ s(eb), weights = n, data = df))
+        v <- pmax(as.numeric(stats::predict(m, newdata = data.frame(eb = egrid))), 0)
+        rep(v, times = length(pegrid))                 # eb fastest in GR -> tile per pe block
+      }
+    }, numeric(nrow(GR)))                               # nrow(GR) x taus
+    Q <- t(apply(Q, 1, cummax))                        # monotone in tau within each grid cell
+    surf[[key]] <- Q
+  }
+  structure(list(surf = surf, taus = taus, egrid = egrid, pegrid = pegrid, ratios = ratios),
             class = "efdr_model")
 }
 
-# vectorised right-tail probability of |z| values `a` against a sorted reference
-.efdr_tailp <- function(a, ref) {
-  if (is.null(ref) || !length(ref)) return(rep(0.5, length(a)))
-  (length(ref) - findInterval(a, ref, left.open = TRUE) + 1) / (length(ref) + 1)
+# right-tail probability of |z| = `a` at (expression `e`, %embryos `pe`) against a
+# 2-D tail surface. NA where the surface is absent (too-sparse stratum) or pe is
+# missing -> caller defers to the ordinary test.
+.efdr_tail_2d <- function(Q, taus, egrid, pegrid, e, pe, a) {
+  if (is.null(Q)) return(rep(NA_real_, length(a)))
+  ne <- length(egrid); nt <- length(taus)
+  ie <- pmin(pmax(findInterval(e, egrid), 1L), ne)
+  ip <- pmin(pmax(findInterval(pe, pegrid), 1L), length(pegrid))
+  ri <- (ip - 1L) * ne + ie                            # row in GR (eb fastest)
+  vapply(seq_along(a), function(k) {
+    if (is.na(ri[k]) || is.na(a[k])) return(NA_real_)
+    qi <- Q[ri[k], ]; ak <- a[k]
+    if (ak <= qi[1])  return(1 - taus[1] * 0.5)
+    if (ak >= qi[nt]) return(1 - taus[nt])
+    j <- max(which(qi <= ak))
+    1 - (taus[j] + (ak - qi[j]) / (qi[j + 1] - qi[j]) * (taus[j + 1] - taus[j]))
+  }, numeric(1))
 }
 
 #' Annotate a DEG table with per-gene empirical p and BH FDR at a given log-ratio.
 #'
 #' @param model An `efdr_model` from [train_efdr_model()].
-#' @param deg_tbl DEG table with `log_mean_expression` and either `z` or
-#'   `perturb_to_ctrl_shrunken_lfc` + `perturb_to_ctrl_shrunken_lfc_se`.
+#' @param deg_tbl DEG table with `gene_short_name`, `cell_group`,
+#'   `log_mean_expression`, and either `z` or `perturb_to_ctrl_shrunken_lfc` +
+#'   `perturb_to_ctrl_shrunken_lfc_se`.
+#' @param detection Output of [efdr_detection_rate()] (gene_short_name, cell_group,
+#'   pct_emb); supplies the %embryos covariate. Genes with no match fall back to
+#'   the ordinary test (still floored below).
 #' @param log_ratio The perturbation's log2(n_perturb / n_control).
 #' @param group_col Column to BH-adjust within (default `cell_group`).
 #' @return `deg_tbl` with added `empirical_p` and `empirical_fdr`.
+#' @details Two coupled pieces:
+#'   * The 2-D null tail (monotone in expression, smooth in %embryos) *demotes*
+#'     the dispersion-under-priced artifact calls (narrow / low-expression).
+#'   * An **ashr floor** — `empirical_p = max(tail, perturb_to_ctrl_p_value)` — is
+#'     applied **always** (including where the tail is unavailable). It is
+#'     load-bearing: without it, conditioning the null tighter lets trivially small
+#'     |z| pass. So the empirical step may only *demote* a call ashr made, never
+#'     promote one.
 #' @export
-annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio, group_col = "cell_group") {
+annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio, detection = NULL,
+                                         group_col = "cell_group") {
   R <- model$ratios
   br <- if (log_ratio <= R[1]) list(lo = R[1], hi = R[1], w = 1) else
         if (log_ratio >= R[length(R)]) list(lo = R[length(R)], hi = R[length(R)], w = 1) else {
           hi <- R[which(R >= log_ratio)[1]]; lo <- R[max(which(R <= log_ratio))]
           list(lo = lo, hi = hi, w = if (hi == lo) 1 else (hi - log_ratio) / (hi - lo))
         }
-  ref_at <- function(r) model$ref %>% dplyr::filter(.data$log_ratio == r) %>%
-    { purrr::set_names(.$ref, paste(.$eb, .$dir)) }
-  rlo <- ref_at(br$lo); rhi <- if (br$hi == br$lo) rlo else ref_at(br$hi)
+  if (!is.null(detection)) {
+    deg_tbl <- dplyr::left_join(deg_tbl, detection, by = c("gene_short_name", "cell_group"))
+  }
+  if (!"pct_emb" %in% names(deg_tbl)) deg_tbl$pct_emb <- NA_real_
 
-  deg_tbl %>%
+  out <- deg_tbl %>%
     dplyr::mutate(
       z = if ("z" %in% names(.)) .data$z
           else .data$perturb_to_ctrl_shrunken_lfc / .data$perturb_to_ctrl_shrunken_lfc_se,
-      eb = cut(.data$log_mean_expression, model$expr_breaks),
-      dir = dplyr::if_else(.data$z < 0, "dn", "up"),
-      .a = abs(.data$z)) %>%
-    dplyr::group_by(.data$eb, .data$dir) %>%
-    # one findInterval per (eb,dir) group over the whole group's |z| -- fully vectorised
-    dplyr::mutate(empirical_p = {
-      key <- paste(dplyr::cur_group()$eb, dplyr::cur_group()$dir)
-      br$w * .efdr_tailp(.data$.a, rlo[[key]]) +
-        (1 - br$w) * .efdr_tailp(.data$.a, rhi[[key]])
-    }) %>%
+      .dir = dplyr::if_else(.data$z < 0, "dn", "up"),
+      .a = abs(.data$z),
+      # ordinary reference p (the floor): the trusted ashr shrunken p if present, else normal(z)
+      .ord_p = if ("perturb_to_ctrl_p_value" %in% names(.)) .data$perturb_to_ctrl_p_value
+               else 2 * (1 - stats::pnorm(.data$.a)))
+
+  # 2-D empirical tail, interpolated across the two bracketing log-ratios.
+  emp_tail <- rep(NA_real_, nrow(out))
+  for (d in c("dn", "up")) {
+    idx <- which(out$.dir == d); if (!length(idx)) next
+    e <- out$log_mean_expression[idx]; pe <- out$pct_emb[idx]; a <- out$.a[idx]
+    tl <- .efdr_tail_2d(model$surf[[paste(d, br$lo)]], model$taus, model$egrid, model$pegrid, e, pe, a)
+    th <- if (br$hi == br$lo) tl else
+          .efdr_tail_2d(model$surf[[paste(d, br$hi)]], model$taus, model$egrid, model$pegrid, e, pe, a)
+    emp_tail[idx] <- dplyr::coalesce(br$w * tl + (1 - br$w) * th, tl, th)
+  }
+  # ashr floor, ALWAYS: demote-only. Where the tail is NA (missing surface or pct_emb),
+  # empirical_p is the ordinary p, so the floor still holds (no fallback hole).
+  emp_tail <- pmin(pmax(emp_tail, 0), 1)
+  out$empirical_p <- dplyr::if_else(is.na(emp_tail), out$.ord_p, pmax(emp_tail, out$.ord_p))
+
+  out %>%
     dplyr::group_by(dplyr::across(all_of(group_col))) %>%
     dplyr::mutate(empirical_fdr = stats::p.adjust(.data$empirical_p, "BH")) %>%
     dplyr::ungroup() %>%
-    dplyr::select(-"eb", -"dir", -".a")
+    dplyr::select(-".dir", -".a", -".ord_p")
 }
