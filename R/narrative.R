@@ -578,16 +578,19 @@ py_disrupted_pathways_to_tibble <- function(x) {
         description = purrr::map_chr(x, ~ .x$description %||% NA_character_),
         dysregulated_genes = purrr::map_chr(x, ~ {
           dg <- .x$dysregulated_genes
-          # Empty list / NULL — happens when the LLM correctly returns no genes
-          # for a pathway (per the Phase-2 prompt). Treat as NA, not as an
-          # error, so other pathways for this cell still survive.
           if (is.null(dg) || length(dg) == 0) return(NA_character_)
           if (is.list(dg)) dg <- unlist(dg)
           dg <- as.character(dg)
           dg <- dg[!is.na(dg) & nzchar(dg)]
           if (length(dg) == 0) NA_character_ else paste(dg, collapse = ", ")
         })
-      )
+      ) %>%
+        # Drop pathways the model named but could not ground in any gene from
+        # <allowed_genes>. An ungrounded pathway carries no cell-specific
+        # evidence; empirically these are the model anchoring on the
+        # perturbation's canonical function (e.g. naming a myogenic pathway in a
+        # non-muscle cell) rather than reading this cell's data. Demote-only.
+        dplyr::filter(!is.na(.data$dysregulated_genes))
     },
     error = function(e) {
       preview <- paste(utils::capture.output(str(x, max.level = 2)), collapse = " ")
