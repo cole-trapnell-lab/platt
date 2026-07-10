@@ -327,6 +327,14 @@ summarize_cell_type_impact <- function(
   # resolves per gene and does not hit the per-cell FDR floor. Falls back to
   # nominal p when the empirical_p column is absent (undecorated tables).
   cell_type_degs <- degs %>% filter(cell_group == ct)
+  # Whether the abundance analysis judged this cell type reliably present in the
+  # experiment (longest-contiguous window above the abundance threshold; see
+  # assembly_utils.R). Captured from the full cell DEGs BEFORE the empirical_p
+  # filter so it survives even when the significant set is empty. Cells that are
+  # not present-above-threshold cannot be captured by this perturbation and are
+  # dropped from the impact table downstream.
+  cell_present_above_thresh <- "present_above_thresh" %in% names(cell_type_degs) &&
+    isTRUE(any(cell_type_degs$present_above_thresh, na.rm = TRUE))
   if (!is.null(empirical_p_thresh) && empirical_p_thresh < 1 &&
       "empirical_p" %in% colnames(cell_type_degs)) {
     cell_type_degs <- cell_type_degs %>%
@@ -487,6 +495,7 @@ summarize_cell_type_impact <- function(
     fitness_evidence = fitness_evidence,
     identity_label = identity_label, # <-- NEW FIELD
     identity_evidence = identity_evidence, # <-- NEW FIELD
+    present_above_thresh = cell_present_above_thresh,
     degs = cell_type_degs,
     goi_line = goi$goi_line,
     # Store only FDR-significant, non-empty-overlap pathways (same bar the LLM
@@ -509,14 +518,29 @@ build_lineage_context <- function(ct, parents, results, all_types = NULL) {
     parents <- intersect(parents, all_types)
   }
 
-  # Build parent summaries
+  # Build parent summaries. Pass the ancestor's LLM narrative (where nailed-down
+  # literature and citations live), plus its genes-of-interest and enriched
+  # pathways, so the descendant's call can reason about how an upstream defect
+  # shapes this cell's own changes. This is CONTEXT only -- the descendant must
+  # still name only its own <allowed_genes> in its output.
   parent_summaries <- unlist(lapply(parents, function(p) {
-    parent_context <- if (!is.null(results[[p]]$llm_summary)) {
-      results[[p]]$llm_summary
-    } else {
-      results[[p]]$summary
-    }
-    paste0("Parent (", p, "):\n", parent_context)
+    pr <- results[[p]]
+    if (is.null(pr)) return(NULL)
+    # The distilled running summary is the bounded carrier of ancestral mechanism:
+    # it is re-distilled at every called node and passed through unchanged by
+    # empty nodes, so the salient root->...->here thread reaches this cell without
+    # dumping the full ancestral chain into the prompt.
+    narrative <- pr$lineage_context_summary
+    if (is.null(narrative) || is.na(narrative)) narrative <- pr$llm_summary
+    if (is.null(narrative) || is.na(narrative)) narrative <- pr$summary
+    # Carry the IMMEDIATE parent's genes-of-interest across this one edge so the
+    # model can connect an upstream regulator (down in the parent) to its target
+    # (down in this cell). One hop only -- not accumulated up the whole lineage.
+    goi_line <- if (!is.null(pr$goi_line) && !is.na(pr$goi_line) && nzchar(pr$goi_line) && pr$goi_line != "none") {
+      paste0("\n  Immediate-parent genes of interest (look for upstream-regulator -> this-cell-target links): ", pr$goi_line)
+    } else ""
+    paste0("Ancestor (", p, ") [upstream context, do NOT report as this cell's own]:\n",
+           narrative, goi_line)
   }), use.names = FALSE)
 
   # Build current cell type summary
@@ -714,13 +738,30 @@ summarize_impact_in_lineage_context <- function(
         ct %in% identity_phenotypes$cell_group &&
         !all(identity_phenotypes %>% filter(cell_group == ct) %>% pull(identity_label) %in% c("I0 Identity intact"))
 
+      # A cell has something to explain if it shows its OWN transcriptional signal,
+      # even without an abundance/fitness/identity phenotype label: its own
+      # genes-of-interest (a key regulator moving is worth explaining regardless of
+      # GO enrichment) or its own enriched pathways. We do NOT recycle an ancestor's
+      # pathways as this cell's -- the ancestor is passed only as context (below).
+      has_own_goi <- !is.null(results[[ct]]$goi_line) && !is.na(results[[ct]]$goi_line) &&
+        nzchar(results[[ct]]$goi_line) && results[[ct]]$goi_line != "none"
+      has_own_enrichment <- !is.null(results[[ct]]$pathways) &&
+        is.data.frame(results[[ct]]$pathways) && nrow(results[[ct]]$pathways) > 0
+
+      # Distilled ancestral summary this cell forwards to its children. For a
+      # called or excluded cell it is the cell's own concise_summary (set below);
+      # a no-signal cell instead passes its parents' distilled summary straight
+      # through, so the running narrative survives empty intermediate nodes.
+      lineage_ctx_passthrough <- NULL
+
       if (!is.null(excluded_cell_types) && ct %in% excluded_cell_types) {
         if (verbose) message(sprintf("[DEBUG] Cell type %s is excluded.", ct))
         concise_summary <- NA_character_
         disrupted_pathways <- NULL
         other_dysregulated_genes <- NULL
-      } else if (has_abundance || has_fitness || has_identity) {
-        if (verbose) message(sprintf("[DEBUG] Calling LLM for cell type: %s (expresses_target: %s, has_abundance: %s, has_fitness: %s, has_identity: %s)", ct, expresses_target, has_abundance, has_fitness, has_identity))
+      } else if (isTRUE(results[[ct]]$present_above_thresh) &&
+                 (has_abundance || has_fitness || has_identity || has_own_goi || has_own_enrichment)) {
+        if (verbose) message(sprintf("[DEBUG] Calling LLM for cell type: %s (expresses_target: %s, has_abundance: %s, has_fitness: %s, has_identity: %s, has_own_goi: %s, has_own_enrichment: %s)", ct, expresses_target, has_abundance, has_fitness, has_identity, has_own_goi, has_own_enrichment))
         allowed_degs_map <- build_allowed_degs_map(results[[ct]]$degs)
         if (verbose) {
           message(sprintf("[DEBUG] allowed_degs for %s: %d genes", ct, length(allowed_degs_map)))
@@ -788,26 +829,48 @@ summarize_impact_in_lineage_context <- function(
         })
         parent_phenotype_summaries <- parent_phenotype_summaries[!is.na(parent_phenotype_summaries) & parent_phenotype_summaries != "" & parent_phenotype_summaries != "NULL"]
 
+        # This branch is only reached when the cell has NO own signal of any kind
+        # (no phenotype, no goi, no enrichment) -- there is nothing cell-autonomous
+        # to explain. We record a pointer to any upstream (ancestral) phenotype as
+        # context, but we do NOT fabricate a mechanism for this cell by copying the
+        # ancestor's pathways/genes onto it -- that would pass off an ancestral
+        # problem as a descendant problem. Its pathways/genes stay empty.
         if (length(parent_phenotype_summaries) == 0) {
           if (verbose) message(sprintf("[DEBUG] Cell type %s and its parents have no detectable phenotypes.", ct))
           concise_summary <- paste0(
-            "No LLM call for cell type '", ct, "': no detectable phenotypes in this cell type or its parents."
+            "No cell-autonomous signal for '", ct, "': no phenotype, genes-of-interest, or pathway enrichment in this cell type or its ancestors."
           )
         } else {
-          if (verbose) message(sprintf("[DEBUG] Cell type %s: propagating parent phenotype info.", ct))
-          concise_summary <- paste(parent_phenotype_summaries, collapse = "\n")
+          if (verbose) message(sprintf("[DEBUG] Cell type %s: no own signal; noting upstream ancestral phenotype as context only (no pathways recycled).", ct))
+          concise_summary <- paste0(
+            "No cell-autonomous transcriptional signal for '", ct,
+            "'. Downstream of ancestral phenotype(s): ",
+            paste(parent_phenotype_summaries, collapse = " "),
+            " See the ancestor(s) for the upstream mechanism."
+          )
         }
 
-        disrupted_pathways <- purrr::map(parents, ~ results[[.x]]$llm_disrupted_pathways) %>%
-          purrr::compact() %>%
-          purrr::flatten()
-        other_dysregulated_genes <- purrr::map(parents, ~ results[[.x]]$llm_other_dysregulated_genes) %>%
-          purrr::compact() %>%
-          unlist()
+        disrupted_pathways <- NULL
+        other_dysregulated_genes <- NULL
+
+        # Pass the parents' distilled running summary through unchanged (no
+        # accretion), so this no-signal cell does not break the top-down summary
+        # chain for its own descendants. Its displayed row still says "no own
+        # change" (concise_summary above); this is only what it forwards.
+        ups <- vapply(parents, function(p) {
+          v <- results[[p]]$lineage_context_summary
+          if (is.null(v) || is.na(v)) v <- results[[p]]$llm_summary
+          if (is.null(v) || is.na(v)) NA_character_ else as.character(v)
+        }, character(1))
+        ups <- ups[!is.na(ups) & nzchar(ups)]
+        lineage_ctx_passthrough <- if (length(ups) == 0) NA_character_ else paste(ups, collapse = "\n\n")
       }
 
       results[[ct]]$context <- cell_impact_text
       results[[ct]]$llm_summary <- ifelse(is.null(concise_summary) || concise_summary == "NULL", NA_character_, concise_summary)
+      # Forwarded (distilled) ancestral summary: parents' pass-through for a
+      # no-signal cell, else this cell's own concise_summary.
+      results[[ct]]$lineage_context_summary <- if (!is.null(lineage_ctx_passthrough)) lineage_ctx_passthrough else results[[ct]]$llm_summary
       results[[ct]]$llm_disrupted_pathways <- disrupted_pathways
       results[[ct]]$llm_other_dysregulated_genes <- other_dysregulated_genes
       processed <- c(processed, ct)
@@ -830,6 +893,21 @@ summarize_impact_in_lineage_context <- function(
     cell_type = names(results),
     data = unname(results)
   ) %>% unnest_wider(data)
+
+  # Drop cell types the abundance analysis judged not reliably present
+  # (present_above_thresh = FALSE): this perturbation experiment cannot capture
+  # them, so they get NO impact-table entry -- their large DEG sets are noise/
+  # indirect on few cells, not attributable biology. They were still available as
+  # context during processing, so any present descendants inherited the distilled
+  # ancestral narrative through them.
+  if ("present_above_thresh" %in% names(results)) {
+    n_before <- nrow(results)
+    results <- results %>% filter(present_above_thresh %in% TRUE)
+    if (verbose && n_before > nrow(results)) {
+      message(sprintf("[DEBUG] Dropped %d not-present-above-threshold cell types from the impact table.", n_before - nrow(results)))
+    }
+    results <- results %>% select(-present_above_thresh)
+  }
 
   # Ensure llm_disrupted_pathways column exists before mutate
   if (!"llm_disrupted_pathways" %in% names(results)) {
