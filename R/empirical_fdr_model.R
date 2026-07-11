@@ -107,7 +107,15 @@ build_empirical_null <- function(cds,
       filter_mode = "by_background_count", detection_min_samples = 1,
       background_bottom_frac = 0.25, background_quantile_p = 0.99,
       background_count_floor = 2, nperm = nperm)
-    .read_null_dir(wd) %>% dplyr::mutate(log_ratio = log2(N / (n_ctrl - N)))
+    # Per-pseudo-group detection for THIS split: pct_emb = ctrl-inj (losing) arm,
+    # pct_emb_pert = NULLPERT (gaining) arm. The up-null is conditioned on the
+    # gaining-arm detection so the few-cell blip distribution is captured; the
+    # down-null on the losing (control) arm, as before.
+    det <- efdr_detection_rate(sub, sample_group = sample_group, cell_group = cell_group,
+                               control_ids = "ctrl-inj", perturbation_col = perturbation_col)
+    .read_null_dir(wd) %>%
+      dplyr::left_join(det, by = c("gene_short_name", "cell_group")) %>%
+      dplyr::mutate(log_ratio = log2(N / (n_ctrl - N)))
   })
 }
 
@@ -141,27 +149,43 @@ efdr_detection_rate <- function(cds,
                                 cell_group = "cell_type",
                                 control_ids = c("ctrl-inj"),
                                 perturbation_col = "perturbation") {
-  cd <- SummarizedExperiment::colData(cds)
-  keep <- as.character(cd[[perturbation_col]]) %in% control_ids
-  cds <- cds[, keep]; cd <- SummarizedExperiment::colData(cds)
-  M <- monocle3::exprs(cds)
-  gsym <- SummarizedExperiment::rowData(cds)$gene_short_name
-  if (is.null(gsym)) gsym <- rownames(cds)
-  ct <- as.character(cd[[cell_group]]); emb <- as.character(cd[[sample_group]])
-  purrr::map_dfr(unique(ct), function(g) {
-    idx <- which(ct == g); if (length(idx) < 2L) return(NULL)
-    e <- factor(emb[idx])
-    B <- methods::as(M[, idx, drop = FALSE], "dgCMatrix"); B@x[] <- 1  # binarise detection (BPCells -> sparse)
-    # cells x embryos indicator, built directly (robust to a single-embryo cell type,
-    # where sparse.model.matrix's contrasts machinery fails)
-    E <- Matrix::sparseMatrix(i = seq_along(e), j = as.integer(e), x = 1,
-                              dims = c(length(e), nlevels(e)))
-    detc <- as.matrix(B %*% E)                                            # genes x embryos: #cells detecting
-    tibble::tibble(gene_short_name = gsym, cell_group = g,
-                   pct_emb = 100 * Matrix::rowMeans(detc > 0))
-  }) %>%
-    dplyr::group_by(.data$gene_short_name, .data$cell_group) %>%   # collapse duplicate symbols
-    dplyr::summarise(pct_emb = max(.data$pct_emb), .groups = "drop")
+  # Per-(gene, cell) detection breadth (% of embryos with >=1 cell detecting), computed
+  # SEPARATELY for the control and perturbation arms. The two are used direction-specifically
+  # downstream: control detection conditions the DOWN null (on-in-control artifact), perturbation
+  # detection conditions the UP null (off-in-control, few-perturbation-cell blip artifact). They
+  # are never used together, avoiding colinearity between the two (highly correlated) metrics.
+  .rate <- function(cds_sub, col_name) {
+    cd <- SummarizedExperiment::colData(cds_sub)
+    M <- monocle3::exprs(cds_sub)
+    gsym <- SummarizedExperiment::rowData(cds_sub)$gene_short_name
+    if (is.null(gsym)) gsym <- rownames(cds_sub)
+    ct <- as.character(cd[[cell_group]]); emb <- as.character(cd[[sample_group]])
+    out <- purrr::map_dfr(unique(ct), function(g) {
+      idx <- which(ct == g); if (length(idx) < 2L) return(NULL)
+      e <- factor(emb[idx])
+      B <- methods::as(M[, idx, drop = FALSE], "dgCMatrix"); B@x[] <- 1  # binarise detection (BPCells -> sparse)
+      E <- Matrix::sparseMatrix(i = seq_along(e), j = as.integer(e), x = 1,
+                                dims = c(length(e), nlevels(e)))
+      detc <- as.matrix(B %*% E)
+      tibble::tibble(gene_short_name = gsym, cell_group = g,
+                     rate = 100 * Matrix::rowMeans(detc > 0))
+    })
+    if (is.null(out) || nrow(out) == 0) {
+      return(tibble::tibble(gene_short_name = character(), cell_group = character()) %>%
+               dplyr::mutate(!!col_name := numeric()))
+    }
+    out %>%
+      dplyr::group_by(.data$gene_short_name, .data$cell_group) %>%
+      dplyr::summarise(rate = max(.data$rate), .groups = "drop") %>%
+      dplyr::rename(!!col_name := "rate")
+  }
+  cd0 <- SummarizedExperiment::colData(cds)
+  is_ctrl <- as.character(cd0[[perturbation_col]]) %in% control_ids
+  ctrl <- .rate(cds[, is_ctrl, drop = FALSE], "pct_emb")                 # control detection (kept name for back-compat)
+  pert <- .rate(cds[, !is_ctrl, drop = FALSE], "pct_emb_pert")           # perturbation detection
+  dplyr::full_join(ctrl, pert, by = c("gene_short_name", "cell_group")) %>%
+    dplyr::mutate(pct_emb = ifelse(is.na(.data$pct_emb), 0, .data$pct_emb),
+                  pct_emb_pert = ifelse(is.na(.data$pct_emb_pert), 0, .data$pct_emb_pert))
 }
 
 #' Train the empirical-FDR null model from control-split null draws.
@@ -190,10 +214,18 @@ efdr_detection_rate <- function(cds,
 train_efdr_model <- function(null, detection = NULL, taus = .EFDR_TAUS,
                              egrid = .EFDR_EGRID, pegrid = .EFDR_PEGRID,
                              bin_width = 0.5, pe_bin = 10) {
+  # The null carries per-pseudo-group detection (pct_emb = losing/control arm,
+  # pct_emb_pert = gaining/perturbation arm). Prefer those; only join a supplied
+  # `detection` for columns the null lacks (back-compat with older nulls).
   if (!is.null(detection)) {
-    null <- dplyr::left_join(null, detection, by = c("gene_short_name", "cell_group"))
+    join_cols <- setdiff(intersect(c("pct_emb", "pct_emb_pert"), names(detection)), names(null))
+    if (length(join_cols)) {
+      null <- dplyr::left_join(null, detection[, c("gene_short_name", "cell_group", join_cols)],
+                               by = c("gene_short_name", "cell_group"))
+    }
   }
   if (!"pct_emb" %in% names(null)) null$pct_emb <- NA_real_
+  if (!"pct_emb_pert" %in% names(null)) null$pct_emb_pert <- null$pct_emb  # degrade: reuse control detection
   null <- null %>%
     dplyr::filter(is.finite(.data$log_mean_expression), is.finite(.data$z)) %>%
     dplyr::mutate(dir = dplyr::if_else(.data$z < 0, "dn", "up"), a = abs(.data$z))
@@ -202,7 +234,10 @@ train_efdr_model <- function(null, detection = NULL, taus = .EFDR_TAUS,
   surf <- list()
   for (r in ratios) for (d in c("dn", "up")) {
     key <- paste(d, r)
+    # Direction-specific detection covariate: the arm that "has" the gene in a
+    # call of this direction. up -> gaining (perturbation) arm; dn -> control arm.
     sub <- null %>% dplyr::filter(.data$log_ratio == r, .data$dir == d)
+    sub$pct_emb <- if (d == "up") sub$pct_emb_pert else sub$pct_emb
     use_pe <- mean(is.finite(sub$pct_emb)) > 0.5 &&
               length(unique(round(sub$pct_emb[is.finite(sub$pct_emb)] / pe_bin))) >= 3L
     pb <- sub %>%
@@ -291,6 +326,7 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio, detection = 
     deg_tbl <- dplyr::left_join(deg_tbl, detection, by = c("gene_short_name", "cell_group"))
   }
   if (!"pct_emb" %in% names(deg_tbl)) deg_tbl$pct_emb <- NA_real_
+  if (!"pct_emb_pert" %in% names(deg_tbl)) deg_tbl$pct_emb_pert <- deg_tbl$pct_emb  # degrade gracefully
 
   out <- deg_tbl %>%
     dplyr::mutate(
@@ -306,7 +342,10 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio, detection = 
   emp_tail <- rep(NA_real_, nrow(out))
   for (d in c("dn", "up")) {
     idx <- which(out$.dir == d); if (!length(idx)) next
-    e <- out$log_mean_expression[idx]; pe <- out$pct_emb[idx]; a <- out$.a[idx]
+    # Direction-specific detection: up-calls scored against the perturbation-arm
+    # (gaining) detection surface; down-calls against the control-arm surface.
+    pe_src <- if (d == "up") out$pct_emb_pert else out$pct_emb
+    e <- out$log_mean_expression[idx]; pe <- pe_src[idx]; a <- out$.a[idx]
     tl <- .efdr_tail_2d(model$surf[[paste(d, br$lo)]], model$taus, model$egrid, model$pegrid, e, pe, a)
     th <- if (br$hi == br$lo) tl else
           .efdr_tail_2d(model$surf[[paste(d, br$hi)]], model$taus, model$egrid, model$pegrid, e, pe, a)
