@@ -413,10 +413,16 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio, detection = 
           hi <- R[which(R >= log_ratio)[1]]; lo <- R[max(which(R <= log_ratio))]
           list(lo = lo, hi = hi, w = if (hi == lo) 1 else (hi - log_ratio) / (hi - lo))
         }
+  # Drop any pre-existing detection/support columns before (re)joining: decorating an
+  # already-decorated DEG table (e.g. re-running the efdr stage) would otherwise collide
+  # on `pct_emb`/`pct_emb_pert`/`n_pert_pb`, producing `.x`/`.y` and leaving no plain
+  # `pct_emb` -- which silently NA's the covariate and skips the tail. Re-derive them here.
   if (!is.null(detection)) {
+    deg_tbl <- deg_tbl[, setdiff(names(deg_tbl), c("pct_emb", "pct_emb_pert")), drop = FALSE]
     deg_tbl <- dplyr::left_join(deg_tbl, detection, by = c("gene_short_name", "cell_group"))
   }
   if (!is.null(support)) {
+    deg_tbl <- deg_tbl[, setdiff(names(deg_tbl), "n_pert_pb"), drop = FALSE]
     deg_tbl <- dplyr::left_join(deg_tbl, support[, c("cell_group", "n_pert_pb")], by = "cell_group")
   }
   if (!"pct_emb" %in% names(deg_tbl)) deg_tbl$pct_emb <- NA_real_
