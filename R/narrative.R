@@ -265,7 +265,7 @@ summarize_cell_type_impact <- function(
   abundance_phenotypes = NULL,
   fitness_phenotypes = NULL,
   identity_phenotypes = NULL, # <-- NEW ARGUMENT
-  filter_depleted_downs = TRUE
+  filter_depleted_downs = FALSE
 ) {
   # 1. Abundance change (from abundance_phenotypes if available)
   abundance_row <- if (!is.null(abundance_phenotypes)) {
@@ -662,7 +662,7 @@ summarize_impact_in_lineage_context <- function(
   fitness_phenotypes = NULL,
   identity_phenotypes = NULL,
   pre_cited_gene_claims = NULL,
-  filter_depleted_downs = TRUE,
+  filter_depleted_downs = FALSE,
   verbose = FALSE,
   ...
 ) {
