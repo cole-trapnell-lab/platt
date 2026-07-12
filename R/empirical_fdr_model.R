@@ -57,6 +57,7 @@ build_empirical_null <- function(cds,
                                  nperm = 10000L,
                                  cores = 1L,
                                  seed = 42L,
+                                 min_cells_for_support = 1L,
                                  max_simultaneous_genes = 2000L,
                                  write_dir = tempfile("efdr_null_"),
                                  verbose = TRUE) {
@@ -113,8 +114,16 @@ build_empirical_null <- function(cds,
     # down-null on the losing (control) arm, as before.
     det <- efdr_detection_rate(sub, sample_group = sample_group, cell_group = cell_group,
                                control_ids = "ctrl-inj", perturbation_col = perturbation_col)
+    # Per-split perturbation-arm replicate support (NULLPERT pseudobulks per cell type):
+    # carried so the model can calibrate the honest degrees-of-freedom vs support (the
+    # trend-dispersion shrinkage buys back df, so the effective df exceeds n_pert_pb - 1;
+    # the null is the reference for how much).
+    supp <- efdr_perturbation_support(sub, sample_group = sample_group, cell_group = cell_group,
+                                      control_ids = "ctrl-inj", perturbation_col = perturbation_col,
+                                      min_cells = min_cells_for_support)
     .read_null_dir(wd) %>%
       dplyr::left_join(det, by = c("gene_short_name", "cell_group")) %>%
+      dplyr::left_join(supp[, c("cell_group", "n_pert_pb")], by = "cell_group") %>%
       dplyr::mutate(log_ratio = log2(N / (n_ctrl - N)))
   })
 }
@@ -186,6 +195,48 @@ efdr_detection_rate <- function(cds,
   dplyr::full_join(ctrl, pert, by = c("gene_short_name", "cell_group")) %>%
     dplyr::mutate(pct_emb = ifelse(is.na(.data$pct_emb), 0, .data$pct_emb),
                   pct_emb_pert = ifelse(is.na(.data$pct_emb_pert), 0, .data$pct_emb_pert))
+}
+
+#' Per-cell-type perturbation-arm replicate support.
+#'
+#' Counts, per cell type, the number of **perturbation** embryos (pseudobulks)
+#' contributing at least `min_cells` cells to the within-state contrast. This is
+#' the replicate count the pseudobulk GLM actually has on the perturbation side,
+#' and it is the honest degrees-of-freedom for the contrast: when a cell type is
+#' depleted in the perturbation, the deep control arm supplies a small standard
+#' error as if the contrast were well-powered, inflating |z| and manufacturing
+#' spurious (predominantly down) calls. [annotate_empirical_fdr_model()] uses this
+#' to floor the ordinary p by a t-distribution with `n_pert_pb - 1` df, and to
+#' gate cell types with <2 perturbation pseudobulks (no valid two-group contrast).
+#'
+#' @param cds contrast cell_data_set.
+#' @param sample_group,cell_group,control_ids,perturbation_col colData columns/values.
+#' @param min_cells Minimum cells for an embryo to count as a replicate. Default 1:
+#'   the replicate unit is the embryo (an embryo either has the cell type or not);
+#'   cells-per-embryo feeds the per-pseudobulk variance, not the replicate count, and
+#'   a higher bar would wrongly drop cell types that are present across many embryos
+#'   but sparse per embryo (common in shallow captures). Matches the within-state DEG,
+#'   which fits on any embryo with cells (`min_cells_per_pseudobulk = NULL`).
+#' @return tibble(cell_group, n_pert_pb, n_ctrl_pb).
+#' @export
+efdr_perturbation_support <- function(cds,
+                                      sample_group = "embryo_ID",
+                                      cell_group = "cell_type",
+                                      control_ids = c("ctrl-inj"),
+                                      perturbation_col = "perturbation",
+                                      min_cells = 1L) {
+  cd <- SummarizedExperiment::colData(cds)
+  df <- tibble::tibble(ct = as.character(cd[[cell_group]]),
+                       emb = as.character(cd[[sample_group]]),
+                       is_ctrl = as.character(cd[[perturbation_col]]) %in% control_ids)
+  df %>%
+    dplyr::count(.data$ct, .data$emb, .data$is_ctrl, name = "n") %>%
+    dplyr::filter(.data$n >= min_cells) %>%
+    dplyr::group_by(.data$ct) %>%
+    dplyr::summarise(n_pert_pb = dplyr::n_distinct(.data$emb[!.data$is_ctrl]),
+                     n_ctrl_pb = dplyr::n_distinct(.data$emb[.data$is_ctrl]),
+                     .groups = "drop") %>%
+    dplyr::rename(cell_group = "ct")
 }
 
 #' Train the empirical-FDR null model from control-split null draws.
@@ -270,8 +321,47 @@ train_efdr_model <- function(null, detection = NULL, taus = .EFDR_TAUS,
     Q <- t(apply(Q, 1, cummax))                        # monotone in tau within each grid cell
     surf[[key]] <- Q
   }
-  structure(list(surf = surf, taus = taus, egrid = egrid, pegrid = pegrid, ratios = ratios),
+  df_calib <- .efdr_calibrate_df(null)
+  structure(list(surf = surf, taus = taus, egrid = egrid, pegrid = pegrid, ratios = ratios,
+                 df_calib = df_calib),
             class = "efdr_model")
+}
+
+# Calibrate the honest effective degrees-of-freedom of the within-state contrast as a
+# function of perturbation-arm replicate support (n_pert_pb). Naive Welch says the df is
+# n_pert_pb - 1, but the trend-dispersion shrinkage borrows dispersion across genes and
+# buys real df back, so the effective df is higher. The null is the reference: at moderate
+# expression (isolating the sample-size effect from the low-expression artifact the surface
+# already prices), match the null |z| right-tail exceedance at `z0` to a t-distribution and
+# solve for its df. Returns a monotone (support -> df) lookup; NA/absent -> no support in
+# the null -> annotate falls back to Welch. NULL if the null lacks n_pert_pb (back-compat).
+.efdr_calibrate_df <- function(null, z0 = 3.5, min_n = 500L) {
+  if (!"n_pert_pb" %in% names(null)) return(NULL)
+  d <- null[is.finite(null$n_pert_pb) & is.finite(null$z) &
+              is.finite(null$log_mean_expression) & null$log_mean_expression > -1, ]
+  if (nrow(d) < min_n) return(NULL)
+  a <- abs(d$z); k <- d$n_pert_pb
+  solve_df <- function(p) {                              # 2*pt(-z0, df) is decreasing in df
+    if (!is.finite(p) || p <= 2 * stats::pnorm(-z0)) return(Inf)  # normal already conservative
+    g <- function(l) 2 * stats::pt(-z0, exp(l)) - p
+    if (g(log(0.5)) < 0) return(0.5)
+    if (g(log(1e4)) > 0) return(Inf)
+    exp(stats::uniroot(g, c(log(0.5), log(1e4)))$root)
+  }
+  levs <- sort(unique(k[k >= 2]))
+  rows <- lapply(levs, function(kk) {
+    ak <- a[k == kk]; if (length(ak) < min_n) return(NULL)
+    data.frame(n_pert_pb = kk, df_eff = solve_df(mean(ak >= z0)), n = length(ak))
+  })
+  out <- do.call(rbind, rows)
+  if (is.null(out) || nrow(out) < 2L) return(NULL)
+  # Enforce df non-decreasing in support with isotonic regression (pool-adjacent-violators),
+  # weighted by null mass; Inf (no correction) is capped at `df_cap` for the fit, above which
+  # the t-distribution is indistinguishable from normal so the correction is negligible.
+  df_cap <- 60
+  y <- pmin(out$df_eff, df_cap)
+  out$df_eff <- stats::isoreg(out$n_pert_pb, y)$yf
+  out[, c("n_pert_pb", "df_eff")]
 }
 
 # right-tail probability of |z| = `a` at (expression `e`, %embryos `pe`) against a
@@ -315,6 +405,7 @@ train_efdr_model <- function(null, detection = NULL, taus = .EFDR_TAUS,
 #'     promote one.
 #' @export
 annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio, detection = NULL,
+                                         support = NULL, min_pseudobulks = 2L,
                                          group_col = "cell_group") {
   R <- model$ratios
   br <- if (log_ratio <= R[1]) list(lo = R[1], hi = R[1], w = 1) else
@@ -325,8 +416,24 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio, detection = 
   if (!is.null(detection)) {
     deg_tbl <- dplyr::left_join(deg_tbl, detection, by = c("gene_short_name", "cell_group"))
   }
+  if (!is.null(support)) {
+    deg_tbl <- dplyr::left_join(deg_tbl, support[, c("cell_group", "n_pert_pb")], by = "cell_group")
+  }
   if (!"pct_emb" %in% names(deg_tbl)) deg_tbl$pct_emb <- NA_real_
   if (!"pct_emb_pert" %in% names(deg_tbl)) deg_tbl$pct_emb_pert <- deg_tbl$pct_emb  # degrade gracefully
+  if (!"n_pert_pb" %in% names(deg_tbl)) deg_tbl$n_pert_pb <- NA_real_
+
+  # Map perturbation-arm support -> honest effective df. Prefer the null-calibrated
+  # (support -> df) lookup carried by the model (accounts for the shrinkage's df buy-back,
+  # so it is much milder than Welch); fall back to the Welch limit (n_pert_pb - 1) only if
+  # the model carries no calibration (older null). df_eff = Inf -> no df-correction.
+  cal <- model$df_calib
+  dfmap <- if (!is.null(cal) && nrow(cal) >= 1) function(n) {
+      out <- rep(NA_real_, length(n)); ok <- is.finite(n)
+      idx <- findInterval(n[ok], cal$n_pert_pb)           # clamp below -> smallest calibrated level
+      out[ok] <- cal$df_eff[pmin(pmax(idx, 1L), nrow(cal))]
+      out
+    } else function(n) n - 1
 
   out <- deg_tbl %>%
     dplyr::mutate(
@@ -334,9 +441,21 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio, detection = 
           else .data$perturb_to_ctrl_shrunken_lfc / .data$perturb_to_ctrl_shrunken_lfc_se,
       .dir = dplyr::if_else(.data$z < 0, "dn", "up"),
       .a = abs(.data$z),
-      # ordinary reference p (the floor): the trusted ashr shrunken p if present, else normal(z)
+      # Ordinary reference p (the floor): the trusted ashr shrunken p if present, else
+      # normal(z). When perturbation-arm support is known, the ordinary test is made honest
+      # about the KO-arm degrees of freedom: a normal/ashr p assumes ~infinite df, but a
+      # contrast backed by few perturbation pseudobulks has finite (null-calibrated) df, so
+      # |z| is re-scored against a t-distribution. This demotes the cell-abundance confound
+      # (depleted cell types where the deep control arm lends unearned power) at the same
+      # decorate-in-place layer, with no DEG re-fit; it is a pure function of KO support, so
+      # it does not touch expression and cannot demote well-supported calls.
+      .df = dfmap(.data$n_pert_pb),
+      .p_df = dplyr::if_else(is.finite(.data$.df),
+                             2 * stats::pt(-.data$.a, df = pmax(.data$.df, 0.5)), NA_real_),
       .ord_p = if ("perturb_to_ctrl_p_value" %in% names(.)) .data$perturb_to_ctrl_p_value
-               else 2 * (1 - stats::pnorm(.data$.a)))
+               else 2 * (1 - stats::pnorm(.data$.a)),
+      # df-honesty is demote-only: never let the ordinary p be more confident than the t-test
+      .ord_p = dplyr::if_else(is.na(.data$.p_df), .data$.ord_p, pmax(.data$.ord_p, .data$.p_df)))
 
   # 2-D empirical tail, interpolated across the two bracketing log-ratios.
   emp_tail <- rep(NA_real_, nrow(out))
@@ -355,10 +474,14 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio, detection = 
   # empirical_p is the ordinary p, so the floor still holds (no fallback hole).
   emp_tail <- pmin(pmax(emp_tail, 0), 1)
   out$empirical_p <- dplyr::if_else(is.na(emp_tail), out$.ord_p, pmax(emp_tail, out$.ord_p))
+  # Support gate: a cell type with fewer than `min_pseudobulks` perturbation pseudobulks
+  # has no valid two-group contrast (df < 1); its calls are uncallable, not significant.
+  gate <- is.finite(out$n_pert_pb) & out$n_pert_pb < min_pseudobulks
+  out$empirical_p[gate] <- 1
 
   out %>%
     dplyr::group_by(dplyr::across(all_of(group_col))) %>%
     dplyr::mutate(empirical_fdr = stats::p.adjust(.data$empirical_p, "BH")) %>%
     dplyr::ungroup() %>%
-    dplyr::select(-".dir", -".a", -".ord_p")
+    dplyr::select(-".dir", -".a", -".ord_p", -".df", -".p_df")
 }

@@ -264,7 +264,8 @@ summarize_cell_type_impact <- function(
   top_n_pathways = 5,
   abundance_phenotypes = NULL,
   fitness_phenotypes = NULL,
-  identity_phenotypes = NULL # <-- NEW ARGUMENT
+  identity_phenotypes = NULL, # <-- NEW ARGUMENT
+  filter_depleted_downs = TRUE
 ) {
   # 1. Abundance change (from abundance_phenotypes if available)
   abundance_row <- if (!is.null(abundance_phenotypes)) {
@@ -342,6 +343,22 @@ summarize_cell_type_impact <- function(
   } else {
     cell_type_degs <- cell_type_degs %>%
       filter(perturb_to_ctrl_p_value < sig_p_val_thresh)
+  }
+  # Abundance filter: when the abundance analysis calls this cell type significantly
+  # depleted (A2 Depletion / A3 Near-loss), its within-state DOWN calls conflate real
+  # transcriptional loss with the cell-type depletion itself -- the few surviving cells
+  # are an unrepresentative subset, so identity/program genes read as "down" that is
+  # compositional, not regulatory. Drop the DOWN calls from the impact-table foreground
+  # (goi, FORA, and the LLM allow-list all draw from cell_type_degs): the loss is already
+  # reported by the abundance phenotype, and these down calls would double-count it as
+  # regulation. UP calls (not abundance-confounded) and the abundance phenotype are kept,
+  # and lineage context still propagates. This filters only what feeds the impact-table
+  # narrative; the published DEG table / goi_line boxplots are untouched.
+  if (isTRUE(filter_depleted_downs) && !is.na(abundance_code) &&
+      grepl("^A2|^A3|Depletion|Near-loss", abundance_code) &&
+      "perturb_to_ctrl_shrunken_lfc" %in% colnames(cell_type_degs)) {
+    cell_type_degs <- cell_type_degs %>%
+      filter(is.na(perturb_to_ctrl_shrunken_lfc) | perturb_to_ctrl_shrunken_lfc >= 0)
   }
   degs_of_interest <- if (!is.null(genes_of_interest)) {
     cell_type_degs %>% filter(gene_short_name %in% genes_of_interest)
@@ -645,6 +662,7 @@ summarize_impact_in_lineage_context <- function(
   fitness_phenotypes = NULL,
   identity_phenotypes = NULL,
   pre_cited_gene_claims = NULL,
+  filter_depleted_downs = TRUE,
   verbose = FALSE,
   ...
 ) {
@@ -713,7 +731,8 @@ summarize_impact_in_lineage_context <- function(
         empirical_p_thresh = empirical_p_thresh,
         abundance_phenotypes = abundance_phenotypes,
         fitness_phenotypes = fitness_phenotypes,
-        identity_phenotypes = identity_phenotypes
+        identity_phenotypes = identity_phenotypes,
+        filter_depleted_downs = filter_depleted_downs
       )
       cell_impact_text <- build_lineage_context(ct, parents, results, all_types)
       if (!is.null(pre_cited_gene_claims) && nzchar(pre_cited_gene_claims)) {
