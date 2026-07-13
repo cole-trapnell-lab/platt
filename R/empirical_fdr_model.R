@@ -126,22 +126,69 @@ build_empirical_null <- function(cds,
     # the null is the reference for how much).
     supp <- efdr_perturbation_support(sub, sample_group = sample_group, cell_group = cell_group,
                                       control_ids = "ctrl-inj", perturbation_col = perturbation_col)
-    .read_null_dir(wd) %>%
+    # Per-cell-type pseudo-arm CELL counts for THIS split, so the null z is SE-floored on the
+    # same footing as the real DEG (ctrl-inj = losing arm, NULLPERT = gaining arm).
+    cds_sub <- SummarizedExperiment::colData(sub)
+    ct_cells <- tibble::tibble(cell_group = as.character(cds_sub[[cell_group]]),
+                               is_ctrl = as.character(cds_sub[[perturbation_col]]) %in% "ctrl-inj") %>%
+      dplyr::group_by(.data$cell_group) %>%
+      dplyr::summarise(n_ctrl_cells = sum(.data$is_ctrl), n_pert_cells = sum(!.data$is_ctrl),
+                       .groups = "drop")
+    .read_null_dir(wd, ct_cells = ct_cells) %>%
       dplyr::left_join(det, by = c("gene_short_name", "cell_group")) %>%
       dplyr::left_join(supp[, c("cell_group", "n_pert_pb", "n_eff_pb")], by = "cell_group") %>%
       dplyr::mutate(log_ratio = log2(N / (n_ctrl - N)))
   })
 }
 
-.read_null_dir <- function(wd) {
+# Theoretical lower bound on the shrunken-LFC standard error. The trend-dispersion
+# shrinkage can manufacture an insane |z| on near-zero-count genes (a gene detected in <1%
+# of cells getting a tighter SE than a broadly-expressed one), and because the control-split
+# null is built from the same GLM its tail inherits the same insanity -- so the empirical
+# model can only demote so far. This caps the SE at the information the counts can actually
+# support: recover each arm's mean expression from the pooled mean, the fold change and the
+# arm cell counts, then apply the Poisson/delta-method floor se >= sqrt(1/K_ctrl + 1/K_pert)
+# on the effective counts K = N * mu. Well-powered calls are untouched (their real SE already
+# exceeds the floor); it is applied identically to the null and the real DEG so the statistic
+# and the distribution it is judged against stay on the same footing. LFC is natural-log.
+.efdr_se_floor <- function(log_mean_expression, lfc, n_ctrl, n_pert, kappa = 1) {
+  mu <- exp(log_mean_expression)
+  r  <- exp(lfc)                                        # mu_pert / mu_ctrl
+  denom <- n_ctrl + n_pert * r
+  mu_ctrl <- ifelse(denom > 0, mu * (n_ctrl + n_pert) / denom, mu)
+  K_ctrl <- pmax(n_ctrl * mu_ctrl, 0)
+  K_pert <- pmax(n_pert * mu_ctrl * r, 0)
+  sqrt(1 / (K_ctrl + kappa) + 1 / (K_pert + kappa))
+}
+
+# Apply the SE floor to a table carrying lfc/se/log_mean_expression + per-cell-type arm cell
+# counts (n_ctrl_cells, n_pert_cells), returning the floored standardized statistic.
+.efdr_floored_z <- function(lfc, se, log_mean_expression, n_ctrl_cells, n_pert_cells) {
+  ok <- is.finite(n_ctrl_cells) & is.finite(n_pert_cells)
+  se_fl <- se
+  se_fl[ok] <- pmax(se[ok], .efdr_se_floor(log_mean_expression[ok], lfc[ok],
+                                           n_ctrl_cells[ok], n_pert_cells[ok]))
+  lfc / se_fl
+}
+
+.read_null_dir <- function(wd, ct_cells = NULL) {
   files <- list.files(wd, "_within_node_degs.csv$", full.names = TRUE)
   if (!length(files)) return(tibble::tibble())
-  purrr::map_dfr(files, ~ suppressMessages(readr::read_csv(.x, show_col_types = FALSE))) %>%
+  d <- purrr::map_dfr(files, ~ suppressMessages(readr::read_csv(.x, show_col_types = FALSE))) %>%
     dplyr::filter(is.finite(.data$perturb_to_ctrl_shrunken_lfc),
                   .data$perturb_to_ctrl_shrunken_lfc_se > 0,
-                  is.finite(.data$log_mean_expression)) %>%
-    dplyr::transmute(.data$gene_short_name, .data$cell_group, .data$log_mean_expression,
-                     z = .data$perturb_to_ctrl_shrunken_lfc / .data$perturb_to_ctrl_shrunken_lfc_se) %>%
+                  is.finite(.data$log_mean_expression))
+  # Floor the SE with the split's per-cell-type pseudo-arm cell counts (same treatment the
+  # real DEG gets in annotate); fall back to the raw z if counts are unavailable.
+  if (!is.null(ct_cells)) {
+    d <- dplyr::left_join(d, ct_cells, by = "cell_group")
+    z <- .efdr_floored_z(d$perturb_to_ctrl_shrunken_lfc, d$perturb_to_ctrl_shrunken_lfc_se,
+                         d$log_mean_expression, d$n_ctrl_cells, d$n_pert_cells)
+  } else {
+    z <- d$perturb_to_ctrl_shrunken_lfc / d$perturb_to_ctrl_shrunken_lfc_se
+  }
+  tibble::tibble(gene_short_name = d$gene_short_name, cell_group = d$cell_group,
+                 log_mean_expression = d$log_mean_expression, z = z) %>%
     dplyr::filter(is.finite(.data$z))
 }
 
@@ -433,10 +480,12 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio, detection = 
     deg_tbl <- dplyr::left_join(deg_tbl, detection, by = c("gene_short_name", "cell_group"))
   }
   if (!is.null(support)) {
-    supp_cols <- intersect(c("n_pert_pb", "n_eff_pb"), names(support))
+    supp_cols <- intersect(c("n_pert_pb", "n_eff_pb", "n_ctrl_cells", "n_pert_cells"), names(support))
     deg_tbl <- deg_tbl[, setdiff(names(deg_tbl), supp_cols), drop = FALSE]
     deg_tbl <- dplyr::left_join(deg_tbl, support[, c("cell_group", supp_cols)], by = "cell_group")
   }
+  if (!"n_ctrl_cells" %in% names(deg_tbl)) deg_tbl$n_ctrl_cells <- NA_real_
+  if (!"n_pert_cells" %in% names(deg_tbl)) deg_tbl$n_pert_cells <- NA_real_
   # Map effective perturbation-arm support (n_eff_pb) -> honest effective df. Within the
   # range the null covers, use the null-calibrated (support -> df) lookup (accounts for the
   # shrinkage's df buy-back). BELOW the smallest calibrated support the control-split null
@@ -458,7 +507,15 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio, detection = 
 
   out <- deg_tbl %>%
     dplyr::mutate(
-      z = if ("z" %in% names(.)) .data$z
+      # SE-floored standardized statistic: cap the shrunken SE at the Poisson floor the counts
+      # support, so a near-zero gene can't get an insane |z| (same floor the null z got, so
+      # they stay on the same footing). Falls back to the raw z only if lfc/se/expression are
+      # absent (a caller that passed only `z`).
+      z = if (all(c("perturb_to_ctrl_shrunken_lfc", "perturb_to_ctrl_shrunken_lfc_se",
+                    "log_mean_expression") %in% names(.)))
+            .efdr_floored_z(.data$perturb_to_ctrl_shrunken_lfc, .data$perturb_to_ctrl_shrunken_lfc_se,
+                            .data$log_mean_expression, .data$n_ctrl_cells, .data$n_pert_cells)
+          else if ("z" %in% names(.)) .data$z
           else .data$perturb_to_ctrl_shrunken_lfc / .data$perturb_to_ctrl_shrunken_lfc_se,
       .dir = dplyr::if_else(.data$z < 0, "dn", "up"),
       .a = abs(.data$z),
