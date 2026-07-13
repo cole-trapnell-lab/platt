@@ -27,6 +27,13 @@ NULL
 .EFDR_EGRID  <- seq(-9, 1, 0.25)      # expression grid the tail surface is evaluated on
 .EFDR_PEGRID <- seq(0, 100, 10)       # %embryos grid (control detection rate)
 
+# --- The empirical-null policy (one set of baked constants; not pipeline-configurable) ---
+.EFDR_C_FULL <- 10    # cells an embryo must carry to count as ONE full perturbation replicate;
+                      # below this it contributes fractionally (cells / c_full). Drives the
+                      # cell-count-aware degrees-of-freedom of the within-state contrast.
+.EFDR_MIN_PB <- 2L    # a cell type needs at least this many perturbation embryos to have a
+                      # valid two-group contrast; below it, calls are gated (empirical_p = 1).
+
 #' Build a control-split empirical null for the DEG artifact.
 #'
 #' Relabels control samples as a pseudo-perturbation at several split sizes, runs
@@ -57,7 +64,6 @@ build_empirical_null <- function(cds,
                                  nperm = 10000L,
                                  cores = 1L,
                                  seed = 42L,
-                                 min_cells_for_support = 1L,
                                  max_simultaneous_genes = 2000L,
                                  write_dir = tempfile("efdr_null_"),
                                  verbose = TRUE) {
@@ -119,11 +125,10 @@ build_empirical_null <- function(cds,
     # trend-dispersion shrinkage buys back df, so the effective df exceeds n_pert_pb - 1;
     # the null is the reference for how much).
     supp <- efdr_perturbation_support(sub, sample_group = sample_group, cell_group = cell_group,
-                                      control_ids = "ctrl-inj", perturbation_col = perturbation_col,
-                                      min_cells = min_cells_for_support)
+                                      control_ids = "ctrl-inj", perturbation_col = perturbation_col)
     .read_null_dir(wd) %>%
       dplyr::left_join(det, by = c("gene_short_name", "cell_group")) %>%
-      dplyr::left_join(supp[, c("cell_group", "n_pert_pb")], by = "cell_group") %>%
+      dplyr::left_join(supp[, c("cell_group", "n_pert_pb", "n_eff_pb")], by = "cell_group") %>%
       dplyr::mutate(log_ratio = log2(N / (n_ctrl - N)))
   })
 }
@@ -223,18 +228,23 @@ efdr_perturbation_support <- function(cds,
                                       sample_group = "embryo_ID",
                                       cell_group = "cell_type",
                                       control_ids = c("ctrl-inj"),
-                                      perturbation_col = "perturbation",
-                                      min_cells = 1L) {
+                                      perturbation_col = "perturbation") {
   cd <- SummarizedExperiment::colData(cds)
   df <- tibble::tibble(ct = as.character(cd[[cell_group]]),
                        emb = as.character(cd[[sample_group]]),
                        is_ctrl = as.character(cd[[perturbation_col]]) %in% control_ids)
   df %>%
     dplyr::count(.data$ct, .data$emb, .data$is_ctrl, name = "n") %>%
-    dplyr::filter(.data$n >= min_cells) %>%
     dplyr::group_by(.data$ct) %>%
     dplyr::summarise(n_pert_pb = dplyr::n_distinct(.data$emb[!.data$is_ctrl]),
                      n_ctrl_pb = dplyr::n_distinct(.data$emb[.data$is_ctrl]),
+                     # Cell-weighted effective perturbation replicates: an embryo counts as a
+                     # FULL replicate only once it carries `.EFDR_C_FULL` cells of this type;
+                     # below that it contributes fractionally, because a near-empty pseudobulk
+                     # carries almost no information and its shrunken SE is over-confident.
+                     # This is the df-driving support; the raw embryo count `n_pert_pb` still
+                     # drives the gate.
+                     n_eff_pb = sum(pmin(1, .data$n[!.data$is_ctrl] / .EFDR_C_FULL)),
                      .groups = "drop") %>%
     dplyr::rename(cell_group = "ct")
 }
@@ -275,8 +285,6 @@ train_efdr_model <- function(null, detection = NULL, taus = .EFDR_TAUS,
                                by = c("gene_short_name", "cell_group"))
     }
   }
-  if (!"pct_emb" %in% names(null)) null$pct_emb <- NA_real_
-  if (!"pct_emb_pert" %in% names(null)) null$pct_emb_pert <- null$pct_emb  # degrade: reuse control detection
   null <- null %>%
     dplyr::filter(is.finite(.data$log_mean_expression), is.finite(.data$z)) %>%
     dplyr::mutate(dir = dplyr::if_else(.data$z < 0, "dn", "up"), a = abs(.data$z))
@@ -322,25 +330,28 @@ train_efdr_model <- function(null, detection = NULL, taus = .EFDR_TAUS,
     surf[[key]] <- Q
   }
   df_calib <- .efdr_calibrate_df(null)
+  if (is.null(df_calib))
+    stop("efdr: could not calibrate degrees-of-freedom from the null (too few draws). ",
+         "A valid efdr_model requires the support->df calibration.", call. = FALSE)
   structure(list(surf = surf, taus = taus, egrid = egrid, pegrid = pegrid, ratios = ratios,
                  df_calib = df_calib),
             class = "efdr_model")
 }
 
 # Calibrate the honest effective degrees-of-freedom of the within-state contrast as a
-# function of perturbation-arm replicate support (n_pert_pb). Naive Welch says the df is
-# n_pert_pb - 1, but the trend-dispersion shrinkage borrows dispersion across genes and
-# buys real df back, so the effective df is higher. The null is the reference: at moderate
-# expression (isolating the sample-size effect from the low-expression artifact the surface
-# already prices), match the null |z| right-tail exceedance at `z0` to a t-distribution and
-# solve for its df. Returns a monotone (support -> df) lookup; NA/absent -> no support in
-# the null -> annotate falls back to Welch. NULL if the null lacks n_pert_pb (back-compat).
+# function of the cell-weighted effective perturbation support (n_eff_pb). Naive Welch says
+# the df is (replicates - 1), but the trend-dispersion shrinkage borrows dispersion across
+# genes and buys real df back, so the effective df is higher. The null is the reference: at
+# moderate expression (isolating the sample-size effect from the low-expression artifact the
+# surface already prices), match the null |z| right-tail exceedance at `z0` to a
+# t-distribution and solve for its df. Returns a monotone (support -> df) lookup; NULL only
+# if the null has too few draws to calibrate (train_efdr_model then errors).
 .efdr_calibrate_df <- function(null, z0 = 3.5, min_n = 500L) {
-  if (!"n_pert_pb" %in% names(null)) return(NULL)
-  d <- null[is.finite(null$n_pert_pb) & is.finite(null$z) &
+  d <- null[is.finite(null$n_eff_pb) & is.finite(null$z) &
               is.finite(null$log_mean_expression) & null$log_mean_expression > -1, ]
   if (nrow(d) < min_n) return(NULL)
-  a <- abs(d$z); k <- d$n_pert_pb
+  a <- abs(d$z); k <- d$n_eff_pb
+  kb <- round(k)                                        # bin continuous effective support to integer levels
   solve_df <- function(p) {                              # 2*pt(-z0, df) is decreasing in df
     if (!is.finite(p) || p <= 2 * stats::pnorm(-z0)) return(Inf)  # normal already conservative
     g <- function(l) 2 * stats::pt(-z0, exp(l)) - p
@@ -348,10 +359,10 @@ train_efdr_model <- function(null, detection = NULL, taus = .EFDR_TAUS,
     if (g(log(1e4)) > 0) return(Inf)
     exp(stats::uniroot(g, c(log(0.5), log(1e4)))$root)
   }
-  levs <- sort(unique(k[k >= 2]))
+  levs <- sort(unique(kb[kb >= 2]))
   rows <- lapply(levs, function(kk) {
-    ak <- a[k == kk]; if (length(ak) < min_n) return(NULL)
-    data.frame(n_pert_pb = kk, df_eff = solve_df(mean(ak >= z0)), n = length(ak))
+    ak <- a[kb == kk]; if (length(ak) < min_n) return(NULL)
+    data.frame(support = kk, df_eff = solve_df(mean(ak >= z0)), n = length(ak))
   })
   out <- do.call(rbind, rows)
   if (is.null(out) || nrow(out) < 2L) return(NULL)
@@ -360,8 +371,8 @@ train_efdr_model <- function(null, detection = NULL, taus = .EFDR_TAUS,
   # the t-distribution is indistinguishable from normal so the correction is negligible.
   df_cap <- 60
   y <- pmin(out$df_eff, df_cap)
-  out$df_eff <- stats::isoreg(out$n_pert_pb, y)$yf
-  out[, c("n_pert_pb", "df_eff")]
+  out$df_eff <- stats::isoreg(out$support, y)$yf
+  out[, c("support", "df_eff")]
 }
 
 # right-tail probability of |z| = `a` at (expression `e`, %embryos `pe`) against a
@@ -405,7 +416,7 @@ train_efdr_model <- function(null, detection = NULL, taus = .EFDR_TAUS,
 #'     promote one.
 #' @export
 annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio, detection = NULL,
-                                         support = NULL, min_pseudobulks = 2L,
+                                         support = NULL, min_pseudobulks = .EFDR_MIN_PB,
                                          group_col = "cell_group") {
   R <- model$ratios
   br <- if (log_ratio <= R[1]) list(lo = R[1], hi = R[1], w = 1) else
@@ -422,24 +433,28 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio, detection = 
     deg_tbl <- dplyr::left_join(deg_tbl, detection, by = c("gene_short_name", "cell_group"))
   }
   if (!is.null(support)) {
-    deg_tbl <- deg_tbl[, setdiff(names(deg_tbl), "n_pert_pb"), drop = FALSE]
-    deg_tbl <- dplyr::left_join(deg_tbl, support[, c("cell_group", "n_pert_pb")], by = "cell_group")
+    supp_cols <- intersect(c("n_pert_pb", "n_eff_pb"), names(support))
+    deg_tbl <- deg_tbl[, setdiff(names(deg_tbl), supp_cols), drop = FALSE]
+    deg_tbl <- dplyr::left_join(deg_tbl, support[, c("cell_group", supp_cols)], by = "cell_group")
   }
-  if (!"pct_emb" %in% names(deg_tbl)) deg_tbl$pct_emb <- NA_real_
-  if (!"pct_emb_pert" %in% names(deg_tbl)) deg_tbl$pct_emb_pert <- deg_tbl$pct_emb  # degrade gracefully
-  if (!"n_pert_pb" %in% names(deg_tbl)) deg_tbl$n_pert_pb <- NA_real_
-
-  # Map perturbation-arm support -> honest effective df. Prefer the null-calibrated
-  # (support -> df) lookup carried by the model (accounts for the shrinkage's df buy-back,
-  # so it is much milder than Welch); fall back to the Welch limit (n_pert_pb - 1) only if
-  # the model carries no calibration (older null). df_eff = Inf -> no df-correction.
+  # Map effective perturbation-arm support (n_eff_pb) -> honest effective df. Within the
+  # range the null covers, use the null-calibrated (support -> df) lookup (accounts for the
+  # shrinkage's df buy-back). BELOW the smallest calibrated support the control-split null
+  # has no coverage (its cell types are well-populated), so df is ramped analytically from a
+  # 0.5 floor at <=1 effective replicate up to the smallest calibrated df -- this is what
+  # demotes cell types that are thin *in cells* (n_eff -> 0), whose over-shrunk SE would
+  # otherwise manufacture a confident call.
   cal <- model$df_calib
-  dfmap <- if (!is.null(cal) && nrow(cal) >= 1) function(n) {
-      out <- rep(NA_real_, length(n)); ok <- is.finite(n)
-      idx <- findInterval(n[ok], cal$n_pert_pb)           # clamp below -> smallest calibrated level
-      out[ok] <- cal$df_eff[pmin(pmax(idx, 1L), nrow(cal))]
-      out
-    } else function(n) n - 1
+  s0 <- cal$support[1]; d0 <- cal$df_eff[1]              # smallest calibrated support and its df
+  dfmap <- function(n) {
+    out <- rep(NA_real_, length(n)); ok <- is.finite(n); nn <- n[ok]
+    idx <- findInterval(nn, cal$support)                 # within/above range: step lookup
+    val <- cal$df_eff[pmin(pmax(idx, 1L), nrow(cal))]
+    below <- nn < s0                                     # extend below the calibrated floor
+    val[below] <- if (s0 > 1) pmax(0.5, 0.5 + (d0 - 0.5) * (nn[below] - 1) / (s0 - 1)) else 0.5
+    out[ok] <- val
+    out
+  }
 
   out <- deg_tbl %>%
     dplyr::mutate(
@@ -455,7 +470,7 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio, detection = 
       # (depleted cell types where the deep control arm lends unearned power) at the same
       # decorate-in-place layer, with no DEG re-fit; it is a pure function of KO support, so
       # it does not touch expression and cannot demote well-supported calls.
-      .df = dfmap(.data$n_pert_pb),
+      .df = dfmap(.data$n_eff_pb),
       .p_df = dplyr::if_else(is.finite(.data$.df),
                              2 * stats::pt(-.data$.a, df = pmax(.data$.df, 0.5)), NA_real_),
       .ord_p = if ("perturb_to_ctrl_p_value" %in% names(.)) .data$perturb_to_ctrl_p_value
