@@ -126,15 +126,9 @@ build_empirical_null <- function(cds,
     # the null is the reference for how much).
     supp <- efdr_perturbation_support(sub, sample_group = sample_group, cell_group = cell_group,
                                       control_ids = "ctrl-inj", perturbation_col = perturbation_col)
-    # Per-cell-type pseudo-arm CELL counts for THIS split, so the null z is SE-floored on the
-    # same footing as the real DEG (ctrl-inj = losing arm, NULLPERT = gaining arm).
-    cds_sub <- SummarizedExperiment::colData(sub)
-    ct_cells <- tibble::tibble(cell_group = as.character(cds_sub[[cell_group]]),
-                               is_ctrl = as.character(cds_sub[[perturbation_col]]) %in% "ctrl-inj") %>%
-      dplyr::group_by(.data$cell_group) %>%
-      dplyr::summarise(n_ctrl_cells = sum(.data$is_ctrl), n_pert_cells = sum(!.data$is_ctrl),
-                       .groups = "drop")
-    .read_null_dir(wd, ct_cells = ct_cells) %>%
+    # supp carries per-cell-type pseudo-arm cell counts (n_ctrl_cells, n_pert_cells), so the
+    # null z is SE-floored on the same footing as the real DEG.
+    .read_null_dir(wd, ct_cells = supp[, c("cell_group", "n_ctrl_cells", "n_pert_cells")]) %>%
       dplyr::left_join(det, by = c("gene_short_name", "cell_group")) %>%
       dplyr::left_join(supp[, c("cell_group", "n_pert_pb", "n_eff_pb")], by = "cell_group") %>%
       dplyr::mutate(log_ratio = log2(N / (n_ctrl - N)))
@@ -269,7 +263,7 @@ efdr_detection_rate <- function(cds,
 #'   a higher bar would wrongly drop cell types that are present across many embryos
 #'   but sparse per embryo (common in shallow captures). Matches the within-state DEG,
 #'   which fits on any embryo with cells (`min_cells_per_pseudobulk = NULL`).
-#' @return tibble(cell_group, n_pert_pb, n_ctrl_pb).
+#' @return tibble(cell_group, n_pert_pb, n_ctrl_pb, n_eff_pb, n_pert_cells, n_ctrl_cells).
 #' @export
 efdr_perturbation_support <- function(cds,
                                       sample_group = "embryo_ID",
@@ -277,22 +271,48 @@ efdr_perturbation_support <- function(cds,
                                       control_ids = c("ctrl-inj"),
                                       perturbation_col = "perturbation") {
   cd <- SummarizedExperiment::colData(cds)
-  df <- tibble::tibble(ct = as.character(cd[[cell_group]]),
-                       emb = as.character(cd[[sample_group]]),
-                       is_ctrl = as.character(cd[[perturbation_col]]) %in% control_ids)
+  efdr_support_from_coldata(
+    data.frame(emb  = as.character(cd[[sample_group]]),
+               pert = as.character(cd[[perturbation_col]]),
+               ct   = as.character(cd[[cell_group]]),
+               stringsAsFactors = FALSE),
+    sample_group = "emb", cell_group = "ct",
+    control_ids = control_ids, perturbation_col = "pert")
+}
+
+#' Per-cell-type perturbation-arm support, from a plain coldata table.
+#'
+#' The single source of truth for every support quantity the empirical-FDR model needs,
+#' computed from a (embryo, perturbation, cell_type) table so it can be driven from either a
+#' cell_data_set's colData ([efdr_perturbation_support()]) or a lightweight coldata TSV (the
+#' mcclintock efdr stage) without duplicating the definitions across repos:
+#'   - n_pert_pb   : perturbation embryos with the cell type (the gate's replicate count).
+#'   - n_ctrl_pb   : control embryos with the cell type.
+#'   - n_eff_pb    : cell-weighted effective perturbation replicates, sum min(1, cells/C_FULL)
+#'                   -- an embryo is a full replicate only once it carries `.EFDR_C_FULL`
+#'                   cells; drives the degrees-of-freedom correction.
+#'   - n_pert_cells / n_ctrl_cells : total cells per arm, feeding the theoretical SE floor.
+#' @param coldata data.frame/table with embryo, perturbation and cell-type columns.
+#' @param sample_group,cell_group,control_ids,perturbation_col column names / control labels.
+#' @export
+efdr_support_from_coldata <- function(coldata,
+                                      sample_group = "embryo_ID",
+                                      cell_group = "cell_type",
+                                      control_ids = c("ctrl-inj"),
+                                      perturbation_col = "perturbation") {
+  df <- tibble::tibble(ct = as.character(coldata[[cell_group]]),
+                       emb = as.character(coldata[[sample_group]]),
+                       is_ctrl = as.character(coldata[[perturbation_col]]) %in% control_ids)
   df %>%
     dplyr::count(.data$ct, .data$emb, .data$is_ctrl, name = "n") %>%
     dplyr::group_by(.data$ct) %>%
-    dplyr::summarise(n_pert_pb = dplyr::n_distinct(.data$emb[!.data$is_ctrl]),
-                     n_ctrl_pb = dplyr::n_distinct(.data$emb[.data$is_ctrl]),
-                     # Cell-weighted effective perturbation replicates: an embryo counts as a
-                     # FULL replicate only once it carries `.EFDR_C_FULL` cells of this type;
-                     # below that it contributes fractionally, because a near-empty pseudobulk
-                     # carries almost no information and its shrunken SE is over-confident.
-                     # This is the df-driving support; the raw embryo count `n_pert_pb` still
-                     # drives the gate.
-                     n_eff_pb = sum(pmin(1, .data$n[!.data$is_ctrl] / .EFDR_C_FULL)),
-                     .groups = "drop") %>%
+    dplyr::summarise(
+      n_pert_pb    = dplyr::n_distinct(.data$emb[!.data$is_ctrl]),
+      n_ctrl_pb    = dplyr::n_distinct(.data$emb[.data$is_ctrl]),
+      n_eff_pb     = sum(pmin(1, .data$n[!.data$is_ctrl] / .EFDR_C_FULL)),
+      n_pert_cells = sum(.data$n[!.data$is_ctrl]),
+      n_ctrl_cells = sum(.data$n[.data$is_ctrl]),
+      .groups = "drop") %>%
     dplyr::rename(cell_group = "ct")
 }
 
