@@ -33,6 +33,11 @@ NULL
                       # cell-count-aware degrees-of-freedom of the within-state contrast.
 .EFDR_MIN_PB <- 2L    # a cell type needs at least this many perturbation embryos to have a
                       # valid two-group contrast; below it, calls are gated (empirical_p = 1).
+.EFDR_MIN_ARM_UMI <- 1  # a (gene, cell type) needs >= this many total UMIs in AT LEAST ONE arm
+                      # to be callable; with both arms empty the gene is absent from the cell
+                      # type and its |z| is shrinkage noise (gated). Tests max(K_ctrl, K_pert),
+                      # so a well-counted control arm + empty perturbation arm (real complete
+                      # depletion) is KEPT -- only genuinely-absent genes are gated.
 
 #' Build a control-split empirical null for the DEG artifact.
 #'
@@ -120,69 +125,102 @@ build_empirical_null <- function(cds,
     # down-null on the losing (control) arm, as before.
     det <- efdr_detection_rate(sub, sample_group = sample_group, cell_group = cell_group,
                                control_ids = "ctrl-inj", perturbation_col = perturbation_col)
-    # Per-split perturbation-arm replicate support (NULLPERT pseudobulks per cell type):
-    # carried so the model can calibrate the honest degrees-of-freedom vs support (the
-    # trend-dispersion shrinkage buys back df, so the effective df exceeds n_pert_pb - 1;
-    # the null is the reference for how much).
+    # Per-cell-type embryo support: n_pert_pb still drives the <2-embryo gate.
     supp <- efdr_perturbation_support(sub, sample_group = sample_group, cell_group = cell_group,
                                       control_ids = "ctrl-inj", perturbation_col = perturbation_col)
-    # supp carries per-cell-type pseudo-arm cell counts (n_ctrl_cells, n_pert_cells), so the
-    # null z is SE-floored on the same footing as the real DEG.
-    .read_null_dir(wd, ct_cells = supp[, c("cell_group", "n_ctrl_cells", "n_pert_cells")]) %>%
+    # Per-(gene, cell_type) pseudo-arm UMI counts -> K_eff for the count-calibrated t, so df is
+    # calibrated against the same effective count the real DEG is scored on.
+    null_counts <- .efdr_arm_counts(sub, sample_group = sample_group, cell_group = cell_group,
+                                    control_ids = "ctrl-inj", perturbation_col = perturbation_col)
+    .read_null_dir(wd, counts = null_counts) %>%
       dplyr::left_join(det, by = c("gene_short_name", "cell_group")) %>%
-      dplyr::left_join(supp[, c("cell_group", "n_pert_pb", "n_eff_pb")], by = "cell_group") %>%
+      dplyr::left_join(supp[, c("cell_group", "n_pert_pb")], by = "cell_group") %>%
       dplyr::mutate(log_ratio = log2(N / (n_ctrl - N)))
   })
 }
 
-# Theoretical lower bound on the shrunken-LFC standard error. The trend-dispersion
-# shrinkage can manufacture an insane |z| on near-zero-count genes (a gene detected in <1%
-# of cells getting a tighter SE than a broadly-expressed one), and because the control-split
-# null is built from the same GLM its tail inherits the same insanity -- so the empirical
-# model can only demote so far. This caps the SE at the information the counts can actually
-# support: recover each arm's mean expression from the pooled mean, the fold change and the
-# arm cell counts, then apply the Poisson/delta-method floor se >= sqrt(1/K_ctrl + 1/K_pert)
-# on the effective counts K = N * mu. Well-powered calls are untouched (their real SE already
-# exceeds the floor); it is applied identically to the null and the real DEG so the statistic
-# and the distribution it is judged against stay on the same footing. LFC is natural-log.
-.efdr_se_floor <- function(log_mean_expression, lfc, n_ctrl, n_pert, kappa = 1) {
-  mu <- exp(log_mean_expression)
-  r  <- exp(lfc)                                        # mu_pert / mu_ctrl
-  denom <- n_ctrl + n_pert * r
-  mu_ctrl <- ifelse(denom > 0, mu * (n_ctrl + n_pert) / denom, mu)
-  K_ctrl <- pmax(n_ctrl * mu_ctrl, 0)
-  K_pert <- pmax(n_pert * mu_ctrl * r, 0)
-  sqrt(1 / (K_ctrl + kappa) + 1 / (K_pert + kappa))
+# Effective count backing a within-state contrast: the harmonic combination of the per-arm
+# total UMI counts, K_eff = 1/(1/K_ctrl + 1/K_pert), the reciprocal of the Poisson log-ratio
+# variance. The count-calibrated t is keyed on K_eff -- a near-empty arm (K_pert -> 0) gives
+# K_eff -> ~0, hence low calibrated df and a heavy tail that demotes the trend-dispersion
+# over-confidence on near-zero-count genes, while a well-counted call (large K_eff) gets a
+# near-normal tail and is untouched. It unifies the old cell-type df-correction and the SE
+# floor: both are "the counts don't support this confidence", at cell-type and per-gene
+# granularity respectively, and both are just low K_eff. It is a count-support GUARD BAND,
+# not a covariate-aware df -- "can the counts support a between-arm difference at all" holds
+# regardless of the model formula; the fine covariate df cost would need a nuisance-matched
+# null (see TODO). `kappa` guards the K = 0 singularity; the counts are real UMI totals.
+.efdr_keff <- function(K_ctrl, K_pert, kappa = 1) {
+  1 / (1 / (K_ctrl + kappa) + 1 / (K_pert + kappa))
 }
 
-# Apply the SE floor to a table carrying lfc/se/log_mean_expression + per-cell-type arm cell
-# counts (n_ctrl_cells, n_pert_cells), returning the floored standardized statistic.
-.efdr_floored_z <- function(lfc, se, log_mean_expression, n_ctrl_cells, n_pert_cells) {
-  ok <- is.finite(n_ctrl_cells) & is.finite(n_pert_cells)
-  se_fl <- se
-  se_fl[ok] <- pmax(se[ok], .efdr_se_floor(log_mean_expression[ok], lfc[ok],
-                                           n_ctrl_cells[ok], n_pert_cells[ok]))
-  lfc / se_fl
+# Per-(gene, cell_type, arm) total UMI counts from a cds, as a long table
+# (id, gene_short_name, cell_group, K_ctrl, K_pert). One grouped sum of the count matrix over
+# the cell_type x arm indicator -- the cheap one-off during a load we already do. Feeds the
+# count-calibrated t (K_eff = .efdr_keff(K_ctrl, K_pert)).
+#
+# KEYED ON `id` (= cds rownames = the DEG's unique feature id), NOT gene_short_name: multi-copy
+# families (histones etc.) share a gene_short_name across many Ensembl ids, so a gene_short_name
+# key is one-to-many and a downstream join on it silently duplicates DEG rows. `id` is unique.
+.efdr_arm_counts <- function(cds, sample_group = "embryo_ID", cell_group = "cell_type",
+                             control_ids = c("ctrl-inj"), perturbation_col = "perturbation") {
+  cd <- SummarizedExperiment::colData(cds)
+  ct <- as.character(cd[[cell_group]])
+  arm <- ifelse(as.character(cd[[perturbation_col]]) %in% control_ids, "ctrl", "pert")
+  grp <- factor(paste(ct, arm, sep = "\r"))
+  ind <- Matrix::sparseMatrix(i = seq_along(grp), j = as.integer(grp), x = 1,
+                              dims = c(length(grp), nlevels(grp)))
+  S <- as.matrix(monocle3::exprs(cds) %*% ind)          # genes x (cell_type|arm) raw UMI totals
+  ids <- rownames(cds)
+  gsym <- SummarizedExperiment::rowData(cds)$gene_short_name
+  if (is.null(gsym)) gsym <- ids
+  key <- strsplit(levels(grp), "\r", fixed = TRUE)
+  ct_lev <- vapply(key, `[`, "", 1); arm_lev <- vapply(key, `[`, "", 2)
+  # Build (id, cell_type) x {K_ctrl, K_pert} directly per cell type (no long/pivot).
+  res <- lapply(unique(ct_lev), function(ctype) {
+    jc <- which(ct_lev == ctype & arm_lev == "ctrl")
+    jp <- which(ct_lev == ctype & arm_lev == "pert")
+    data.frame(id = ids, gene_short_name = gsym, cell_group = ctype,
+               K_ctrl = if (length(jc)) S[, jc] else 0,
+               K_pert = if (length(jp)) S[, jp] else 0, stringsAsFactors = FALSE)
+  })
+  do.call(rbind, res)
 }
 
-.read_null_dir <- function(wd, ct_cells = NULL) {
+# Join per-(gene, cell) arm counts onto a table `x` on the unique feature id when both carry
+# it, else fall back to gene_short_name (deduplicating the counts by summing so the fallback
+# can never be one-to-many). Shared by the null build and the real-DEG annotation so K_eff is
+# computed the same way on both sides.
+.efdr_join_counts <- function(x, counts) {
+  if ("id" %in% names(x) && "id" %in% names(counts)) {
+    dplyr::left_join(x, counts[, c("id", "cell_group", "K_ctrl", "K_pert")],
+                     by = c("id", "cell_group"))
+  } else {
+    cnt <- counts %>%
+      dplyr::group_by(.data$gene_short_name, .data$cell_group) %>%
+      dplyr::summarise(K_ctrl = sum(.data$K_ctrl), K_pert = sum(.data$K_pert), .groups = "drop")
+    dplyr::left_join(x, cnt, by = c("gene_short_name", "cell_group"))
+  }
+}
+
+.read_null_dir <- function(wd, counts = NULL) {
   files <- list.files(wd, "_within_node_degs.csv$", full.names = TRUE)
   if (!length(files)) return(tibble::tibble())
   d <- purrr::map_dfr(files, ~ suppressMessages(readr::read_csv(.x, show_col_types = FALSE))) %>%
     dplyr::filter(is.finite(.data$perturb_to_ctrl_shrunken_lfc),
                   .data$perturb_to_ctrl_shrunken_lfc_se > 0,
                   is.finite(.data$log_mean_expression))
-  # Floor the SE with the split's per-cell-type pseudo-arm cell counts (same treatment the
-  # real DEG gets in annotate); fall back to the raw z if counts are unavailable.
-  if (!is.null(ct_cells)) {
-    d <- dplyr::left_join(d, ct_cells, by = "cell_group")
-    z <- .efdr_floored_z(d$perturb_to_ctrl_shrunken_lfc, d$perturb_to_ctrl_shrunken_lfc_se,
-                         d$log_mean_expression, d$n_ctrl_cells, d$n_pert_cells)
+  d$z <- d$perturb_to_ctrl_shrunken_lfc / d$perturb_to_ctrl_shrunken_lfc_se   # raw magnitude z
+  # Per-(gene, cell_type) effective count, so the count-calibrated t is calibrated against the
+  # same quantity the real DEG is scored on.
+  if (!is.null(counts)) {
+    d <- .efdr_join_counts(d, counts)                   # id-keyed (falls back to summed symbol)
+    d$K_eff <- .efdr_keff(d$K_ctrl, d$K_pert)
   } else {
-    z <- d$perturb_to_ctrl_shrunken_lfc / d$perturb_to_ctrl_shrunken_lfc_se
+    d$K_eff <- NA_real_
   }
   tibble::tibble(gene_short_name = d$gene_short_name, cell_group = d$cell_group,
-                 log_mean_expression = d$log_mean_expression, z = z) %>%
+                 log_mean_expression = d$log_mean_expression, z = d$z, K_eff = d$K_eff) %>%
     dplyr::filter(is.finite(.data$z))
 }
 
@@ -405,20 +443,17 @@ train_efdr_model <- function(null, detection = NULL, taus = .EFDR_TAUS,
             class = "efdr_model")
 }
 
-# Calibrate the honest effective degrees-of-freedom of the within-state contrast as a
-# function of the cell-weighted effective perturbation support (n_eff_pb). Naive Welch says
-# the df is (replicates - 1), but the trend-dispersion shrinkage borrows dispersion across
-# genes and buys real df back, so the effective df is higher. The null is the reference: at
-# moderate expression (isolating the sample-size effect from the low-expression artifact the
-# surface already prices), match the null |z| right-tail exceedance at `z0` to a
-# t-distribution and solve for its df. Returns a monotone (support -> df) lookup; NULL only
-# if the null has too few draws to calibrate (train_efdr_model then errors).
+# Calibrate the effective degrees-of-freedom of the within-state contrast as a function of the
+# effective count K_eff. The trend-dispersion shrinkage over-states precision on low-count
+# contrasts (near-zero genes, depleted cell types); the null is the reference for how much:
+# per K_eff octave, match the null |z| right-tail exceedance at `z0` to a t-distribution and
+# solve for its df. A low-K_eff contrast gets a low df (heavy tail); a well-counted one gets
+# ~normal. Returns a monotone (K_eff -> df) lookup; NULL only if the null has too few draws.
 .efdr_calibrate_df <- function(null, z0 = 3.5, min_n = 500L) {
-  d <- null[is.finite(null$n_eff_pb) & is.finite(null$z) &
-              is.finite(null$log_mean_expression) & null$log_mean_expression > -1, ]
+  d <- null[is.finite(null$K_eff) & is.finite(null$z), ]
   if (nrow(d) < min_n) return(NULL)
-  a <- abs(d$z); k <- d$n_eff_pb
-  kb <- round(k)                                        # bin continuous effective support to integer levels
+  a <- abs(d$z); k <- d$K_eff
+  kb <- round(log2(pmax(k, 0.5)))                       # bin effective count into log2 octaves
   solve_df <- function(p) {                              # 2*pt(-z0, df) is decreasing in df
     if (!is.finite(p) || p <= 2 * stats::pnorm(-z0)) return(Inf)  # normal already conservative
     g <- function(l) 2 * stats::pt(-z0, exp(l)) - p
@@ -426,10 +461,10 @@ train_efdr_model <- function(null, detection = NULL, taus = .EFDR_TAUS,
     if (g(log(1e4)) > 0) return(Inf)
     exp(stats::uniroot(g, c(log(0.5), log(1e4)))$root)
   }
-  levs <- sort(unique(kb[kb >= 2]))
-  rows <- lapply(levs, function(kk) {
-    ak <- a[kb == kk]; if (length(ak) < min_n) return(NULL)
-    data.frame(support = kk, df_eff = solve_df(mean(ak >= z0)), n = length(ak))
+  levs <- sort(unique(kb))
+  rows <- lapply(levs, function(lev) {
+    ak <- a[kb == lev]; if (length(ak) < min_n) return(NULL)
+    data.frame(support = 2^lev, df_eff = solve_df(mean(ak >= z0)), n = length(ak))
   })
   out <- do.call(rbind, rows)
   if (is.null(out) || nrow(out) < 2L) return(NULL)
@@ -483,7 +518,8 @@ train_efdr_model <- function(null, detection = NULL, taus = .EFDR_TAUS,
 #'     promote one.
 #' @export
 annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio, detection = NULL,
-                                         support = NULL, min_pseudobulks = .EFDR_MIN_PB,
+                                         support = NULL, counts = NULL,
+                                         min_pseudobulks = .EFDR_MIN_PB,
                                          group_col = "cell_group") {
   R <- model$ratios
   br <- if (log_ratio <= R[1]) list(lo = R[1], hi = R[1], w = 1) else
@@ -499,61 +535,47 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio, detection = 
     deg_tbl <- deg_tbl[, setdiff(names(deg_tbl), c("pct_emb", "pct_emb_pert")), drop = FALSE]
     deg_tbl <- dplyr::left_join(deg_tbl, detection, by = c("gene_short_name", "cell_group"))
   }
-  if (!is.null(support)) {
-    supp_cols <- intersect(c("n_pert_pb", "n_eff_pb", "n_ctrl_cells", "n_pert_cells"), names(support))
-    deg_tbl <- deg_tbl[, setdiff(names(deg_tbl), supp_cols), drop = FALSE]
-    deg_tbl <- dplyr::left_join(deg_tbl, support[, c("cell_group", supp_cols)], by = "cell_group")
+  if (!is.null(support)) {                                # n_pert_pb drives the <2-embryo gate
+    deg_tbl <- deg_tbl[, setdiff(names(deg_tbl), "n_pert_pb"), drop = FALSE]
+    deg_tbl <- dplyr::left_join(deg_tbl, support[, c("cell_group", "n_pert_pb")], by = "cell_group")
   }
-  if (!"n_ctrl_cells" %in% names(deg_tbl)) deg_tbl$n_ctrl_cells <- NA_real_
-  if (!"n_pert_cells" %in% names(deg_tbl)) deg_tbl$n_pert_cells <- NA_real_
-  # Map effective perturbation-arm support (n_eff_pb) -> honest effective df. Within the
-  # range the null covers, use the null-calibrated (support -> df) lookup (accounts for the
-  # shrinkage's df buy-back). BELOW the smallest calibrated support the control-split null
-  # has no coverage (its cell types are well-populated), so df is ramped analytically from a
-  # 0.5 floor at <=1 effective replicate up to the smallest calibrated df -- this is what
-  # demotes cell types that are thin *in cells* (n_eff -> 0), whose over-shrunk SE would
-  # otherwise manufacture a confident call.
+  if (!is.null(counts)) {                                 # per-(gene, cell_type) UMI totals -> K_eff
+    deg_tbl <- deg_tbl[, setdiff(names(deg_tbl), c("K_ctrl", "K_pert")), drop = FALSE]
+    deg_tbl <- .efdr_join_counts(deg_tbl, counts)         # id-keyed (falls back to summed symbol)
+  }
+  if (!"n_pert_pb" %in% names(deg_tbl)) deg_tbl$n_pert_pb <- NA_real_
+  if (!"K_ctrl" %in% names(deg_tbl)) deg_tbl$K_ctrl <- NA_real_
+  if (!"K_pert" %in% names(deg_tbl)) deg_tbl$K_pert <- NA_real_
+  # Map effective count K_eff -> honest df from the null calibration; below the smallest
+  # calibrated K_eff, ramp to a 0.5 floor as K_eff -> 0 (heavy tail). One count-support guard
+  # that subsumes the old cell-type df-correction and the SE floor.
   cal <- model$df_calib
-  s0 <- cal$support[1]; d0 <- cal$df_eff[1]              # smallest calibrated support and its df
-  dfmap <- function(n) {
-    out <- rep(NA_real_, length(n)); ok <- is.finite(n); nn <- n[ok]
-    idx <- findInterval(nn, cal$support)                 # within/above range: step lookup
+  s0 <- cal$support[1]; d0 <- cal$df_eff[1]              # smallest calibrated K_eff and its df
+  dfmap <- function(k) {
+    out <- rep(NA_real_, length(k)); ok <- is.finite(k); kk <- k[ok]
+    idx <- findInterval(kk, cal$support)                 # within/above range: step lookup
     val <- cal$df_eff[pmin(pmax(idx, 1L), nrow(cal))]
-    below <- nn < s0                                     # extend below the calibrated floor
-    val[below] <- if (s0 > 1) pmax(0.5, 0.5 + (d0 - 0.5) * (nn[below] - 1) / (s0 - 1)) else 0.5
+    below <- kk < s0                                     # extend below the calibrated floor
+    val[below] <- if (s0 > 0) pmax(0.5, 0.5 + (d0 - 0.5) * (kk[below] / s0)) else 0.5
     out[ok] <- val
     out
   }
 
   out <- deg_tbl %>%
     dplyr::mutate(
-      # SE-floored standardized statistic: cap the shrunken SE at the Poisson floor the counts
-      # support, so a near-zero gene can't get an insane |z| (same floor the null z got, so
-      # they stay on the same footing). Falls back to the raw z only if lfc/se/expression are
-      # absent (a caller that passed only `z`).
-      z = if (all(c("perturb_to_ctrl_shrunken_lfc", "perturb_to_ctrl_shrunken_lfc_se",
-                    "log_mean_expression") %in% names(.)))
-            .efdr_floored_z(.data$perturb_to_ctrl_shrunken_lfc, .data$perturb_to_ctrl_shrunken_lfc_se,
-                            .data$log_mean_expression, .data$n_ctrl_cells, .data$n_pert_cells)
-          else if ("z" %in% names(.)) .data$z
+      z = if ("z" %in% names(.)) .data$z
           else .data$perturb_to_ctrl_shrunken_lfc / .data$perturb_to_ctrl_shrunken_lfc_se,
       .dir = dplyr::if_else(.data$z < 0, "dn", "up"),
       .a = abs(.data$z),
-      # Ordinary reference p (the floor): the trusted ashr shrunken p if present, else
-      # normal(z). When perturbation-arm support is known, the ordinary test is made honest
-      # about the KO-arm degrees of freedom: a normal/ashr p assumes ~infinite df, but a
-      # contrast backed by few perturbation pseudobulks has finite (null-calibrated) df, so
-      # |z| is re-scored against a t-distribution. This demotes the cell-abundance confound
-      # (depleted cell types where the deep control arm lends unearned power) at the same
-      # decorate-in-place layer, with no DEG re-fit; it is a pure function of KO support, so
-      # it does not touch expression and cannot demote well-supported calls.
-      .df = dfmap(.data$n_eff_pb),
-      .p_df = dplyr::if_else(is.finite(.data$.df),
-                             2 * stats::pt(-.data$.a, df = pmax(.data$.df, 0.5)), NA_real_),
-      .ord_p = if ("perturb_to_ctrl_p_value" %in% names(.)) .data$perturb_to_ctrl_p_value
+      K_eff = .efdr_keff(.data$K_ctrl, .data$K_pert),
+      df_count = dfmap(.data$K_eff),
+      # p_ashr: ordinary shrunken significance (demote-only baseline; empirical can only demote).
+      p_ashr = if ("perturb_to_ctrl_p_value" %in% names(.)) .data$perturb_to_ctrl_p_value
                else 2 * (1 - stats::pnorm(.data$.a)),
-      # df-honesty is demote-only: never let the ordinary p be more confident than the t-test
-      .ord_p = dplyr::if_else(is.na(.data$.p_df), .data$.ord_p, pmax(.data$.ord_p, .data$.p_df)))
+      # p_count: the raw magnitude z scored against t(df(K_eff)) -- the count-support guard band
+      # (subsumes the cell-type df-correction and the SE floor). NA where counts are unavailable.
+      p_count = dplyr::if_else(is.finite(.data$df_count),
+                               2 * stats::pt(-.data$.a, df = pmax(.data$df_count, 0.5)), NA_real_))
 
   # 2-D empirical tail, interpolated across the two bracketing log-ratios.
   emp_tail <- rep(NA_real_, nrow(out))
@@ -568,18 +590,46 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio, detection = 
           .efdr_tail_2d(model$surf[[paste(d, br$hi)]], model$taus, model$egrid, model$pegrid, e, pe, a)
     emp_tail[idx] <- dplyr::coalesce(br$w * tl + (1 - br$w) * th, tl, th)
   }
-  # ashr floor, ALWAYS: demote-only. Where the tail is NA (missing surface or pct_emb),
-  # empirical_p is the ordinary p, so the floor still holds (no fallback hole).
-  emp_tail <- pmin(pmax(emp_tail, 0), 1)
-  out$empirical_p <- dplyr::if_else(is.na(emp_tail), out$.ord_p, pmax(emp_tail, out$.ord_p))
-  # Support gate: a cell type with fewer than `min_pseudobulks` perturbation pseudobulks
-  # has no valid two-group contrast (df < 1); its calls are uncallable, not significant.
+  out$p_tail <- pmin(pmax(emp_tail, 0), 1)               # control-sampling artifact floor
+  # empirical_p = max of the three demote-only floors: ashr (ordinary significance), tail
+  # (design-imbalance artifact), count (count-support guard). A call must clear all three; a
+  # missing tail/count drops out of the max (no fallback hole). All three are kept as columns.
+  out$empirical_p <- pmax(out$p_ashr,
+                          dplyr::coalesce(out$p_tail, 0),
+                          dplyr::coalesce(out$p_count, 0))
+  # Gate 1: a cell type with fewer than `min_pseudobulks` perturbation embryos has no valid
+  # two-group contrast; its calls are uncallable, not significant.
   gate <- is.finite(out$n_pert_pb) & out$n_pert_pb < min_pseudobulks
   out$empirical_p[gate] <- 1
+  # Gate 2 (gene absent from the cell type): a gene with ~zero total UMIs in BOTH arms is not
+  # expressed in this cell type at all, so any |z| it carries is pure trend-dispersion shrinkage
+  # noise (a near-zero gene assigned a floored SE) that no floor can price -- the control-split
+  # null never reaches such |z| at near-zero counts, and the count-t's heaviest tail cannot
+  # demote it. Gate ONLY when the larger arm is also empty: a well-counted control arm with an
+  # empty perturbation arm (K_ctrl large, K_pert = 0) is a genuine COMPLETE DEPLETION and MUST
+  # be kept. So the test is on max(K_ctrl, K_pert), not the harmonic-mean K_eff (which falls
+  # below 1 whenever either arm is empty, and would wrongly drop real depletions). Not an
+  # expression floor: it is "the gene has no counts in either arm of this cell type".
+  absent_gate <- is.finite(out$K_ctrl) & is.finite(out$K_pert) &
+    pmax(out$K_ctrl, out$K_pert) < .EFDR_MIN_ARM_UMI
+  out$empirical_p[absent_gate] <- 1
 
-  out %>%
+  # empirical_fdr: BH-adjust EACH floor within the cell group, then take the max q -- NOT
+  # BH(empirical_p). The per-gene max() floors every combined p near 1/nperm (some floor always
+  # sits at the permutation floor), compressing the p-distribution so BH crushes even real hits.
+  # Adjusting each floor in its own well-spread distribution lets the (often tiny) ashr q survive,
+  # while the gene must still clear all three q's -- the intersection of the three FDR-controlled
+  # call sets. Empirically ~2x the calls at fdr<=0.10 with no increase in the artifact rate. A
+  # missing tail/count -> 0 (non-constraining), matching the empirical_p max() semantics.
+  out <- out %>%
     dplyr::group_by(dplyr::across(all_of(group_col))) %>%
-    dplyr::mutate(empirical_fdr = stats::p.adjust(.data$empirical_p, "BH")) %>%
-    dplyr::ungroup() %>%
-    dplyr::select(-".dir", -".a", -".ord_p", -".df", -".p_df")
+    dplyr::mutate(
+      .q_ashr  = stats::p.adjust(pmax(.data$p_ashr, 0), "BH"),
+      .q_tail  = stats::p.adjust(dplyr::coalesce(.data$p_tail, 0), "BH"),
+      .q_count = stats::p.adjust(dplyr::coalesce(.data$p_count, 0), "BH"),
+      empirical_fdr = pmax(.data$.q_ashr, .data$.q_tail, .data$.q_count)) %>%
+    dplyr::ungroup()
+  out$empirical_fdr[out$empirical_p >= 1] <- 1           # gated (uncallable) genes: fdr = 1 too
+  out %>%
+    dplyr::select(-".dir", -".a", -".q_ashr", -".q_tail", -".q_count")  # keep p_ashr/p_tail/p_count/K_eff/df_count
 }
