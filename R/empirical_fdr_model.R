@@ -669,6 +669,26 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio = NULL, detec
       empirical_fdr = pmax(.data$.q_ashr, .data$.q_tail)) %>%
     dplyr::ungroup()
   out$empirical_fdr[out$empirical_p >= 1] <- 1           # gated (uncallable) genes: fdr = 1 too
-  out %>%
+  out <- out %>%
     dplyr::select(-".dir", -".a", -".thin_is_ko", -".q_ashr", -".q_tail")  # keep p_ashr/p_tail/thin_arm_cells/K_*
+  # Per-experiment efdr diagnostics (attached as an attribute so callers -- e.g. the mcclintock
+  # decorator stage -- can persist them; the located min-arm K in particular is otherwise only in
+  # the log). Counts are gate MEMBERSHIP (a call may satisfy more than one gate, so they need not sum).
+  attr(out, "efdr_stats") <- data.frame(
+    min_arm_cells_K       = as.integer(min_arm_cells),
+    p_ctrl_detection      = round(as.numeric(.p_det), 4),
+    det_pctl              = .EFDR_DET_PCTL,
+    n_calls               = nrow(out),
+    n_ashr_sig            = sum(out$p_ashr < 0.05, na.rm = TRUE),
+    n_retained            = sum(out$empirical_p < 0.05, na.rm = TRUE),
+    n_retained_down       = sum(out$empirical_p < 0.05 & out$z < 0, na.rm = TRUE),
+    n_retained_up         = sum(out$empirical_p < 0.05 & out$z > 0, na.rm = TRUE),
+    n_gate_lt2_pseudobulk = sum(gate, na.rm = TRUE),
+    n_gate_gene_absent    = sum(absent_gate, na.rm = TRUE),
+    n_gate_up_ctrl_absent = sum(up_absent_gate, na.rm = TRUE),
+    n_gate_up_empty_gain  = sum(up_empty_gain_gate, na.rm = TRUE),
+    n_gate_low_ctrl_det   = sum(low_src_det_gate, na.rm = TRUE),
+    n_gate_min_arm_cells  = sum(min_arm_gate, na.rm = TRUE),
+    stringsAsFactors = FALSE)
+  out
 }
