@@ -606,6 +606,17 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio = NULL, detec
   # depletion) and is NOT gated. Directional on the control (reference) arm.
   up_absent_gate <- (out$z > 0) & is.finite(out$K_ctrl) & (out$K_ctrl < .EFDR_MIN_ARM_UMI)
   out$empirical_p[up_absent_gate] <- 1
+  # Gate 3c (empty-gaining-arm UP-call): an UP call (higher in perturbation) whose PERTURBATION
+  # (gaining) arm carries ~zero UMIs cannot be a real gain -- the gene is absent from the very arm
+  # it is called up in, so the shrunken-LFC sign is noise (a near-zero control arm plus size-factor
+  # shrinkage can emit z>0 with K_pert=0). This is the true up-mirror of the low-source-detection
+  # LOSS gate on the GAINING side, and the counterpart of the gene-absent gate: gate 2 keeps a gene
+  # present in EITHER arm (max(K)), which lets a K_pert=0 up-call survive on its control counts, so
+  # this gate closes that hole on the up side. Deliberately a ZERO-count floor, not the 2% detection
+  # floor used for losses: real GAINS can be sparse (phox2a is real at 0.7% perturbation detection,
+  # K_pert>0), so only a truly empty gaining arm is gated. Directional on the perturbation arm.
+  up_empty_gain_gate <- (out$z > 0) & is.finite(out$K_pert) & (out$K_pert < .EFDR_MIN_ARM_UMI)
+  out$empirical_p[up_empty_gain_gate] <- 1
   # Gate 3b (low source-detection LOSS): a DOWN call whose CONTROL (source) arm detects the gene in
   # fewer than MIN_SRC_DET of its cells has no robustly-expressed baseline to lose -- its large |z|
   # is trend-dispersion shrinkage noise the control-split null cannot reach at moderate arm sizes
