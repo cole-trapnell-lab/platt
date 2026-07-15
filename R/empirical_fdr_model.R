@@ -23,9 +23,15 @@ NULL
 # The null tail is a rare, upper-tail phenomenon (the lower quantiles are a flat,
 # shot-noise-dominated bulk), so the tau grid is concentrated above 0.9 with a
 # couple of low anchors for interpolation.
-.EFDR_TAUS   <- c(0.5, 0.8, 0.9, 0.95, 0.975, 0.99, 0.995, 0.999)
+.EFDR_TAUS   <- c(0.5, 0.75, 0.85, 0.9, 0.93, 0.95, 0.96, 0.97, 0.98, 0.99, 0.995, 0.999)
+                                      # densified around the demotion boundary (~0.95-0.98) so the
+                                      # tail p interpolates finely where the call/demote decision sits
 .EFDR_EGRID  <- seq(-9, 1, 0.25)      # expression grid the tail surface is evaluated on
-.EFDR_PEGRID <- seq(0, 100, 10)       # %embryos grid (control detection rate)
+.EFDR_PEGRID <- seq(0, 100, 10)       # %embryos grid (legacy detection axis; unused by the arm-matched surface)
+.EFDR_LCGRID <- seq(0, 3.6, 0.15)     # log10(thin-arm cell count + 1) grid the tail is conditioned on
+                                      # (~1 cell -> ~4000 cells); the arm-size axis that decides
+                                      # whether a large |z| is a real depletion (deep arm) or a
+                                      # thin-arm sampling artifact.
 
 # --- The empirical-null policy (one set of baked constants; not pipeline-configurable) ---
 .EFDR_C_FULL <- 10    # cells an embryo must carry to count as ONE full perturbation replicate;
@@ -38,6 +44,25 @@ NULL
                       # type and its |z| is shrinkage noise (gated). Tests max(K_ctrl, K_pert),
                       # so a well-counted control arm + empty perturbation arm (real complete
                       # depletion) is KEPT -- only genuinely-absent genes are gated.
+.EFDR_MIN_SRC_DET <- 0.02  # a LOSS (down call) needs the CONTROL (source) arm to detect the gene in
+                      # at least this fraction of its cells to be callable. A depletion presupposes a
+                      # robustly-expressed baseline; a "loss" of a gene detected in <2% of control
+                      # cells is trend-dispersion shrinkage noise (huge |z| on near-zero counts) the
+                      # control-split null cannot reach at moderate arm sizes. Data-derived, not an
+                      # a-priori expression floor: real depletions sit at >=12% control detection,
+                      # Amy's confirmed 'too low' down-artifacts all at <=1.1%, with a clean ~10x gap;
+                      # 2% sits in that gap. DIRECTIONAL (control arm, down only) -- NOT applied to up
+                      # calls, because real GAINS can be sparse (phox2a is a real up-call at 0.7%
+                      # perturbation detection), so no analogous gap exists on the up side; up-blips
+                      # are handled by the thin-gain (arm-size) gate instead.
+.EFDR_MIN_GAIN_CELLS <- 25L  # a GAIN (gene higher in the thinner arm) needs at least this many
+                      # cells in that arm to be callable. The control-split null structurally
+                      # cannot produce a thin-arm gain (a thin pseudo-arm can only LOSE genes it
+                      # doesn't carry, never gain one), so its up-tail is uninformative at thin
+                      # arms and would keep every few-cell up-blip at p_tail ~ 0.001. This is the
+                      # up-direction analog of the <2-pseudobulk gate: too few gaining-arm cells
+                      # to support an increase -> uncallable. (Losses are unaffected -- the null
+                      # DOES generate thin-arm losses, so the down-tail prices them.)
 
 #' Build a control-split empirical null for the DEG artifact.
 #'
@@ -80,7 +105,16 @@ build_empirical_null <- function(cds,
   n_ctrl <- length(embs)
 
   if (is.null(n_perturb_grid)) {
-    n_perturb_grid <- unique(pmax(3L, round(c(0.15, 0.20, 0.25, 0.30, 0.40) * n_ctrl)))
+    # Thin-extended SPARSE grid. The arm-matched null must SPAN arm thinness -- from as thin
+    # as a valid two-embryo pseudobulk contrast allows (~3% of control embryos) up to a thick
+    # anchor -- not sample densely in the narrow high band the old grid used. Cell-type rarity
+    # turns the 3% embryo split into single-digit-cell arms (the artifact regime); the thick
+    # point anchors the well-sampled / real-call region. Three points {thin, mid, thick}
+    # reconstruct the tail surface as well as the old five (validated on GENE6) while dropping
+    # the most expensive (thickest) splits. Going below ~3% embryos buys nothing: we condition
+    # on per-cell-type arm CELL count, which already reaches 1-3 cells for rare cell types at
+    # the 3% point, and <2 embryos cannot form a contrast (the >=2-pseudobulk gate).
+    n_perturb_grid <- unique(pmax(3L, round(c(0.03, 0.08, 0.40) * n_ctrl)))
   }
   n_perturb_grid <- n_perturb_grid[n_perturb_grid > 0 & n_perturb_grid < n_ctrl]
 
@@ -128,28 +162,35 @@ build_empirical_null <- function(cds,
     # Per-cell-type embryo support: n_pert_pb still drives the <2-embryo gate.
     supp <- efdr_perturbation_support(sub, sample_group = sample_group, cell_group = cell_group,
                                       control_ids = "ctrl-inj", perturbation_col = perturbation_col)
-    # Per-(gene, cell_type) pseudo-arm UMI counts -> K_eff for the count-calibrated t, so df is
-    # calibrated against the same effective count the real DEG is scored on.
+    # Per-(gene, cell_type) pseudo-arm UMI counts -> K_eff (retained as a diagnostic).
     null_counts <- .efdr_arm_counts(sub, sample_group = sample_group, cell_group = cell_group,
                                     control_ids = "ctrl-inj", perturbation_col = perturbation_col)
+    # Per-(cell_type) pseudo-arm CELL counts -- the arm-size axis the tail is conditioned on.
+    # The pseudo-KO ("NULLPERT") arm is the thinner arm here (a minority split of controls),
+    # so its cell count spans the thin regime the artifacts live in.
+    .cg <- as.character(SummarizedExperiment::colData(sub)[[cell_group]])
+    .pc <- as.character(SummarizedExperiment::colData(sub)[[perturbation_col]])
+    arm_cells <- data.frame(
+      cell_group   = names(tapply(.pc == "NULLPERT", .cg, sum)),
+      n_pert_cells = as.integer(tapply(.pc == "NULLPERT", .cg, sum)),
+      n_ctrl_cells = as.integer(tapply(.pc == "ctrl-inj", .cg, sum)),
+      stringsAsFactors = FALSE, row.names = NULL)
     .read_null_dir(wd, counts = null_counts) %>%
       dplyr::left_join(det, by = c("gene_short_name", "cell_group")) %>%
       dplyr::left_join(supp[, c("cell_group", "n_pert_pb")], by = "cell_group") %>%
+      dplyr::left_join(arm_cells, by = "cell_group") %>%
       dplyr::mutate(log_ratio = log2(N / (n_ctrl - N)))
   })
 }
 
 # Effective count backing a within-state contrast: the harmonic combination of the per-arm
 # total UMI counts, K_eff = 1/(1/K_ctrl + 1/K_pert), the reciprocal of the Poisson log-ratio
-# variance. The count-calibrated t is keyed on K_eff -- a near-empty arm (K_pert -> 0) gives
-# K_eff -> ~0, hence low calibrated df and a heavy tail that demotes the trend-dispersion
-# over-confidence on near-zero-count genes, while a well-counted call (large K_eff) gets a
-# near-normal tail and is untouched. It unifies the old cell-type df-correction and the SE
-# floor: both are "the counts don't support this confidence", at cell-type and per-gene
-# granularity respectively, and both are just low K_eff. It is a count-support GUARD BAND,
-# not a covariate-aware df -- "can the counts support a between-arm difference at all" holds
-# regardless of the model formula; the fine covariate df cost would need a nuisance-matched
-# null (see TODO). `kappa` guards the K = 0 singularity; the counts are real UMI totals.
+# variance (a near-empty arm drives K_eff -> ~0; a well-counted contrast gives K_eff in the
+# hundreds). RETAINED AS A DIAGNOSTIC ONLY: the count-calibrated t that once scored z against
+# a K_eff-calibrated t-distribution has been REMOVED in favour of the arm-matched tail (which
+# conditions on the thin-arm CELL count) plus the directional detection/absence gates. K_eff
+# is still computed and stored on the null/DEG so a demotion can be inspected against the arm
+# counts, but it no longer drives any p-value. `kappa` guards the K = 0 singularity.
 .efdr_keff <- function(K_ctrl, K_pert, kappa = 1) {
   1 / (1 / (K_ctrl + kappa) + 1 / (K_pert + kappa))
 }
@@ -171,18 +212,23 @@ build_empirical_null <- function(cds,
   ind <- Matrix::sparseMatrix(i = seq_along(grp), j = as.integer(grp), x = 1,
                               dims = c(length(grp), nlevels(grp)))
   S <- as.matrix(monocle3::exprs(cds) %*% ind)          # genes x (cell_type|arm) raw UMI totals
+  # cells expressing the gene per (gene, cell_type|arm) -- binarized matmul, same grouping. Feeds
+  # the per-arm DETECTION (expressing cells / arm cells) used by the down-call source-detection gate.
+  D <- as.matrix((monocle3::exprs(cds) > 0) %*% ind)    # genes x (cell_type|arm) cells expressing
   ids <- rownames(cds)
   gsym <- SummarizedExperiment::rowData(cds)$gene_short_name
   if (is.null(gsym)) gsym <- ids
   key <- strsplit(levels(grp), "\r", fixed = TRUE)
   ct_lev <- vapply(key, `[`, "", 1); arm_lev <- vapply(key, `[`, "", 2)
-  # Build (id, cell_type) x {K_ctrl, K_pert} directly per cell type (no long/pivot).
+  # Build (id, cell_type) x {K_ctrl, K_pert, n_expr_ctrl, n_expr_pert} per cell type (no long/pivot).
   res <- lapply(unique(ct_lev), function(ctype) {
     jc <- which(ct_lev == ctype & arm_lev == "ctrl")
     jp <- which(ct_lev == ctype & arm_lev == "pert")
     data.frame(id = ids, gene_short_name = gsym, cell_group = ctype,
                K_ctrl = if (length(jc)) S[, jc] else 0,
-               K_pert = if (length(jp)) S[, jp] else 0, stringsAsFactors = FALSE)
+               K_pert = if (length(jp)) S[, jp] else 0,
+               n_expr_ctrl = if (length(jc)) D[, jc] else 0,
+               n_expr_pert = if (length(jp)) D[, jp] else 0, stringsAsFactors = FALSE)
   })
   do.call(rbind, res)
 }
@@ -192,13 +238,18 @@ build_empirical_null <- function(cds,
 # can never be one-to-many). Shared by the null build and the real-DEG annotation so K_eff is
 # computed the same way on both sides.
 .efdr_join_counts <- function(x, counts) {
+  has_det <- all(c("n_expr_ctrl", "n_expr_pert") %in% names(counts))
   if ("id" %in% names(x) && "id" %in% names(counts)) {
-    dplyr::left_join(x, counts[, c("id", "cell_group", "K_ctrl", "K_pert")],
-                     by = c("id", "cell_group"))
+    cols <- c("id", "cell_group", "K_ctrl", "K_pert",
+              if (has_det) c("n_expr_ctrl", "n_expr_pert"))
+    dplyr::left_join(x, counts[, cols], by = c("id", "cell_group"))
   } else {
     cnt <- counts %>%
       dplyr::group_by(.data$gene_short_name, .data$cell_group) %>%
-      dplyr::summarise(K_ctrl = sum(.data$K_ctrl), K_pert = sum(.data$K_pert), .groups = "drop")
+      dplyr::summarise(K_ctrl = sum(.data$K_ctrl), K_pert = sum(.data$K_pert),
+                       n_expr_ctrl = if (has_det) sum(.data$n_expr_ctrl) else NA_real_,
+                       n_expr_pert = if (has_det) sum(.data$n_expr_pert) else NA_real_,
+                       .groups = "drop")
     dplyr::left_join(x, cnt, by = c("gene_short_name", "cell_group"))
   }
 }
@@ -356,128 +407,88 @@ efdr_support_from_coldata <- function(coldata,
 
 #' Train the empirical-FDR null model from control-split null draws.
 #'
-#' Models the null upper tail of |z| as a smooth function of **expression and
-#' control %embryos**, per (direction, sampling log-ratio):
-#'   - **monotone-decreasing in expression** (scam `bs="mpd"`): the dispersion
-#'     mis-pricing that inflates |z| worsens monotonically as expression -> 0, so
-#'     the tail must not droop back toward zero in the sparse extreme-low region.
-#'   - **decreasing in %embryos** (scam `bs="mpd"`): broadly-detected genes have
-#'     well-estimated dispersion (light tail); narrowly-detected genes carry the
-#'     under-priced between-embryo variance (heavy tail).
-#' Direction is kept separate (the control-depth artifact is one-directional).
+#' Models the null upper tail of |z| as a LOCAL-EMPIRICAL surface over **expression
+#' and the thin-arm cell count**, per direction. Each grid cell's tail quantiles are
+#' estimated from the null draws in a local window around it (widened adaptively until
+#' `min_n` draws are in; still-empty cells filled from the nearest evaluated cell;
+#' quantiles made monotone in tau by cummax). The two axes:
+#'   - **expression**: the dispersion mis-pricing that inflates |z| worsens as
+#'     expression -> 0, so the tail stays heavy in the sparse extreme-low region
+#'     rather than drooping back toward zero.
+#'   - **thin-arm cell count**: a thin arm hits exact/near-zero counts which, times
+#'     the trend-dispersion-shrunk SE, manufactures large |z| under no real effect.
+#'     This is the axis that separates a real depletion (huge |z|, deep arm) from a
+#'     thin-arm sampling artifact -- the previous %embryos/log-ratio surface could
+#'     not, because it never conditioned on the actual arm size.
+#' A local-empirical estimate is used rather than a global shape-constrained smooth
+#' (an earlier scam `bs="mpd"` surface), which under-fit the low-expression/thin-arm
+#' corner by borrowing from lighter, better-sampled neighbours.
+#' Draws are POOLED across the sampling grid: the grid exists only to span the
+#' arm-size axis, which is then read directly off `n_pert_cells`. Direction is kept
+#' separate. The thin arm in a control-split null is always the pseudo-KO
+#' ("NULLPERT") minority arm, so its cell count (`n_pert_cells`) is the covariate;
+#' `dn` = the gene is lower in that thin arm (z<0), `up` = higher.
 #'
 #' @param null Output of [build_empirical_null()] (gene_short_name, cell_group,
-#'   log_mean_expression, z, log_ratio).
-#' @param detection Output of [efdr_detection_rate()] (gene_short_name, cell_group,
-#'   pct_emb); joined to the null to supply the %embryos covariate.
+#'   log_mean_expression, z, n_pert_cells).
+#' @param detection Unused (kept for back-compat with callers).
 #' @param taus Quantile levels (tail-concentrated) the surface is evaluated at.
-#' @param egrid,pegrid Expression and %embryos grids the surface is evaluated on.
-#' @param bin_width Expression bin width for the per-cell empirical quantiles.
-#' @param pe_bin %embryos bin width for the per-cell empirical quantiles.
-#' @return An `efdr_model`: per-(direction, log-ratio) 2-D tail surfaces on the
-#'   (egrid x pegrid) grid, one column per tau.
+#' @param egrid,lcgrid Expression and log10(thin-arm cells + 1) grids evaluated on.
+#' @param we,wc Half-widths of the local window (expression, log10-cells) the tail
+#'   quantiles are estimated over; widened adaptively until `min_n` draws are in.
+#' @param min_n Minimum null draws required in a window before its quantiles are used.
+#' @return An `efdr_model`: per-direction 2-D tail surfaces on (egrid x lcgrid).
 #' @export
 train_efdr_model <- function(null, detection = NULL, taus = .EFDR_TAUS,
-                             egrid = .EFDR_EGRID, pegrid = .EFDR_PEGRID,
-                             bin_width = 0.5, pe_bin = 10) {
-  # The null carries per-pseudo-group detection (pct_emb = losing/control arm,
-  # pct_emb_pert = gaining/perturbation arm). Prefer those; only join a supplied
-  # `detection` for columns the null lacks (back-compat with older nulls).
-  if (!is.null(detection)) {
-    join_cols <- setdiff(intersect(c("pct_emb", "pct_emb_pert"), names(detection)), names(null))
-    if (length(join_cols)) {
-      null <- dplyr::left_join(null, detection[, c("gene_short_name", "cell_group", join_cols)],
-                               by = c("gene_short_name", "cell_group"))
-    }
-  }
+                             egrid = .EFDR_EGRID, lcgrid = .EFDR_LCGRID,
+                             we = 0.75, wc = 0.4, min_n = 40L, max_we = 2.5) {
+  if (!"n_pert_cells" %in% names(null))
+    stop("efdr: null lacks `n_pert_cells` (arm cell count). Rebuild with the current ",
+         "build_empirical_null(), which records per-cell-type pseudo-arm cell counts.",
+         call. = FALSE)
   null <- null %>%
-    dplyr::filter(is.finite(.data$log_mean_expression), is.finite(.data$z)) %>%
-    dplyr::mutate(dir = dplyr::if_else(.data$z < 0, "dn", "up"), a = abs(.data$z))
-  ratios <- sort(unique(null$log_ratio))
-  GR <- expand.grid(eb = egrid, pe = pegrid)          # eb varies fastest
+    dplyr::filter(is.finite(.data$log_mean_expression), is.finite(.data$z),
+                  is.finite(.data$n_pert_cells), .data$n_pert_cells > 0) %>%
+    dplyr::mutate(dir = dplyr::if_else(.data$z < 0, "dn", "up"), a = abs(.data$z),
+                  lc = log10(.data$n_pert_cells + 1))          # thin-arm size axis
+  GR <- expand.grid(eb = egrid, pe = lcgrid)          # eb varies fastest; `pe` slot holds log-cells
+  # aspect ratio to make grid-space "distance" comparable across the two axes when NN-filling.
+  asp <- diff(range(egrid)) / max(diff(range(lcgrid)), 1e-6)
   surf <- list()
-  for (r in ratios) for (d in c("dn", "up")) {
-    key <- paste(d, r)
-    # Direction-specific detection covariate: the arm that "has" the gene in a
-    # call of this direction. up -> gaining (perturbation) arm; dn -> control arm.
-    sub <- null %>% dplyr::filter(.data$log_ratio == r, .data$dir == d)
-    sub$pct_emb <- if (d == "up") sub$pct_emb_pert else sub$pct_emb
-    use_pe <- mean(is.finite(sub$pct_emb)) > 0.5 &&
-              length(unique(round(sub$pct_emb[is.finite(sub$pct_emb)] / pe_bin))) >= 3L
-    pb <- sub %>%
-      dplyr::mutate(eb = round(.data$log_mean_expression / bin_width) * bin_width,
-                    pe = round(.data$pct_emb / pe_bin) * pe_bin) %>%
-      { if (use_pe) dplyr::group_by(., .data$eb, .data$pe) else dplyr::group_by(., .data$eb) } %>%
-      dplyr::summarise(q = list(stats::quantile(.data$a, taus, names = FALSE)),
-                       n = dplyr::n(), .groups = "drop") %>%
-      dplyr::filter(.data$n >= 30L)
-    if (nrow(pb) < 8L) { surf[[key]] <- NULL; next }   # too sparse -> caller defers to ashr
-    qmat <- do.call(rbind, pb$q)                       # cells x taus
-    Q <- vapply(seq_along(taus), function(i) {
-      if (use_pe) {
-        df <- data.frame(q = qmat[, i], eb = pb$eb, pe = pb$pe, n = pb$n)
-        m <- tryCatch(
-          scam::scam(q ~ s(eb, bs = "mpd") + s(pe, bs = "mpd"), weights = n, data = df),
-          error = function(e1) tryCatch(
-            scam::scam(q ~ s(eb, bs = "mpd"), weights = n, data = df),
-            error = function(e2) mgcv::gam(q ~ s(eb), weights = n, data = df)))
-        pmax(as.numeric(stats::predict(m, newdata = GR)), 0)
-      } else {
-        # no usable %embryos -> 1-D monotone in expression, tiled across the pe grid
-        df <- data.frame(q = qmat[, i], eb = pb$eb, n = pb$n)
-        m <- tryCatch(scam::scam(q ~ s(eb, bs = "mpd"), weights = n, data = df),
-                      error = function(e2) mgcv::gam(q ~ s(eb), weights = n, data = df))
-        v <- pmax(as.numeric(stats::predict(m, newdata = data.frame(eb = egrid))), 0)
-        rep(v, times = length(pegrid))                 # eb fastest in GR -> tile per pe block
+  for (d in c("dn", "up")) {
+    sub <- null %>% dplyr::filter(.data$dir == d)
+    if (nrow(sub) < 8L * min_n) { surf[[d]] <- NULL; next }   # too sparse -> caller defers to ashr
+    e <- sub$log_mean_expression; l <- sub$lc; a <- sub$a
+    ord <- order(e); e <- e[ord]; l <- l[ord]; a <- a[ord]    # sort by expr for fast window slicing
+    # LOCAL EMPIRICAL tail on the grid (a kNN baked to a lookup). The scam monotone-smooth
+    # under-fit the (low-expression, thin-arm) corner where the artifacts live -- borrowing
+    # from lighter neighbours -- so estimate each grid cell from its own local window instead.
+    Q <- matrix(NA_real_, nrow(GR), length(taus))
+    for (r in seq_len(nrow(GR))) {
+      eb <- GR$eb[r]; pe <- GR$pe[r]; ww <- we; wl <- wc; keep <- integer(0)
+      repeat {
+        lo <- findInterval(eb - ww, e) + 1L; hi <- findInterval(eb + ww, e)
+        if (hi >= lo) { j <- lo:hi; keep <- j[abs(l[j] - pe) <= wl] }
+        if (length(keep) >= min_n || ww >= max_we) break
+        ww <- ww * 1.5; wl <- wl * 1.5
       }
-    }, numeric(nrow(GR)))                               # nrow(GR) x taus
+      if (length(keep) >= 30L) Q[r, ] <- stats::quantile(a[keep], taus, names = FALSE)
+    }
+    # fill any still-empty grid cell from the nearest evaluated cell (grid-space NN), so the
+    # extreme corners are covered rather than left to caller-side extrapolation.
+    miss <- which(is.na(Q[, 1])); have <- which(!is.na(Q[, 1]))
+    if (length(miss) && length(have)) for (m in miss) {
+      dd <- (GR$eb[have] - GR$eb[m])^2 + ((GR$pe[have] - GR$pe[m]) * asp)^2
+      Q[m, ] <- Q[have[which.min(dd)], ]
+    }
     Q <- t(apply(Q, 1, cummax))                        # monotone in tau within each grid cell
-    surf[[key]] <- Q
+    surf[[d]] <- Q
   }
-  df_calib <- .efdr_calibrate_df(null)
-  if (is.null(df_calib))
-    stop("efdr: could not calibrate degrees-of-freedom from the null (too few draws). ",
-         "A valid efdr_model requires the support->df calibration.", call. = FALSE)
-  structure(list(surf = surf, taus = taus, egrid = egrid, pegrid = pegrid, ratios = ratios,
-                 df_calib = df_calib),
+  structure(list(surf = surf, taus = taus, egrid = egrid, pegrid = lcgrid),
             class = "efdr_model")
 }
 
-# Calibrate the effective degrees-of-freedom of the within-state contrast as a function of the
-# effective count K_eff. The trend-dispersion shrinkage over-states precision on low-count
-# contrasts (near-zero genes, depleted cell types); the null is the reference for how much:
-# per K_eff octave, match the null |z| right-tail exceedance at `z0` to a t-distribution and
-# solve for its df. A low-K_eff contrast gets a low df (heavy tail); a well-counted one gets
-# ~normal. Returns a monotone (K_eff -> df) lookup; NULL only if the null has too few draws.
-.efdr_calibrate_df <- function(null, z0 = 3.5, min_n = 500L) {
-  d <- null[is.finite(null$K_eff) & is.finite(null$z), ]
-  if (nrow(d) < min_n) return(NULL)
-  a <- abs(d$z); k <- d$K_eff
-  kb <- round(log2(pmax(k, 0.5)))                       # bin effective count into log2 octaves
-  solve_df <- function(p) {                              # 2*pt(-z0, df) is decreasing in df
-    if (!is.finite(p) || p <= 2 * stats::pnorm(-z0)) return(Inf)  # normal already conservative
-    g <- function(l) 2 * stats::pt(-z0, exp(l)) - p
-    if (g(log(0.5)) < 0) return(0.5)
-    if (g(log(1e4)) > 0) return(Inf)
-    exp(stats::uniroot(g, c(log(0.5), log(1e4)))$root)
-  }
-  levs <- sort(unique(kb))
-  rows <- lapply(levs, function(lev) {
-    ak <- a[kb == lev]; if (length(ak) < min_n) return(NULL)
-    data.frame(support = 2^lev, df_eff = solve_df(mean(ak >= z0)), n = length(ak))
-  })
-  out <- do.call(rbind, rows)
-  if (is.null(out) || nrow(out) < 2L) return(NULL)
-  # Enforce df non-decreasing in support with isotonic regression (pool-adjacent-violators),
-  # weighted by null mass; Inf (no correction) is capped at `df_cap` for the fit, above which
-  # the t-distribution is indistinguishable from normal so the correction is negligible.
-  df_cap <- 60
-  y <- pmin(out$df_eff, df_cap)
-  out$df_eff <- stats::isoreg(out$support, y)$yf
-  out[, c("support", "df_eff")]
-}
-
-# right-tail probability of |z| = `a` at (expression `e`, %embryos `pe`) against a
+# right-tail probability of |z| = `a` at (expression `e`, arm-size `pe`) against a
 # 2-D tail surface. NA where the surface is absent (too-sparse stratum) or pe is
 # missing -> caller defers to the ordinary test.
 .efdr_tail_2d <- function(Q, taus, egrid, pegrid, e, pe, a) {
@@ -496,140 +507,149 @@ train_efdr_model <- function(null, detection = NULL, taus = .EFDR_TAUS,
   }, numeric(1))
 }
 
-#' Annotate a DEG table with per-gene empirical p and BH FDR at a given log-ratio.
+#' Annotate a DEG table with per-gene empirical p and BH FDR.
 #'
 #' @param model An `efdr_model` from [train_efdr_model()].
 #' @param deg_tbl DEG table with `gene_short_name`, `cell_group`,
 #'   `log_mean_expression`, and either `z` or `perturb_to_ctrl_shrunken_lfc` +
 #'   `perturb_to_ctrl_shrunken_lfc_se`.
-#' @param detection Output of [efdr_detection_rate()] (gene_short_name, cell_group,
-#'   pct_emb); supplies the %embryos covariate. Genes with no match fall back to
-#'   the ordinary test (still floored below).
-#' @param log_ratio The perturbation's log2(n_perturb / n_control).
+#' @param arm_cells Per-cell-type arm CELL counts (data.frame with `cell_group`,
+#'   `n_ctrl_cells`, `n_pert_cells`). Supplies the arm-size covariate the tail is
+#'   conditioned on. Genes in cell types with no match fall back to ashr only.
+#' @param counts Per-(gene, cell_type) arm UMI totals (`id`/`gene_short_name`,
+#'   `cell_group`, `K_ctrl`, `K_pert`) for the gene-absent and control-absent gates.
+#' @param support Per-cell-type embryo counts (`cell_group`, `n_pert_pb`) for the
+#'   <2-pseudobulk gate.
+#' @param detection Deprecated / unused (the %embryos covariate is retired).
+#' @param log_ratio Deprecated / ignored (the tail is conditioned on the actual
+#'   per-cell-type arm cell count, not a single global sampling ratio).
 #' @param group_col Column to BH-adjust within (default `cell_group`).
 #' @return `deg_tbl` with added `empirical_p` and `empirical_fdr`.
-#' @details Two coupled pieces:
-#'   * The 2-D null tail (monotone in expression, smooth in %embryos) *demotes*
-#'     the dispersion-under-priced artifact calls (narrow / low-expression).
-#'   * An **ashr floor** — `empirical_p = max(tail, perturb_to_ctrl_p_value)` — is
-#'     applied **always** (including where the tail is unavailable). It is
-#'     load-bearing: without it, conditioning the null tighter lets trivially small
-#'     |z| pass. So the empirical step may only *demote* a call ashr made, never
-#'     promote one.
+#' @details The tail null is conditioned on **expression x thin-arm cell count**
+#'   (not %embryos / global ratio), so a real depletion (huge |z|, deep arm) is
+#'   kept while a thin-arm sampling artifact of the same |z| is demoted. Each call
+#'   is matched on `min(n_ctrl_cells, n_pert_cells)` (the thinner arm) and the sign
+#'   of the effect **in that thin arm**, which generalizes to perturbation-heavy
+#'   designs (where the control arm is the thin one). `empirical_p = max(p_ashr,
+#'   p_tail)`: the empirical step may only *demote* a call ashr made.
 #' @export
-annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio, detection = NULL,
-                                         support = NULL, counts = NULL,
+annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio = NULL, detection = NULL,
+                                         support = NULL, counts = NULL, arm_cells = NULL,
                                          min_pseudobulks = .EFDR_MIN_PB,
                                          group_col = "cell_group") {
-  R <- model$ratios
-  br <- if (log_ratio <= R[1]) list(lo = R[1], hi = R[1], w = 1) else
-        if (log_ratio >= R[length(R)]) list(lo = R[length(R)], hi = R[length(R)], w = 1) else {
-          hi <- R[which(R >= log_ratio)[1]]; lo <- R[max(which(R <= log_ratio))]
-          list(lo = lo, hi = hi, w = if (hi == lo) 1 else (hi - log_ratio) / (hi - lo))
-        }
-  # Drop any pre-existing detection/support columns before (re)joining: decorating an
-  # already-decorated DEG table (e.g. re-running the efdr stage) would otherwise collide
-  # on `pct_emb`/`pct_emb_pert`/`n_pert_pb`, producing `.x`/`.y` and leaving no plain
-  # `pct_emb` -- which silently NA's the covariate and skips the tail. Re-derive them here.
-  if (!is.null(detection)) {
-    deg_tbl <- deg_tbl[, setdiff(names(deg_tbl), c("pct_emb", "pct_emb_pert")), drop = FALSE]
-    deg_tbl <- dplyr::left_join(deg_tbl, detection, by = c("gene_short_name", "cell_group"))
-  }
-  if (!is.null(support)) {                                # n_pert_pb drives the <2-embryo gate
+  # (Re)join the per-cell-type inputs, dropping any stale copies first so re-decoration
+  # of an already-decorated table doesn't collide into `.x`/`.y` and silently NA a covariate.
+  if (!is.null(support)) {                                # n_pert_pb -> <2-embryo gate
     deg_tbl <- deg_tbl[, setdiff(names(deg_tbl), "n_pert_pb"), drop = FALSE]
     deg_tbl <- dplyr::left_join(deg_tbl, support[, c("cell_group", "n_pert_pb")], by = "cell_group")
   }
-  if (!is.null(counts)) {                                 # per-(gene, cell_type) UMI totals -> K_eff
+  if (!is.null(counts)) {                                 # per-(gene, cell_type) UMI totals -> gates
     deg_tbl <- deg_tbl[, setdiff(names(deg_tbl), c("K_ctrl", "K_pert")), drop = FALSE]
     deg_tbl <- .efdr_join_counts(deg_tbl, counts)         # id-keyed (falls back to summed symbol)
   }
-  if (!"n_pert_pb" %in% names(deg_tbl)) deg_tbl$n_pert_pb <- NA_real_
-  if (!"K_ctrl" %in% names(deg_tbl)) deg_tbl$K_ctrl <- NA_real_
-  if (!"K_pert" %in% names(deg_tbl)) deg_tbl$K_pert <- NA_real_
-  # Map effective count K_eff -> honest df from the null calibration; below the smallest
-  # calibrated K_eff, ramp to a 0.5 floor as K_eff -> 0 (heavy tail). One count-support guard
-  # that subsumes the old cell-type df-correction and the SE floor.
-  cal <- model$df_calib
-  s0 <- cal$support[1]; d0 <- cal$df_eff[1]              # smallest calibrated K_eff and its df
-  dfmap <- function(k) {
-    out <- rep(NA_real_, length(k)); ok <- is.finite(k); kk <- k[ok]
-    idx <- findInterval(kk, cal$support)                 # within/above range: step lookup
-    val <- cal$df_eff[pmin(pmax(idx, 1L), nrow(cal))]
-    below <- kk < s0                                     # extend below the calibrated floor
-    val[below] <- if (s0 > 0) pmax(0.5, 0.5 + (d0 - 0.5) * (kk[below] / s0)) else 0.5
-    out[ok] <- val
-    out
+  if (!is.null(arm_cells)) {                              # per-cell-type arm CELL counts -> tail axis
+    deg_tbl <- deg_tbl[, setdiff(names(deg_tbl), c("n_ctrl_cells", "n_pert_cells")), drop = FALSE]
+    deg_tbl <- dplyr::left_join(deg_tbl, arm_cells[, c("cell_group", "n_ctrl_cells", "n_pert_cells")],
+                                by = "cell_group")
   }
+  for (col in c("n_pert_pb", "K_ctrl", "K_pert", "n_ctrl_cells", "n_pert_cells",
+                "n_expr_ctrl", "n_expr_pert"))
+    if (!col %in% names(deg_tbl)) deg_tbl[[col]] <- NA_real_
 
   out <- deg_tbl %>%
     dplyr::mutate(
       z = if ("z" %in% names(.)) .data$z
           else .data$perturb_to_ctrl_shrunken_lfc / .data$perturb_to_ctrl_shrunken_lfc_se,
-      .dir = dplyr::if_else(.data$z < 0, "dn", "up"),
       .a = abs(.data$z),
-      K_eff = .efdr_keff(.data$K_ctrl, .data$K_pert),
-      df_count = dfmap(.data$K_eff),
+      # thin arm = the smaller of the two arms; its cell count is the tail covariate.
+      thin_arm_cells = pmin(.data$n_ctrl_cells, .data$n_pert_cells),
+      .thin_is_ko = is.finite(.data$n_pert_cells) & is.finite(.data$n_ctrl_cells) &
+                    .data$n_pert_cells <= .data$n_ctrl_cells,
+      # direction RELATIVE TO THE THIN ARM (matches the null's convention, whose thin arm is the
+      # pseudo-KO): dn = gene lower in the thin arm. For a control-heavy design thin=KO so this is
+      # sign(z); for a perturbation-heavy design thin=control and it flips -- which is exactly the
+      # generalization (the artifact becomes apparent GAINS when the control arm is the thin one).
+      .dir = dplyr::if_else((.data$.thin_is_ko & .data$z < 0) |
+                            (!.data$.thin_is_ko & .data$z > 0), "dn", "up"),
       # p_ashr: ordinary shrunken significance (demote-only baseline; empirical can only demote).
       p_ashr = if ("perturb_to_ctrl_p_value" %in% names(.)) .data$perturb_to_ctrl_p_value
-               else 2 * (1 - stats::pnorm(.data$.a)),
-      # p_count: the raw magnitude z scored against t(df(K_eff)) -- the count-support guard band
-      # (subsumes the cell-type df-correction and the SE floor). NA where counts are unavailable.
-      p_count = dplyr::if_else(is.finite(.data$df_count),
-                               2 * stats::pt(-.data$.a, df = pmax(.data$df_count, 0.5)), NA_real_))
+               else 2 * (1 - stats::pnorm(.data$.a)))
 
-  # 2-D empirical tail, interpolated across the two bracketing log-ratios.
+  # empirical tail, conditioned on (expression x thin-arm cell count), per thin-arm direction.
   emp_tail <- rep(NA_real_, nrow(out))
   for (d in c("dn", "up")) {
-    idx <- which(out$.dir == d); if (!length(idx)) next
-    # Direction-specific detection: up-calls scored against the perturbation-arm
-    # (gaining) detection surface; down-calls against the control-arm surface.
-    pe_src <- if (d == "up") out$pct_emb_pert else out$pct_emb
-    e <- out$log_mean_expression[idx]; pe <- pe_src[idx]; a <- out$.a[idx]
-    tl <- .efdr_tail_2d(model$surf[[paste(d, br$lo)]], model$taus, model$egrid, model$pegrid, e, pe, a)
-    th <- if (br$hi == br$lo) tl else
-          .efdr_tail_2d(model$surf[[paste(d, br$hi)]], model$taus, model$egrid, model$pegrid, e, pe, a)
-    emp_tail[idx] <- dplyr::coalesce(br$w * tl + (1 - br$w) * th, tl, th)
+    idx <- which(out$.dir == d & is.finite(out$thin_arm_cells) & out$thin_arm_cells > 0)
+    if (!length(idx)) next
+    e  <- out$log_mean_expression[idx]
+    lc <- log10(out$thin_arm_cells[idx] + 1)             # arm-size axis (matches training)
+    emp_tail[idx] <- .efdr_tail_2d(model$surf[[d]], model$taus, model$egrid, model$pegrid, e, lc, out$.a[idx])
   }
-  out$p_tail <- pmin(pmax(emp_tail, 0), 1)               # control-sampling artifact floor
-  # empirical_p = max of the three demote-only floors: ashr (ordinary significance), tail
-  # (design-imbalance artifact), count (count-support guard). A call must clear all three; a
-  # missing tail/count drops out of the max (no fallback hole). All three are kept as columns.
-  out$empirical_p <- pmax(out$p_ashr,
-                          dplyr::coalesce(out$p_tail, 0),
-                          dplyr::coalesce(out$p_count, 0))
-  # Gate 1: a cell type with fewer than `min_pseudobulks` perturbation embryos has no valid
-  # two-group contrast; its calls are uncallable, not significant.
+  out$p_tail <- pmin(pmax(emp_tail, 0), 1)               # thin-arm sampling-artifact floor
+  # empirical_p = max of the two demote-only floors: ashr (ordinary significance) and tail
+  # (thin-arm artifact). A missing tail drops out of the max (no fallback hole).
+  out$empirical_p <- pmax(out$p_ashr, dplyr::coalesce(out$p_tail, 0))
+
+  # Gate 1 (<2 perturbation embryos): no valid two-group contrast; calls uncallable.
   gate <- is.finite(out$n_pert_pb) & out$n_pert_pb < min_pseudobulks
   out$empirical_p[gate] <- 1
-  # Gate 2 (gene absent from the cell type): a gene with ~zero total UMIs in BOTH arms is not
-  # expressed in this cell type at all, so any |z| it carries is pure trend-dispersion shrinkage
-  # noise (a near-zero gene assigned a floored SE) that no floor can price -- the control-split
-  # null never reaches such |z| at near-zero counts, and the count-t's heaviest tail cannot
-  # demote it. Gate ONLY when the larger arm is also empty: a well-counted control arm with an
-  # empty perturbation arm (K_ctrl large, K_pert = 0) is a genuine COMPLETE DEPLETION and MUST
-  # be kept. So the test is on max(K_ctrl, K_pert), not the harmonic-mean K_eff (which falls
-  # below 1 whenever either arm is empty, and would wrongly drop real depletions). Not an
-  # expression floor: it is "the gene has no counts in either arm of this cell type".
+  # Gate 2 (gene absent from the cell type): ~zero UMIs in BOTH arms -> not expressed here at all;
+  # any |z| is pure shrinkage noise no floor can price. Gate only when the LARGER arm is empty
+  # (max(K)), so a deep control arm with an empty perturbation arm = genuine COMPLETE DEPLETION is
+  # KEPT. Not an expression floor: "the gene has no counts in either arm of this cell type".
   absent_gate <- is.finite(out$K_ctrl) & is.finite(out$K_pert) &
     pmax(out$K_ctrl, out$K_pert) < .EFDR_MIN_ARM_UMI
   out$empirical_p[absent_gate] <- 1
+  # Gate 3 (control-absent UP-call): the mirror of the gene-absent gate for gains. An UP call
+  # (higher in perturbation) whose CONTROL arm carries ~zero UMIs is an "increase" over a baseline
+  # we never detected -- uncallable, and the control-split null cannot price it (control-vs-control
+  # is 0 in both arms). A DOWN call with an empty perturbation arm is the opposite case (a real
+  # depletion) and is NOT gated. Directional on the control (reference) arm.
+  up_absent_gate <- (out$z > 0) & is.finite(out$K_ctrl) & (out$K_ctrl < .EFDR_MIN_ARM_UMI)
+  out$empirical_p[up_absent_gate] <- 1
+  # Gate 3c (empty-gaining-arm UP-call): an UP call (higher in perturbation) whose PERTURBATION
+  # (gaining) arm carries ~zero UMIs cannot be a real gain -- the gene is absent from the very arm
+  # it is called up in, so the shrunken-LFC sign is noise (a near-zero control arm plus size-factor
+  # shrinkage can emit z>0 with K_pert=0). This is the true up-mirror of the low-source-detection
+  # LOSS gate on the GAINING side, and the counterpart of the gene-absent gate: gate 2 keeps a gene
+  # present in EITHER arm (max(K)), which lets a K_pert=0 up-call survive on its control counts, so
+  # this gate closes that hole on the up side. Deliberately a ZERO-count floor, not the 2% detection
+  # floor used for losses: real GAINS can be sparse (phox2a is real at 0.7% perturbation detection,
+  # K_pert>0), so only a truly empty gaining arm is gated. Directional on the perturbation arm.
+  up_empty_gain_gate <- (out$z > 0) & is.finite(out$K_pert) & (out$K_pert < .EFDR_MIN_ARM_UMI)
+  out$empirical_p[up_empty_gain_gate] <- 1
+  # Gate 3b (low source-detection LOSS): a DOWN call whose CONTROL (source) arm detects the gene in
+  # fewer than MIN_SRC_DET of its cells has no robustly-expressed baseline to lose -- its large |z|
+  # is trend-dispersion shrinkage noise the control-split null cannot reach at moderate arm sizes
+  # (the residual the count-t used to catch). Directional and DOWN-ONLY: real gains can be sparse
+  # (a real up-call can sit below this in the perturbation arm), so no symmetric up gate. Data-derived
+  # floor sitting in the ~10x gap between real depletions (>=12% control detection) and the confirmed
+  # low-expression artifacts (<=1.1%). NA detection -> not gated (no data to judge).
+  out$det_ctrl <- out$n_expr_ctrl / out$n_ctrl_cells
+  low_src_det_gate <- (out$z < 0) & is.finite(out$det_ctrl) & (out$det_ctrl < .EFDR_MIN_SRC_DET)
+  out$empirical_p[low_src_det_gate] <- 1
+  # Gate 4 (thin-arm GAIN): a gene called higher in the THINNER arm (.dir == "up" relative to that
+  # arm) when that arm carries < MIN_GAIN_CELLS cells is uncallable. The control-split null cannot
+  # generate a thin-arm gain, so p_tail is structurally light there (~0.001) and would keep every
+  # few-cell up-blip; the tail prices losses (which the null DOES generate) but not gains, so gains
+  # need this explicit sampling floor -- the up analog of the <2-pseudobulk gate. Direction is
+  # relative to the thin arm, so it generalizes: control-heavy gates thin-KO-arm up-regulation;
+  # perturbation-heavy gates thin-control-arm apparent-gains.
+  thin_gain_gate <- out$.dir == "up" & is.finite(out$thin_arm_cells) &
+    out$thin_arm_cells < .EFDR_MIN_GAIN_CELLS
+  out$empirical_p[thin_gain_gate] <- 1
 
   # empirical_fdr: BH-adjust EACH floor within the cell group, then take the max q -- NOT
-  # BH(empirical_p). The per-gene max() floors every combined p near 1/nperm (some floor always
-  # sits at the permutation floor), compressing the p-distribution so BH crushes even real hits.
-  # Adjusting each floor in its own well-spread distribution lets the (often tiny) ashr q survive,
-  # while the gene must still clear all three q's -- the intersection of the three FDR-controlled
-  # call sets. Empirically ~2x the calls at fdr<=0.10 with no increase in the artifact rate. A
-  # missing tail/count -> 0 (non-constraining), matching the empirical_p max() semantics.
+  # BH(empirical_p) (the per-gene max compresses the p-distribution so BH crushes real hits).
+  # Adjusting each floor in its own distribution lets the tiny ashr q survive while the gene must
+  # still clear both q's. A missing tail -> 0 (non-constraining), matching the empirical_p max().
   out <- out %>%
     dplyr::group_by(dplyr::across(all_of(group_col))) %>%
     dplyr::mutate(
-      .q_ashr  = stats::p.adjust(pmax(.data$p_ashr, 0), "BH"),
-      .q_tail  = stats::p.adjust(dplyr::coalesce(.data$p_tail, 0), "BH"),
-      .q_count = stats::p.adjust(dplyr::coalesce(.data$p_count, 0), "BH"),
-      empirical_fdr = pmax(.data$.q_ashr, .data$.q_tail, .data$.q_count)) %>%
+      .q_ashr = stats::p.adjust(pmax(.data$p_ashr, 0), "BH"),
+      .q_tail = stats::p.adjust(dplyr::coalesce(.data$p_tail, 0), "BH"),
+      empirical_fdr = pmax(.data$.q_ashr, .data$.q_tail)) %>%
     dplyr::ungroup()
   out$empirical_fdr[out$empirical_p >= 1] <- 1           # gated (uncallable) genes: fdr = 1 too
   out %>%
-    dplyr::select(-".dir", -".a", -".q_ashr", -".q_tail", -".q_count")  # keep p_ashr/p_tail/p_count/K_eff/df_count
+    dplyr::select(-".dir", -".a", -".thin_is_ko", -".q_ashr", -".q_tail")  # keep p_ashr/p_tail/thin_arm_cells/K_*
 }
