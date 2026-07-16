@@ -55,14 +55,21 @@ NULL
                       # calls, because real GAINS can be sparse (phox2a is a real up-call at 0.7%
                       # perturbation detection), so no analogous gap exists on the up side; up-blips
                       # are handled by the thin-gain (arm-size) gate instead.
-.EFDR_MIN_GAIN_CELLS <- 25L  # a GAIN (gene higher in the thinner arm) needs at least this many
-                      # cells in that arm to be callable. The control-split null structurally
-                      # cannot produce a thin-arm gain (a thin pseudo-arm can only LOSE genes it
-                      # doesn't carry, never gain one), so its up-tail is uninformative at thin
-                      # arms and would keep every few-cell up-blip at p_tail ~ 0.001. This is the
-                      # up-direction analog of the <2-pseudobulk gate: too few gaining-arm cells
-                      # to support an increase -> uncallable. (Losses are unaffected -- the null
-                      # DOES generate thin-arm losses, so the down-tail prices them.)
+# --- Minimum trustworthy cells in the THINNER arm (both directions), LOCATED PER EXPERIMENT ---
+# A complete absence of a gene in the thin arm is a real depletion only if that arm had enough cells
+# to have detected it; below the floor the arm is too thin to make any call (e.g. brd1b in a cell type
+# depleted to 8 perturbation cells, none expressing -- a too-few-cells call, not a loss). Keyed on
+# min(n_ctrl_cells, n_pert_cells) -- the arm CELL count, NOT detection or the control:perturbation
+# ratio (unreliable for rare cell types). The floor VALUE is located per experiment by a Poisson
+# power argument (used only to place the gate, not as a per-call test): a well-detected gene (the
+# .EFDR_DET_PCTL-th percentile of control detection, p) is expected in .EFDR_MIN_EXPECTED cells once
+# the arm holds .EFDR_MIN_EXPECTED / p cells, so below that a complete absence can't be told from
+# undersampling. K = ceil(.EFDR_MIN_EXPECTED / p). Self-adjusts to capture depth (a shallow run with
+# lower detection -> higher floor). Also subsumes the old up-only thin-gain gate (the control-split
+# null cannot generate a thin-arm GAIN, so the same cell floor covers both directions).
+.EFDR_MIN_EXPECTED  <- 3     # expected expressing cells for a callable complete absence (Poisson P(0)=0.05)
+.EFDR_DET_PCTL      <- 0.75  # reference control-detection percentile (a "well-detected" gene)
+.EFDR_MIN_ARM_CELLS <- 25L   # fallback floor if the detection distribution is degenerate (e.g. GENE6 locates 27)
 
 #' Build a control-split empirical null for the DEG artifact.
 #'
@@ -627,16 +634,28 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio = NULL, detec
   out$det_ctrl <- out$n_expr_ctrl / out$n_ctrl_cells
   low_src_det_gate <- (out$z < 0) & is.finite(out$det_ctrl) & (out$det_ctrl < .EFDR_MIN_SRC_DET)
   out$empirical_p[low_src_det_gate] <- 1
-  # Gate 4 (thin-arm GAIN): a gene called higher in the THINNER arm (.dir == "up" relative to that
-  # arm) when that arm carries < MIN_GAIN_CELLS cells is uncallable. The control-split null cannot
-  # generate a thin-arm gain, so p_tail is structurally light there (~0.001) and would keep every
-  # few-cell up-blip; the tail prices losses (which the null DOES generate) but not gains, so gains
-  # need this explicit sampling floor -- the up analog of the <2-pseudobulk gate. Direction is
-  # relative to the thin arm, so it generalizes: control-heavy gates thin-KO-arm up-regulation;
-  # perturbation-heavy gates thin-control-arm apparent-gains.
-  thin_gain_gate <- out$.dir == "up" & is.finite(out$thin_arm_cells) &
-    out$thin_arm_cells < .EFDR_MIN_GAIN_CELLS
-  out$empirical_p[thin_gain_gate] <- 1
+  # Gate 4 (minimum cells in the thinner arm, BOTH directions): a contrast whose thinner arm holds
+  # fewer than MIN_ARM_CELLS cells is uncallable regardless of expression or direction. A complete
+  # absence of the gene in the thin arm is a real depletion ONLY if that arm had enough cells to have
+  # detected the gene -- e.g. brd1b in a cell type depleted to 8 perturbation cells (none expressing)
+  # is a too-few-cells call, not a loss. Gated on the CELL COUNT of the thinner arm only, NOT on
+  # detection or the control:perturbation ratio (which is unreliable for rare cell types), so it is
+  # robust for rare cell types and does not try to price sub-floor arms in the null (which cannot
+  # simulate a thin arm against a very deep control arm anyway). Being symmetric, it also subsumes the
+  # old up-only thin-gain gate: the control-split null structurally cannot generate a thin-arm GAIN,
+  # and the same cell floor covers that. The floor value is LOCATED per experiment by the Poisson
+  # power argument above (constants .EFDR_MIN_EXPECTED / .EFDR_DET_PCTL): a well-detected gene (p =
+  # .EFDR_DET_PCTL-th percentile of positive control detection) needs 3/p thin-arm cells before a
+  # complete absence is distinguishable from undersampling. Falls back to .EFDR_MIN_ARM_CELLS if the
+  # detection distribution is degenerate.
+  .p_det <- suppressWarnings(stats::quantile(
+    out$det_ctrl[is.finite(out$det_ctrl) & out$det_ctrl > 0], .EFDR_DET_PCTL, names = FALSE))
+  min_arm_cells <- if (is.finite(.p_det) && .p_det > 0)
+    as.integer(ceiling(.EFDR_MIN_EXPECTED / .p_det)) else .EFDR_MIN_ARM_CELLS
+  message(sprintf("[efdr] min-arm-cell floor located at K=%d (p%.0f control detection = %.3f)",
+                  min_arm_cells, 100 * .EFDR_DET_PCTL, .p_det))
+  min_arm_gate <- is.finite(out$thin_arm_cells) & (out$thin_arm_cells < min_arm_cells)
+  out$empirical_p[min_arm_gate] <- 1
 
   # empirical_fdr: BH-adjust EACH floor within the cell group, then take the max q -- NOT
   # BH(empirical_p) (the per-gene max compresses the p-distribution so BH crushes real hits).
@@ -650,6 +669,26 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio = NULL, detec
       empirical_fdr = pmax(.data$.q_ashr, .data$.q_tail)) %>%
     dplyr::ungroup()
   out$empirical_fdr[out$empirical_p >= 1] <- 1           # gated (uncallable) genes: fdr = 1 too
-  out %>%
+  out <- out %>%
     dplyr::select(-".dir", -".a", -".thin_is_ko", -".q_ashr", -".q_tail")  # keep p_ashr/p_tail/thin_arm_cells/K_*
+  # Per-experiment efdr diagnostics (attached as an attribute so callers -- e.g. the mcclintock
+  # decorator stage -- can persist them; the located min-arm K in particular is otherwise only in
+  # the log). Counts are gate MEMBERSHIP (a call may satisfy more than one gate, so they need not sum).
+  attr(out, "efdr_stats") <- data.frame(
+    min_arm_cells_K       = as.integer(min_arm_cells),
+    p_ctrl_detection      = round(as.numeric(.p_det), 4),
+    det_pctl              = .EFDR_DET_PCTL,
+    n_calls               = nrow(out),
+    n_ashr_sig            = sum(out$p_ashr < 0.05, na.rm = TRUE),
+    n_retained            = sum(out$empirical_p < 0.05, na.rm = TRUE),
+    n_retained_down       = sum(out$empirical_p < 0.05 & out$z < 0, na.rm = TRUE),
+    n_retained_up         = sum(out$empirical_p < 0.05 & out$z > 0, na.rm = TRUE),
+    n_gate_lt2_pseudobulk = sum(gate, na.rm = TRUE),
+    n_gate_gene_absent    = sum(absent_gate, na.rm = TRUE),
+    n_gate_up_ctrl_absent = sum(up_absent_gate, na.rm = TRUE),
+    n_gate_up_empty_gain  = sum(up_empty_gain_gate, na.rm = TRUE),
+    n_gate_low_ctrl_det   = sum(low_src_det_gate, na.rm = TRUE),
+    n_gate_min_arm_cells  = sum(min_arm_gate, na.rm = TRUE),
+    stringsAsFactors = FALSE)
+  out
 }

@@ -19,17 +19,24 @@ make_rank <- function(deg_tbl,
         transmute(
             gene = .data[[gene_col]] %>% as.character(),
             logFC = as.numeric(.data[[logFC_col]]),
-            w = if (use_weight) {
-                p <- as.numeric(.data[[weight_col]])
-                1 - pmin(pmax(replace(p, !is.finite(p), 0), 0), 1)
-            } else {
-                1
-            }
+            p = if (use_weight) as.numeric(.data[[weight_col]]) else NA_real_
         ) %>%
         distinct(gene, .keep_all = TRUE) %>%
         filter(is.finite(logFC))
-    # Rank by the model-weighted statistic (logFC * (1 - empirical_p)); with no
-    # weight column this reduces to the shrunken logFC.
+    if (use_weight) {
+        # EXCLUDE gated (uncallable) genes -- empirical_p == 1 -- from the preranked list entirely,
+        # rather than letting the (1 - empirical_p) weight collapse them to rank 0 in the MIDDLE. Under
+        # heavy, asymmetric gating (e.g. the min-arm-cell gate demoting far more down- than up-calls),
+        # a large mid-list block of zeros unbalances the ranking and manufactures spurious
+        # one-directional GSEA enrichments (up-regulated fitness sets -- apoptosis/stress). Callable
+        # genes keep the soft model weight (1 - empirical_p); NA weights are treated as un-demoted.
+        x <- x %>% filter(!is.finite(.data$p) | .data$p < 1)
+        x$w <- 1 - pmin(pmax(replace(x$p, !is.finite(x$p), 0), 0), 1)
+    } else {
+        x$w <- 1
+    }
+    # Rank by the model-weighted statistic (logFC * (1 - empirical_p)) over the CALLABLE genes; with
+    # no weight column this reduces to the shrunken logFC over all genes.
     r <- x$logFC * x$w
     names(r) <- x$gene
     sort(r, decreasing = TRUE)
