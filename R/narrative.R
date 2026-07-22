@@ -382,6 +382,25 @@ summarize_cell_type_impact <- function(
     }
   }
   fora_res <- bind_rows(fora_res_list)
+  if (ncol(fora_res) == 0) {
+    # fora_res_list stayed empty (no ancestor-specific pathways / no universe
+    # genes for any ontology), so bind_rows(list()) collapsed to a 0-row,
+    # 0-column tibble instead of fora()'s usual schema. Force the schema
+    # fora() would have returned, incl. the `ontology` column added below,
+    # so every cell type's `pathways` value has a consistent shape whether
+    # or not enrichment actually ran -- otherwise bind_rows() further
+    # downstream (combining primary/secondary impact explanations) fails
+    # with "Can't combine `pathways` <data.table> and <list>".
+    fora_res <- data.table::data.table(
+      pathway = character(),
+      pval = double(),
+      padj = double(),
+      overlap = integer(),
+      size = integer(),
+      overlapGenes = list(),
+      ontology = character()
+    )
+  }
 
   # 6. Target genes expressed in this cell type
   expressed_targets <- character(0)
@@ -893,6 +912,32 @@ summarize_impact_in_lineage_context <- function(
     cell_type = names(results),
     data = unname(results)
   ) %>% unnest_wider(data)
+
+  # unnest_wider's own reconciliation of the per-cell-type `pathways` values
+  # (each a data.table from summarize_cell_type_impact()) is inconsistent: when
+  # every cell type happens to have a populated fora() result, it can pack the
+  # whole column into a single unified data.table; otherwise it stays a plain
+  # list, and some entries can come out as bare NULL rather than an empty
+  # data.table. That inconsistency (data.table-as-column vs list-of-NULLs) is
+  # what breaks the later bind_rows(primary, secondary) combine with
+  # "Can't combine `pathways` <data.table> and <list>". Force it back into a
+  # single well-defined shape here: a plain list column where every element is
+  # a real (possibly 0-row) data.table with fora()'s schema.
+  if ("pathways" %in% names(results)) {
+    empty_pathways <- function() {
+      data.table::data.table(
+        pathway = character(), pval = double(), padj = double(),
+        overlap = integer(), size = integer(), overlapGenes = list(), ontology = character()
+      )
+    }
+    results$pathways <- if (is.data.frame(results$pathways)) {
+      # unnest_wider packed it into a single data.table for the whole column --
+      # split back into one data.table per row.
+      lapply(seq_len(nrow(results)), function(i) results$pathways[i, ])
+    } else {
+      lapply(results$pathways, function(p) if (is.null(p) || !is.data.frame(p)) empty_pathways() else p)
+    }
+  }
 
   # Drop cell types the abundance analysis judged not reliably present
   # (present_above_thresh = FALSE): this perturbation experiment cannot capture
