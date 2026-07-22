@@ -1187,6 +1187,13 @@ summarize_impact_in_lineage_context <- function(
 }
 
 collect_cell_loss_explanations <- function(explanations_df) {
+  # Carry each cell type's autonomy classification into the per-cell block so the
+  # downstream per-tissue synthesis can weight cell-autonomous cells and treat
+  # non-autonomous (secondary) cells collectively. Guard for callers whose frame
+  # predates the effect_type column.
+  if (!"effect_type" %in% names(explanations_df)) {
+    explanations_df$effect_type <- NA_character_
+  }
   explanations_df %>%
     rowwise() %>%
     mutate(
@@ -1214,6 +1221,7 @@ collect_cell_loss_explanations <- function(explanations_df) {
       },
       explanation = paste(
         "Cell type:", cell_type,
+        if (!is.na(effect_type) && nzchar(effect_type)) paste0(" [", effect_type, "]") else "",
         "\nSummary:", llm_summary,
         "\nDisrupted pathways:\n", pathway_explanations,
         "---------------------\n"
