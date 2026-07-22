@@ -286,6 +286,44 @@ humanize_pathway_name <- function(pathway) {
   pathway
 }
 
+# --- DACT literature-expectation grounding (consumes the EXISTING forecast) ----
+# The per-cell DACT expectation output (dact_expectations.tsv, produced upstream)
+# already carries literature citations, but they sit in the verbose `thinking`
+# field rather than the summary-ready `rationale`. These helpers surface a
+# compact, cited "Literature expectation" line from that existing output so the
+# summary prompts can ground the expectation in the key papers. They do NOT
+# change how expectations are generated.
+extract_dact_pmids <- function(x, max_n = 4L) {
+  if (is.null(x) || all(is.na(x))) return(character(0))
+  ids <- unique(unlist(stringr::str_extract_all(as.character(x), "PMID\\d+")))
+  utils::head(ids, max_n)
+}
+
+build_dact_grounding <- function(expectation, rationale, thinking) {
+  exp <- if (is.null(expectation) || is.na(expectation)) "" else trimws(as.character(expectation))
+  rat <- if (is.null(rationale) || is.na(rationale)) "" else trimws(as.character(rationale))
+  if (!nzchar(exp) && !nzchar(rat)) return("")
+  pmids <- unique(c(extract_dact_pmids(thinking), extract_dact_pmids(rationale)))
+  refs <- if (length(pmids)) paste0(" [", paste0("@", pmids, collapse = "; "), "]") else ""
+  body <- if (nzchar(rat)) rat else exp
+  lead <- if (nzchar(exp)) paste0(exp, " — ") else ""
+  paste0(lead, body, refs)
+}
+
+# Compact cited grounding for one cell type, looked up from the loaded table.
+dact_grounding_for <- function(ct, dact_expectations) {
+  if (is.null(dact_expectations) || !is.data.frame(dact_expectations) || nrow(dact_expectations) == 0)
+    return("")
+  key <- intersect(c("cell_group", "cell_type"), colnames(dact_expectations))
+  if (length(key) == 0) return("")
+  row <- dact_expectations[!is.na(dact_expectations[[key[1]]]) & dact_expectations[[key[1]]] == ct, , drop = FALSE]
+  if (nrow(row) == 0) return("")
+  exp <- if ("expectation" %in% names(row)) row[["expectation"]][1] else if ("lit_expectation" %in% names(row)) row[["lit_expectation"]][1] else NA
+  rat <- if ("rationale" %in% names(row)) row[["rationale"]][1] else NA
+  thk <- if ("thinking" %in% names(row)) row[["thinking"]][1] else NA
+  build_dact_grounding(exp, rat, thk)
+}
+
 summarize_cell_type_impact <- function(
   ct,
   perturbation_description,
@@ -302,7 +340,8 @@ summarize_cell_type_impact <- function(
   top_n_pathways = 5,
   abundance_phenotypes = NULL,
   fitness_phenotypes = NULL,
-  identity_phenotypes = NULL # <-- NEW ARGUMENT
+  identity_phenotypes = NULL, # <-- NEW ARGUMENT
+  dact_expectations = NULL # per-cell literature expectation output (expectation/rationale/thinking)
 ) {
   # 1. Abundance change (from abundance_phenotypes if available)
   abundance_row <- if (!is.null(abundance_phenotypes)) {
@@ -510,6 +549,11 @@ summarize_cell_type_impact <- function(
     "Perturbed genes in this experiment: [not specified]."
   }
 
+  # Compact, cited literature expectation for this cell type, surfaced from the
+  # existing DACT forecast output (see build_dact_grounding). Empty string if
+  # this cell type has no expectation on record.
+  dact_grounding <- dact_grounding_for(ct, dact_expectations)
+
   summary_text <- paste(
     perturbed_genes_line,
     paste0("Perturbation: ", perturbation_description),
@@ -522,6 +566,7 @@ summarize_cell_type_impact <- function(
     paste0("Identity label: ", identity_label), # <-- NEW LINE
     paste0("Identity evidence: ", identity_evidence), # <-- NEW LINE
     paste0("Target genes expressed in this cell type: ", expressed_targets_line),
+    if (nzchar(dact_grounding)) paste0("Literature expectation: ", dact_grounding),
     paste0("Pathway background: ", pathway_background),
     pathway_lines,
     if (other_regulatory_genes_line != "") other_regulatory_genes_line,
@@ -541,6 +586,10 @@ summarize_cell_type_impact <- function(
     present_above_thresh = cell_present_above_thresh,
     degs = cell_type_degs,
     goi_line = goi$goi_line,
+    # Compact cited literature-expectation grounding for this cell type (from the
+    # existing DACT forecast output); "" when none on record. Surfaced for the
+    # overall-impact evidence block and for reviewer display.
+    dact_grounding = dact_grounding,
     # Whether this cell has any REGULATOR (TF) genes of interest. goi_line now
     # also includes non-regulator DEGs, so it can no longer be used to gate the
     # LLM call (that would widen which cells get called); gate on this instead.
@@ -766,6 +815,7 @@ summarize_impact_in_lineage_context <- function(
   abundance_phenotypes = NULL,
   fitness_phenotypes = NULL,
   identity_phenotypes = NULL,
+  dact_expectations = NULL,
   pre_cited_gene_claims = NULL,
   verbose = FALSE,
   ...
@@ -835,7 +885,8 @@ summarize_impact_in_lineage_context <- function(
         empirical_p_thresh = empirical_p_thresh,
         abundance_phenotypes = abundance_phenotypes,
         fitness_phenotypes = fitness_phenotypes,
-        identity_phenotypes = identity_phenotypes
+        identity_phenotypes = identity_phenotypes,
+        dact_expectations = dact_expectations
       )
       cell_impact_text <- build_lineage_context(ct, parents, results, all_types)
       if (!is.null(pre_cited_gene_claims) && nzchar(pre_cited_gene_claims)) {
