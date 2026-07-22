@@ -72,49 +72,95 @@ load_ai_precompute_for_cell_types <- function(cell_types, ai_notes_path = "../..
   return(bg_tibble)
 }
 
-format_goi <- function(degs_of_interest) {
+# Repeated-glyph arrow encoding the MAGNITUDE of a fold change, so larger
+# effects get more arrows and a gene list sorted by |LFC| reads with a
+# monotonically shrinking arrow stack. Direction comes from dysreg_type (or the
+# sign of the shrunken log2 fold change); the count is bucketed by |log2FC|
+# against `breaks` (default: <1 -> 1 arrow, 1-2 -> 2, >=2 -> 3). No detectable
+# direction -> "" (no arrow). Vectorized. Kept as one helper so format_goi and
+# format_pathway_regulatory_genes speak the same arrow language.
+magnitude_arrow <- function(lfc, dysreg_type = NA_character_, breaks = c(1, 2)) {
+  up <- "\u2191"
+  down <- "\u2193"
+  dir <- dplyr::case_when(
+    !is.na(dysreg_type) & dysreg_type == "Overexpressed" ~ 1,
+    !is.na(dysreg_type) & dysreg_type == "Underexpressed" ~ -1,
+    !is.na(lfc) & lfc > 0 ~ 1,
+    !is.na(lfc) & lfc < 0 ~ -1,
+    TRUE ~ 0
+  )
+  n <- ifelse(
+    is.na(lfc), 1L,
+    1L + as.integer(abs(lfc) >= breaks[1]) + as.integer(abs(lfc) >= breaks[2])
+  )
+  glyph <- dplyr::case_when(dir > 0 ~ up, dir < 0 ~ down, TRUE ~ "")
+  ifelse(glyph == "", "", strrep(glyph, n))
+}
+
+# Build the per-cell "genes of interest" line. Two compartments -- regulators
+# (transcription factors, i.e. genes in `genes_of_interest`) first, then all
+# other dysregulated genes -- so the prose the LLM writes (which may name any
+# significant DEG, not just regulators) is anchored to something the reader can
+# see. Within each compartment genes are sorted by |log2FC| descending (largest
+# effect first; NA/zero LFC last, alphabetical), carry magnitude arrows, and are
+# capped at `max_per_compartment` with a trailing "[+K more]".
+format_goi <- function(cell_type_degs, genes_of_interest = NULL,
+                       max_per_compartment = 15) {
+  empty <- list(goi_vector_sorted = character(0), goi_line = "none")
   if (
-    is.null(degs_of_interest) ||
-      !is.data.frame(degs_of_interest) ||
-      nrow(degs_of_interest) == 0 ||
-      !"gene_short_name" %in% colnames(degs_of_interest)
+    is.null(cell_type_degs) ||
+      !is.data.frame(cell_type_degs) ||
+      nrow(cell_type_degs) == 0 ||
+      !"gene_short_name" %in% colnames(cell_type_degs)
   ) {
-    return(list(goi_vector_sorted = character(0), goi_line = "none"))
+    return(empty)
   }
-  # Ensure columns exist
-  if (!"dysreg_type" %in% colnames(degs_of_interest)) {
-    degs_of_interest$dysreg_type <- NA_character_
+  df <- cell_type_degs
+  if (!"dysreg_type" %in% colnames(df)) df$dysreg_type <- NA_character_
+  if (!"perturb_to_ctrl_shrunken_lfc" %in% colnames(df)) {
+    df$perturb_to_ctrl_shrunken_lfc <- NA_real_
   }
-  if (!"perturb_to_ctrl_shrunken_lfc" %in% colnames(degs_of_interest)) {
-    degs_of_interest$perturb_to_ctrl_shrunken_lfc <- NA_real_
-  }
-  goi_df <- degs_of_interest %>%
-    mutate(
-      arrow = dplyr::case_when(
-        dysreg_type == "Overexpressed" ~ "\u2191",
-        dysreg_type == "Underexpressed" ~ "\u2193",
-        !is.na(perturb_to_ctrl_shrunken_lfc) & perturb_to_ctrl_shrunken_lfc > 0 ~ "\u2191",
-        !is.na(perturb_to_ctrl_shrunken_lfc) & perturb_to_ctrl_shrunken_lfc < 0 ~ "\u2193",
-        TRUE ~ ""
-      ),
+  df <- df %>%
+    dplyr::filter(!is.na(gene_short_name), nzchar(gene_short_name)) %>%
+    dplyr::distinct(gene_short_name, .keep_all = TRUE) %>%
+    dplyr::mutate(
       lfc = perturb_to_ctrl_shrunken_lfc,
-      gene_arrow = paste0(gene_short_name, arrow)
+      abs_lfc = abs(lfc),
+      arrow = magnitude_arrow(lfc, dysreg_type),
+      gene_arrow = paste0(gene_short_name, arrow),
+      # Case-insensitive: some regulators are listed lowercase in the panel but
+      # appear uppercase in the DEG table (e.g. RNF14 vs rnf14); a case-sensitive
+      # match wrongly dropped them into the non-regulator compartment.
+      is_regulator = if (!is.null(genes_of_interest)) {
+        tolower(gene_short_name) %in% tolower(genes_of_interest)
+      } else {
+        FALSE
+      }
     )
-  down <- goi_df %>%
-    filter(arrow == "\u2193") %>%
-    arrange(lfc) %>%
-    pull(gene_arrow)
-  up <- goi_df %>%
-    filter(arrow == "\u2191") %>%
-    arrange(desc(lfc)) %>%
-    pull(gene_arrow)
-  none <- goi_df %>%
-    filter(arrow == "") %>%
-    arrange(gene_short_name) %>%
-    pull(gene_arrow)
-  goi_vector_sorted <- c(down, up, none)
-  goi_line <- paste(goi_vector_sorted, collapse = ", ")
-  list(goi_vector_sorted = goi_vector_sorted, goi_line = goi_line)
+  if (nrow(df) == 0) return(empty)
+
+  render_compartment <- function(sub) {
+    if (nrow(sub) == 0) return(character(0))
+    # arrange() sends NA abs_lfc to the end even under desc(), so NA/zero-effect
+    # genes fall to the bottom of the compartment with an alphabetical tiebreak.
+    genes <- sub %>%
+      dplyr::arrange(dplyr::desc(abs_lfc), gene_short_name) %>%
+      dplyr::pull(gene_arrow)
+    if (length(genes) > max_per_compartment) {
+      extra <- length(genes) - max_per_compartment
+      genes <- c(genes[seq_len(max_per_compartment)], paste0("[+", extra, " more]"))
+    }
+    genes
+  }
+
+  reg <- render_compartment(df %>% dplyr::filter(is_regulator))
+  oth <- render_compartment(df %>% dplyr::filter(!is_regulator))
+  goi_vector_sorted <- c(reg, oth)
+  if (length(goi_vector_sorted) == 0) return(empty)
+  list(
+    goi_vector_sorted = goi_vector_sorted,
+    goi_line = paste(goi_vector_sorted, collapse = ", ")
+  )
 }
 
 format_pathway_regulatory_genes <- function(goi_in_pathway, degs_of_interest) {
@@ -134,30 +180,22 @@ format_pathway_regulatory_genes <- function(goi_in_pathway, degs_of_interest) {
   goi_df <- degs_of_interest %>%
     filter(gene_short_name %in% goi_in_pathway) %>%
     mutate(
-      arrow = dplyr::case_when(
-        dysreg_type == "Overexpressed" ~ "\u2191",
-        dysreg_type == "Underexpressed" ~ "\u2193",
-        !is.na(perturb_to_ctrl_shrunken_lfc) & perturb_to_ctrl_shrunken_lfc > 0 ~ "\u2191",
-        !is.na(perturb_to_ctrl_shrunken_lfc) & perturb_to_ctrl_shrunken_lfc < 0 ~ "\u2193",
-        TRUE ~ ""
-      ),
       lfc = perturb_to_ctrl_shrunken_lfc,
+      arrow = magnitude_arrow(lfc, dysreg_type),
       gene_arrow = paste0(gene_short_name, arrow)
-    )
-  down <- goi_df %>%
-    filter(arrow == "\u2193") %>%
-    arrange(lfc) %>%
-    pull(gene_arrow)
-  up <- goi_df %>%
-    filter(arrow == "\u2191") %>%
-    arrange(desc(lfc)) %>%
-    pull(gene_arrow)
-  none <- goi_df %>%
-    filter(arrow == "") %>%
-    arrange(gene_short_name) %>%
-    pull(gene_arrow)
-  goi_arrows_sorted <- c(down, up, none)
-  paste(goi_arrows_sorted, collapse = ", ")
+    ) %>%
+    # |LFC| descending so the arrow stack shrinks down the list (NA last).
+    arrange(dplyr::desc(abs(lfc)), gene_short_name)
+  paste(goi_df$gene_arrow, collapse = ", ")
+}
+
+# Strip the leading A#/F#/I# code token from a phenotype label so an ancestor's
+# phenotype, when quoted in a no-signal cell's summary, reads in plain words --
+# the reader never sees the coding scheme. "F1 Proliferation change" ->
+# "proliferation change"; a plain word like "depleted" is returned unchanged.
+humanize_pheno_label <- function(x) {
+  x <- as.character(x)
+  tolower(sub("^\\s*[AFI][0-9]\\s+", "", x))
 }
 
 # Build a gene-allowlist map for the LLM impact call.
@@ -248,6 +286,44 @@ humanize_pathway_name <- function(pathway) {
   pathway
 }
 
+# --- DACT literature-expectation grounding (consumes the EXISTING forecast) ----
+# The per-cell DACT expectation output (dact_expectations.tsv, produced upstream)
+# already carries literature citations, but they sit in the verbose `thinking`
+# field rather than the summary-ready `rationale`. These helpers surface a
+# compact, cited "Literature expectation" line from that existing output so the
+# summary prompts can ground the expectation in the key papers. They do NOT
+# change how expectations are generated.
+extract_dact_pmids <- function(x, max_n = 4L) {
+  if (is.null(x) || all(is.na(x))) return(character(0))
+  ids <- unique(unlist(stringr::str_extract_all(as.character(x), "PMID\\d+")))
+  utils::head(ids, max_n)
+}
+
+build_dact_grounding <- function(expectation, rationale, thinking) {
+  exp <- if (is.null(expectation) || is.na(expectation)) "" else trimws(as.character(expectation))
+  rat <- if (is.null(rationale) || is.na(rationale)) "" else trimws(as.character(rationale))
+  if (!nzchar(exp) && !nzchar(rat)) return("")
+  pmids <- unique(c(extract_dact_pmids(thinking), extract_dact_pmids(rationale)))
+  refs <- if (length(pmids)) paste0(" [", paste0("@", pmids, collapse = "; "), "]") else ""
+  body <- if (nzchar(rat)) rat else exp
+  lead <- if (nzchar(exp)) paste0(exp, " — ") else ""
+  paste0(lead, body, refs)
+}
+
+# Compact cited grounding for one cell type, looked up from the loaded table.
+dact_grounding_for <- function(ct, dact_expectations) {
+  if (is.null(dact_expectations) || !is.data.frame(dact_expectations) || nrow(dact_expectations) == 0)
+    return("")
+  key <- intersect(c("cell_group", "cell_type"), colnames(dact_expectations))
+  if (length(key) == 0) return("")
+  row <- dact_expectations[!is.na(dact_expectations[[key[1]]]) & dact_expectations[[key[1]]] == ct, , drop = FALSE]
+  if (nrow(row) == 0) return("")
+  exp <- if ("expectation" %in% names(row)) row[["expectation"]][1] else if ("lit_expectation" %in% names(row)) row[["lit_expectation"]][1] else NA
+  rat <- if ("rationale" %in% names(row)) row[["rationale"]][1] else NA
+  thk <- if ("thinking" %in% names(row)) row[["thinking"]][1] else NA
+  build_dact_grounding(exp, rat, thk)
+}
+
 summarize_cell_type_impact <- function(
   ct,
   perturbation_description,
@@ -264,7 +340,9 @@ summarize_cell_type_impact <- function(
   top_n_pathways = 5,
   abundance_phenotypes = NULL,
   fitness_phenotypes = NULL,
-  identity_phenotypes = NULL # <-- NEW ARGUMENT
+  identity_phenotypes = NULL, # <-- NEW ARGUMENT
+  dact_expectations = NULL, # per-cell literature expectation output (expectation/rationale/thinking)
+  effect_type = NULL # "Cell-autonomous" / "Non-autonomous" for this summarize pass
 ) {
   # 1. Abundance change (from abundance_phenotypes if available)
   abundance_row <- if (!is.null(abundance_phenotypes)) {
@@ -344,11 +422,16 @@ summarize_cell_type_impact <- function(
       filter(perturb_to_ctrl_p_value < sig_p_val_thresh)
   }
   degs_of_interest <- if (!is.null(genes_of_interest)) {
-    cell_type_degs %>% filter(gene_short_name %in% genes_of_interest)
+    cell_type_degs %>% filter(tolower(gene_short_name) %in% tolower(genes_of_interest))
   } else {
     cell_type_degs
   }
-  goi <- format_goi(degs_of_interest)
+  # goi_line now spans ALL significant DEGs (regulators first, then the rest) so
+  # the LLM prose -- which may name any significant DEG -- stays anchored to
+  # something the reader sees. `degs_of_interest` (regulators only) is still used
+  # below for pathway regulatory-gene chips and for the has_regulator_goi gate.
+  # max_per_compartment is tunable (see plan open items).
+  goi <- format_goi(cell_type_degs, genes_of_interest, max_per_compartment = 15)
 
   # 5. Pathway enrichment (using precomputed or run on the fly)
   precompute_data <- load_ai_precompute_for_cell_types(cell_types = ct, ai_notes_path = ai_notes_path)
@@ -486,10 +569,16 @@ summarize_cell_type_impact <- function(
     "Perturbed genes in this experiment: [not specified]."
   }
 
+  # Compact, cited literature expectation for this cell type, surfaced from the
+  # existing DACT forecast output (see build_dact_grounding). Empty string if
+  # this cell type has no expectation on record.
+  dact_grounding <- dact_grounding_for(ct, dact_expectations)
+
   summary_text <- paste(
     perturbed_genes_line,
     paste0("Perturbation: ", perturbation_description),
     paste0("Cell type: ", ct),
+    if (!is.null(effect_type) && nzchar(effect_type)) paste0("Effect type: ", effect_type),
     paste0("Abundance change: ", abundance_summary),
     paste0("Abundance severity: ", abundance_severity),
     paste0("Fitness label: ", fitness_label),
@@ -498,6 +587,7 @@ summarize_cell_type_impact <- function(
     paste0("Identity label: ", identity_label), # <-- NEW LINE
     paste0("Identity evidence: ", identity_evidence), # <-- NEW LINE
     paste0("Target genes expressed in this cell type: ", expressed_targets_line),
+    if (nzchar(dact_grounding)) paste0("Literature expectation: ", dact_grounding),
     paste0("Pathway background: ", pathway_background),
     pathway_lines,
     if (other_regulatory_genes_line != "") other_regulatory_genes_line,
@@ -517,6 +607,14 @@ summarize_cell_type_impact <- function(
     present_above_thresh = cell_present_above_thresh,
     degs = cell_type_degs,
     goi_line = goi$goi_line,
+    # Compact cited literature-expectation grounding for this cell type (from the
+    # existing DACT forecast output); "" when none on record. Surfaced for the
+    # overall-impact evidence block and for reviewer display.
+    dact_grounding = dact_grounding,
+    # Whether this cell has any REGULATOR (TF) genes of interest. goi_line now
+    # also includes non-regulator DEGs, so it can no longer be used to gate the
+    # LLM call (that would widen which cells get called); gate on this instead.
+    has_regulator_goi = nrow(degs_of_interest) > 0,
     # Store only FDR-significant, non-empty-overlap pathways (same bar the LLM
     # prompt uses) instead of the raw fora dump -- the unfiltered result is
     # ~90%+ padj~1 / zero-overlap padding that bloats the impact table and any
@@ -643,6 +741,81 @@ py_disrupted_pathways_to_tibble <- function(x) {
   )
 }
 
+# --- Magnitude-arrow re-encoding of LLM-emitted gene lists -------------------
+# The LLM returns gene tokens with a SINGLE direction arrow (copied from the
+# <allowed_genes> block, e.g. "myod1 ↓"). To show fold-change MAGNITUDE in the
+# rendered impact table -- in BOTH the report (goi_line) and the portal
+# (dysregulated_genes) -- without adding per-surface logic, we rewrite those
+# tokens once here, upstream: look each gene's shrunken log2FC up in this cell's
+# DEG table, swap in magnitude arrows (see magnitude_arrow), and sort by |LFC|.
+
+# Named vectors mapping lowercased gene symbol -> shrunken LFC and dysreg_type.
+build_deg_arrow_lookup <- function(degs) {
+  empty <- list(
+    lfc = stats::setNames(numeric(0), character(0)),
+    dir = stats::setNames(character(0), character(0))
+  )
+  if (is.null(degs) || !is.data.frame(degs) || nrow(degs) == 0 ||
+    !"gene_short_name" %in% colnames(degs)) {
+    return(empty)
+  }
+  d <- degs %>%
+    dplyr::filter(!is.na(gene_short_name), nzchar(gene_short_name)) %>%
+    dplyr::distinct(gene_short_name, .keep_all = TRUE)
+  key <- tolower(d$gene_short_name)
+  lfc <- if ("perturb_to_ctrl_shrunken_lfc" %in% colnames(d)) {
+    as.numeric(d$perturb_to_ctrl_shrunken_lfc)
+  } else {
+    rep(NA_real_, nrow(d))
+  }
+  dir <- if ("dysreg_type" %in% colnames(d)) {
+    as.character(d$dysreg_type)
+  } else {
+    rep(NA_character_, nrow(d))
+  }
+  list(lfc = stats::setNames(lfc, key), dir = stats::setNames(dir, key))
+}
+
+# Rewrite gene tokens (a character vector and/or comma-joined strings) with
+# magnitude arrows, sorted by |LFC| descending (unmatched/NA last, alphabetical).
+reencode_gene_arrows <- function(genes, lookup) {
+  if (is.null(genes) || length(genes) == 0) {
+    return(genes)
+  }
+  toks <- unlist(strsplit(as.character(genes), ","))
+  toks <- trimws(toks)
+  toks <- toks[!is.na(toks) & nzchar(toks)]
+  if (length(toks) == 0) {
+    return(character(0))
+  }
+  name <- trimws(sub("[↑↓]+$", "", toks))
+  key <- tolower(name)
+  lfc <- unname(lookup$lfc[key])
+  dir <- unname(lookup$dir[key])
+  out <- paste0(name, magnitude_arrow(lfc, dir))
+  out[order(-abs(lfc), name)]
+}
+
+# Re-encode the dysregulated_genes string column of a disrupted-pathways tibble.
+reencode_pathway_arrows <- function(tbl, lookup) {
+  if (is.null(tbl) || !is.data.frame(tbl) || nrow(tbl) == 0 ||
+    !"dysregulated_genes" %in% names(tbl)) {
+    return(tbl)
+  }
+  tbl$dysregulated_genes <- vapply(
+    tbl$dysregulated_genes,
+    function(s) {
+      if (is.na(s)) {
+        return(NA_character_)
+      }
+      paste(reencode_gene_arrows(s, lookup), collapse = ", ")
+    },
+    character(1),
+    USE.NAMES = FALSE
+  )
+  tbl
+}
+
 summarize_impact_in_lineage_context <- function(
   perturbation_description,
   target_gene_expression,
@@ -663,6 +836,8 @@ summarize_impact_in_lineage_context <- function(
   abundance_phenotypes = NULL,
   fitness_phenotypes = NULL,
   identity_phenotypes = NULL,
+  dact_expectations = NULL,
+  effect_type = NULL,
   pre_cited_gene_claims = NULL,
   verbose = FALSE,
   ...
@@ -732,7 +907,9 @@ summarize_impact_in_lineage_context <- function(
         empirical_p_thresh = empirical_p_thresh,
         abundance_phenotypes = abundance_phenotypes,
         fitness_phenotypes = fitness_phenotypes,
-        identity_phenotypes = identity_phenotypes
+        identity_phenotypes = identity_phenotypes,
+        dact_expectations = dact_expectations,
+        effect_type = effect_type
       )
       cell_impact_text <- build_lineage_context(ct, parents, results, all_types)
       if (!is.null(pre_cited_gene_claims) && nzchar(pre_cited_gene_claims)) {
@@ -762,8 +939,11 @@ summarize_impact_in_lineage_context <- function(
       # genes-of-interest (a key regulator moving is worth explaining regardless of
       # GO enrichment) or its own enriched pathways. We do NOT recycle an ancestor's
       # pathways as this cell's -- the ancestor is passed only as context (below).
-      has_own_goi <- !is.null(results[[ct]]$goi_line) && !is.na(results[[ct]]$goi_line) &&
-        nzchar(results[[ct]]$goi_line) && results[[ct]]$goi_line != "none"
+      # Gate on regulator (TF) genes of interest only. goi_line was widened to
+      # include non-regulator DEGs, so keying off it would call the LLM for cells
+      # that previously fell through to the canned no-signal path. has_regulator_goi
+      # preserves the original semantics (goi_line != "none" over regulators only).
+      has_own_goi <- isTRUE(results[[ct]]$has_regulator_goi)
       has_own_enrichment <- !is.null(results[[ct]]$pathways) &&
         is.data.frame(results[[ct]]$pathways) && nrow(results[[ct]]$pathways) > 0
 
@@ -785,6 +965,19 @@ summarize_impact_in_lineage_context <- function(
         if (verbose) {
           message(sprintf("[DEBUG] allowed_degs for %s: %d genes", ct, length(allowed_degs_map)))
         }
+        if (length(allowed_degs_map) == 0) {
+          # No callable genes -> skip the LLM and emit a short, factual line with
+          # NO mechanistic interpretation (Amy's feedback: these near-loss /
+          # no-gene cells were getting over-interpreted paragraphs). The cell's
+          # phenotype is still shown in its impact-table row.
+          if (verbose) message(sprintf("[DEBUG] No allowed genes for %s; canned no-gene summary (LLM skipped).", ct))
+          concise_summary <- paste0(
+            "No genes passed the significance threshold in this cell type, so no ",
+            "cell-type-specific molecular mechanism is inferred here."
+          )
+          disrupted_pathways <- NULL
+          other_dysregulated_genes <- NULL
+        } else {
         llm_structured <- tryCatch(
           {
             if (!is.null(llm_fun)) {
@@ -823,6 +1016,20 @@ summarize_impact_in_lineage_context <- function(
         if (!is.null(other_dysregulated_genes) && !is.character(other_dysregulated_genes)) {
           other_dysregulated_genes <- as.character(other_dysregulated_genes)
         }
+        # Re-encode single-arrow LLM gene tokens into magnitude arrows (1/2/3)
+        # using this cell's DEG LFCs, so the report and portal render effect size
+        # directly. disrupted_pathways is converted to a tibble here (idempotent
+        # with the assembly-time conversion below).
+        deg_lookup <- build_deg_arrow_lookup(results[[ct]]$degs)
+        other_dysregulated_genes <- reencode_gene_arrows(other_dysregulated_genes, deg_lookup)
+        disrupted_pathways <- tryCatch(
+          reencode_pathway_arrows(py_disrupted_pathways_to_tibble(disrupted_pathways), deg_lookup),
+          error = function(e) {
+            if (verbose) message(sprintf("[WARN] arrow re-encode failed for %s: %s", ct, e$message))
+            disrupted_pathways
+          }
+        )
+        }
       } else {
         if (verbose) message(sprintf("[DEBUG] Skipping LLM for cell type: %s (no abundance, fitness, or identity phenotype)", ct))
         parent_phenotype_summaries <- sapply(parents, function(p) {
@@ -835,9 +1042,9 @@ summarize_impact_in_lineage_context <- function(
               p, " of ", ct, " has phenotype: ",
               paste(
                 c(
-                  if (parent_has_phenotype) paste0("abundance: ", parent_info$abundance),
-                  if (parent_has_fitness) paste0("fitness: ", parent_info$fitness_label),
-                  if (parent_has_identity) paste0("identity: ", parent_info$identity_label)
+                  if (parent_has_phenotype) paste0("abundance: ", humanize_pheno_label(parent_info$abundance)),
+                  if (parent_has_fitness) paste0("fitness: ", humanize_pheno_label(parent_info$fitness_label)),
+                  if (parent_has_identity) paste0("identity: ", humanize_pheno_label(parent_info$identity_label))
                 ),
                 collapse = "; "
               )
