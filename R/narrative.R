@@ -341,7 +341,8 @@ summarize_cell_type_impact <- function(
   abundance_phenotypes = NULL,
   fitness_phenotypes = NULL,
   identity_phenotypes = NULL, # <-- NEW ARGUMENT
-  dact_expectations = NULL # per-cell literature expectation output (expectation/rationale/thinking)
+  dact_expectations = NULL, # per-cell literature expectation output (expectation/rationale/thinking)
+  effect_type = NULL # "Cell-autonomous" / "Non-autonomous" for this summarize pass
 ) {
   # 1. Abundance change (from abundance_phenotypes if available)
   abundance_row <- if (!is.null(abundance_phenotypes)) {
@@ -558,6 +559,7 @@ summarize_cell_type_impact <- function(
     perturbed_genes_line,
     paste0("Perturbation: ", perturbation_description),
     paste0("Cell type: ", ct),
+    if (!is.null(effect_type) && nzchar(effect_type)) paste0("Effect type: ", effect_type),
     paste0("Abundance change: ", abundance_summary),
     paste0("Abundance severity: ", abundance_severity),
     paste0("Fitness label: ", fitness_label),
@@ -816,6 +818,7 @@ summarize_impact_in_lineage_context <- function(
   fitness_phenotypes = NULL,
   identity_phenotypes = NULL,
   dact_expectations = NULL,
+  effect_type = NULL,
   pre_cited_gene_claims = NULL,
   verbose = FALSE,
   ...
@@ -886,7 +889,8 @@ summarize_impact_in_lineage_context <- function(
         abundance_phenotypes = abundance_phenotypes,
         fitness_phenotypes = fitness_phenotypes,
         identity_phenotypes = identity_phenotypes,
-        dact_expectations = dact_expectations
+        dact_expectations = dact_expectations,
+        effect_type = effect_type
       )
       cell_impact_text <- build_lineage_context(ct, parents, results, all_types)
       if (!is.null(pre_cited_gene_claims) && nzchar(pre_cited_gene_claims)) {
