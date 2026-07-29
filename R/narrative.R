@@ -741,6 +741,21 @@ py_disrupted_pathways_to_tibble <- function(x) {
   )
 }
 
+# Same typed-empty shape py_disrupted_pathways_to_tibble() returns for a
+# NULL/empty input. Used as the fallback when parsing a malformed LLM payload
+# fails, so a bad cell type gets an empty tibble instead of leaking its raw,
+# unconverted value (a bare list or reticulate object) into `results[[ct]]
+# $llm_disrupted_pathways` -- mirrors how `pathways` is always forced into a
+# consistent data.table shape (see build_pathway_tbl), which is what lets it
+# combine safely across cell types where an untyped fallback here couldn't.
+empty_disrupted_pathways_tbl <- function() {
+  tibble::tibble(
+    name = character(),
+    description = character(),
+    dysregulated_genes = character()
+  )
+}
+
 # --- Magnitude-arrow re-encoding of LLM-emitted gene lists -------------------
 # The LLM returns gene tokens with a SINGLE direction arrow (copied from the
 # <allowed_genes> block, e.g. "myod1 ↓"). To show fold-change MAGNITUDE in the
@@ -873,6 +888,9 @@ summarize_impact_in_lineage_context <- function(
   processed <- character(0)
   max_iter <- length(all_types) * 2 # Prevent infinite loop
   iter <- 0
+  # Cell types where the LLM call itself threw (not just a canned/skipped
+  # cell) -- retried once more after the full pass completes, see below.
+  failed_cell_types <- character(0)
 
   if (!verbose) {
     pb <- txtProgressBar(min = 0, max = length(all_types), style = 3)
@@ -1001,6 +1019,7 @@ summarize_impact_in_lineage_context <- function(
           },
           error = function(e) {
             if (verbose) message(sprintf("[ERROR] LLM call failed for cell type '%s': %s", ct, e$message))
+            failed_cell_types <<- c(failed_cell_types, ct)
             NULL
           }
         )
@@ -1026,7 +1045,7 @@ summarize_impact_in_lineage_context <- function(
           reencode_pathway_arrows(py_disrupted_pathways_to_tibble(disrupted_pathways), deg_lookup),
           error = function(e) {
             if (verbose) message(sprintf("[WARN] arrow re-encode failed for %s: %s", ct, e$message))
-            disrupted_pathways
+            empty_disrupted_pathways_tbl()
           }
         )
         }
@@ -1115,6 +1134,86 @@ summarize_impact_in_lineage_context <- function(
 
   if (!verbose) close(pb)
 
+  # Auto-repair pass: retry cell types whose LLM call threw during the main
+  # pass, once, after everything else has finished. This is a second line of
+  # defense on top of the per-call backoff in ask_llm_explain_genetic_...
+  # (zscapeaitools/vllm_instructor.py) -- if that call's own retry budget was
+  # entirely burned by a connection error (e.g. heavy concurrent load against
+  # a shared OPENROUTER_API_KEY across many perturbations/experiments running
+  # at once), waiting until the rest of this cell type's siblings are done
+  # gives real contention more time to clear before trying again, instead of
+  # permanently losing that cell type's summary to a transient blip.
+  # cell_impact_text/allowed_degs_map are recomputed here (not stashed from
+  # the first attempt) since they're cheap, pure functions of `results`,
+  # which is now fully populated -- including for a failed cell type whose
+  # parent also failed and was just fixed by this same retry pass.
+  failed_cell_types <- unique(failed_cell_types)
+  if (length(failed_cell_types) > 0) {
+    if (verbose) {
+      message(sprintf(
+        "[DEBUG] Retrying %d cell type(s) whose LLM call failed: %s",
+        length(failed_cell_types), paste(failed_cell_types, collapse = ", ")
+      ))
+    }
+    for (ct in failed_cell_types) {
+      parents <- get_parents(combined_psg, ct)
+      cell_impact_text <- build_lineage_context(ct, parents, results, all_types)
+      if (!is.null(pre_cited_gene_claims) && nzchar(pre_cited_gene_claims)) {
+        cell_impact_text <- paste0(
+          "<pre_cited_claims>\n",
+          pre_cited_gene_claims,
+          "\n</pre_cited_claims>\n\n",
+          cell_impact_text
+        )
+      }
+      allowed_degs_map <- build_allowed_degs_map(results[[ct]]$degs)
+      if (length(allowed_degs_map) == 0 || is.null(llm_fun)) next
+
+      # Jittered pause before retrying, distinct from (and in addition to)
+      # the per-call backoff inside llm_fun itself: that backoff is bounded
+      # to a single call's retry window, while this gives the *system*
+      # (other concurrent perturbations/experiments) more time to finish and
+      # relieve contention on the shared API key before we try this cell
+      # type again.
+      Sys.sleep(stats::runif(1, 5, 15))
+      if (verbose) message(sprintf("[DEBUG] Retry: calling LLM for cell type: %s", ct))
+      llm_structured <- tryCatch(
+        reticulate::py_to_r(
+          llm_fun(
+            cell_type = ct,
+            cell_impact_text = cell_impact_text,
+            primary_effect_summary = primary_impact_summary,
+            allowed_degs = allowed_degs_map,
+            ...
+          )
+        ),
+        error = function(e) {
+          if (verbose) message(sprintf("[ERROR] Retry LLM call failed for cell type '%s': %s", ct, e$message))
+          NULL
+        }
+      )
+      if (!is.null(llm_structured)) {
+        concise_summary <- if (!is.null(llm_structured$concise_summary)) llm_structured$concise_summary else NA_character_
+        disrupted_pathways <- llm_structured$disrupted_pathways
+        other_dysregulated_genes <- llm_structured$other_dysregulated_genes
+        if (!is.null(other_dysregulated_genes) && !is.character(other_dysregulated_genes)) {
+          other_dysregulated_genes <- as.character(other_dysregulated_genes)
+        }
+        deg_lookup <- build_deg_arrow_lookup(results[[ct]]$degs)
+        other_dysregulated_genes <- reencode_gene_arrows(other_dysregulated_genes, deg_lookup)
+        disrupted_pathways <- tryCatch(
+          reencode_pathway_arrows(py_disrupted_pathways_to_tibble(disrupted_pathways), deg_lookup),
+          error = function(e) empty_disrupted_pathways_tbl()
+        )
+        results[[ct]]$llm_summary <- ifelse(is.null(concise_summary) || concise_summary == "NULL", NA_character_, concise_summary)
+        results[[ct]]$lineage_context_summary <- results[[ct]]$llm_summary
+        results[[ct]]$llm_disrupted_pathways <- disrupted_pathways
+        results[[ct]]$llm_other_dysregulated_genes <- other_dysregulated_genes
+        if (verbose) message(sprintf("[DEBUG] Retry succeeded for cell type: %s", ct))
+      }
+    }
+  }
+
   results <- tibble(
     cell_type = names(results),
     data = unname(results)
@@ -1166,7 +1265,16 @@ summarize_impact_in_lineage_context <- function(
     results$llm_disrupted_pathways <- vector("list", nrow(results))
   }
 
-  results <- results %>%
+  # TEMP DIAGNOSTIC (Bug 2 reproduction, see conversation) -- remove once root
+  # cause is confirmed.
+  message("[DIAG] class(results$llm_disrupted_pathways): ", paste(class(results$llm_disrupted_pathways), collapse=", "))
+  message("[DIAG] is.data.frame: ", is.data.frame(results$llm_disrupted_pathways))
+  message("[DIAG] length: ", length(results$llm_disrupted_pathways), " nrow(results): ", nrow(results))
+  message("[DIAG] str:")
+  message(paste(utils::capture.output(str(results$llm_disrupted_pathways, max.level = 2, list.len = 10)), collapse = "\n"))
+
+  results <- tryCatch({
+    results %>%
     mutate(
       llm_disrupted_pathways = purrr::map(llm_disrupted_pathways, function(x) {
         tryCatch(
@@ -1182,6 +1290,18 @@ summarize_impact_in_lineage_context <- function(
         )
       })
     )
+  }, error = function(e) {
+    message("[DIAG] mutate() FAILED. Top-level message: ", conditionMessage(e))
+    message("[DIAG] Full condition (all parents):")
+    cnd <- e
+    depth <- 0
+    while (!is.null(cnd)) {
+      message(sprintf("[DIAG]   [%d] %s: %s", depth, paste(class(cnd), collapse=","), conditionMessage(cnd)))
+      cnd <- cnd$parent
+      depth <- depth + 1
+    }
+    stop(e)
+  })
 
   results
 }
