@@ -218,10 +218,16 @@ build_empirical_null <- function(cds,
   grp <- factor(paste(ct, arm, sep = "\r"))
   ind <- Matrix::sparseMatrix(i = seq_along(grp), j = as.integer(grp), x = 1,
                               dims = c(length(grp), nlevels(grp)))
-  S <- as.matrix(monocle3::exprs(cds) %*% ind)          # genes x (cell_type|arm) raw UMI totals
+  # Materialize once: a lazy BPCells matrix's `>` comparison doesn't reliably survive a
+  # subsequent matmul + as.matrix() (silently comes out NA), the same class of problem
+  # efdr_detection_rate()'s .rate() helper already coerces around above. Doing it once here
+  # also avoids materializing exprs(cds) twice (once for S, once for D).
+  M <- methods::as(monocle3::exprs(cds), "dgCMatrix")
+  S <- as.matrix(M %*% ind)                              # genes x (cell_type|arm) raw UMI totals
   # cells expressing the gene per (gene, cell_type|arm) -- binarized matmul, same grouping. Feeds
   # the per-arm DETECTION (expressing cells / arm cells) used by the down-call source-detection gate.
-  D <- as.matrix((monocle3::exprs(cds) > 0) %*% ind)    # genes x (cell_type|arm) cells expressing
+  Db <- M; Db@x[] <- 1                                   # binarise (stored entries are always > 0 for counts)
+  D <- as.matrix(Db %*% ind)                             # genes x (cell_type|arm) cells expressing
   ids <- rownames(cds)
   gsym <- SummarizedExperiment::rowData(cds)$gene_short_name
   if (is.null(gsym)) gsym <- ids
@@ -551,7 +557,11 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio = NULL, detec
     deg_tbl <- dplyr::left_join(deg_tbl, support[, c("cell_group", "n_pert_pb")], by = "cell_group")
   }
   if (!is.null(counts)) {                                 # per-(gene, cell_type) UMI totals -> gates
-    deg_tbl <- deg_tbl[, setdiff(names(deg_tbl), c("K_ctrl", "K_pert")), drop = FALSE]
+    # Also drop n_expr_ctrl/n_expr_pert (the per-arm detection counts .efdr_join_counts adds
+    # when `counts` carries them): re-decorating an already-arm-matched-decorated table
+    # otherwise collides into n_expr_ctrl.x/.y (dplyr's duplicate-column suffixing), and
+    # det_ctrl's later reference to the plain column name silently resolves to nothing.
+    deg_tbl <- deg_tbl[, setdiff(names(deg_tbl), c("K_ctrl", "K_pert", "n_expr_ctrl", "n_expr_pert")), drop = FALSE]
     deg_tbl <- .efdr_join_counts(deg_tbl, counts)         # id-keyed (falls back to summed symbol)
   }
   if (!is.null(arm_cells)) {                              # per-cell-type arm CELL counts -> tail axis

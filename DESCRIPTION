@@ -22,6 +22,7 @@ Depends:
     hooke
 Imports:
     ashr (>= 2.2-63),
+    data.table,
     dplyr,
     fgsea,
     magrittr,
