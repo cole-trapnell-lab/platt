@@ -986,10 +986,32 @@ summarize_impact_in_lineage_context <- function(
         if (length(allowed_degs_map) == 0) {
           # No callable genes -> skip the LLM and emit a short, factual line with
           # NO mechanistic interpretation (Amy's feedback: these near-loss /
-          # no-gene cells were getting over-interpreted paragraphs). The cell's
-          # phenotype is still shown in its impact-table row.
+          # no-gene cells were getting over-interpreted paragraphs).
+          #
+          # BUT still state the abundance / identity / fitness phenotype in plain
+          # words. The per-tissue (cell_loss_mechanisms) and overall summaries are
+          # built from THIS concise_summary text (via collect_cell_loss_explanations),
+          # not from the impact-table row's abundance column -- so a phenotype we
+          # leave out here is invisible to them. A severe abundance phenotype
+          # (near-loss / ablation) is exactly the case that yields zero DEGs, so
+          # dropping it hid the strongest phenotypes (e.g. otic near-loss) from the
+          # tissue/overall summaries entirely.
           if (verbose) message(sprintf("[DEBUG] No allowed genes for %s; canned no-gene summary (LLM skipped).", ct))
+          .nogene_label <- function(df, col) {
+            if (is.null(df) || !(ct %in% df$cell_group)) return(NA_character_)
+            v <- df %>% dplyr::filter(cell_group == ct) %>% dplyr::pull(!!col)
+            if (length(v) >= 1) humanize_pheno_label(v[[1]]) else NA_character_
+          }
+          pheno_bits <- character(0)
+          if (has_abundance) pheno_bits <- c(pheno_bits, .nogene_label(abundance_phenotypes, "abundance_code"))
+          if (has_identity)  pheno_bits <- c(pheno_bits, .nogene_label(identity_phenotypes, "identity_label"))
+          if (has_fitness)   pheno_bits <- c(pheno_bits, .nogene_label(fitness_phenotypes, "fitness_label"))
+          pheno_bits <- pheno_bits[!is.na(pheno_bits) & nzchar(pheno_bits)]
+          pheno_lead <- if (length(pheno_bits) > 0) {
+            paste0("This cell type shows ", paste(pheno_bits, collapse = " and "), ". ")
+          } else ""
           concise_summary <- paste0(
+            pheno_lead,
             "No genes passed the significance threshold in this cell type, so no ",
             "cell-type-specific molecular mechanism is inferred here."
           )
