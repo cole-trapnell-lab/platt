@@ -1148,6 +1148,13 @@ summarize_impact_in_lineage_context <- function(
   # which is now fully populated -- including for a failed cell type whose
   # parent also failed and was just fixed by this same retry pass.
   failed_cell_types <- unique(failed_cell_types)
+  # Cell types that are still unresolved after the retry pass below -- i.e.
+  # this perturbation's impact table is genuinely incomplete for them, not
+  # just slow. Surfaced to the caller via an attribute (see the `attr()` call
+  # near the end of this function) so it can be written out as a small
+  # manifest file for the portal to warn on, instead of silently shipping a
+  # page that looks complete but is missing some cell types' analysis.
+  still_failed_cell_types <- character(0)
   if (length(failed_cell_types) > 0) {
     if (verbose) {
       message(sprintf(
@@ -1167,7 +1174,10 @@ summarize_impact_in_lineage_context <- function(
         )
       }
       allowed_degs_map <- build_allowed_degs_map(results[[ct]]$degs)
-      if (length(allowed_degs_map) == 0 || is.null(llm_fun)) next
+      if (length(allowed_degs_map) == 0 || is.null(llm_fun)) {
+        still_failed_cell_types <- c(still_failed_cell_types, ct)
+        next
+      }
 
       # Jittered pause before retrying, distinct from (and in addition to)
       # the per-call backoff inside llm_fun itself: that backoff is bounded
@@ -1210,6 +1220,8 @@ summarize_impact_in_lineage_context <- function(
         results[[ct]]$llm_disrupted_pathways <- disrupted_pathways
         results[[ct]]$llm_other_dysregulated_genes <- other_dysregulated_genes
         if (verbose) message(sprintf("[DEBUG] Retry succeeded for cell type: %s", ct))
+      } else {
+        still_failed_cell_types <- c(still_failed_cell_types, ct)
       }
     }
   }
@@ -1265,13 +1277,18 @@ summarize_impact_in_lineage_context <- function(
     results$llm_disrupted_pathways <- vector("list", nrow(results))
   }
 
-  # TEMP DIAGNOSTIC (Bug 2 reproduction, see conversation) -- remove once root
-  # cause is confirmed.
-  message("[DIAG] class(results$llm_disrupted_pathways): ", paste(class(results$llm_disrupted_pathways), collapse=", "))
-  message("[DIAG] is.data.frame: ", is.data.frame(results$llm_disrupted_pathways))
-  message("[DIAG] length: ", length(results$llm_disrupted_pathways), " nrow(results): ", nrow(results))
-  message("[DIAG] str:")
-  message(paste(utils::capture.output(str(results$llm_disrupted_pathways, max.level = 2, list.len = 10)), collapse = "\n"))
+  # Same unnest_wider packing inconsistency already handled for `pathways`
+  # above: when every cell type's llm_disrupted_pathways happens to already
+  # be a tibble (no NULLs mixed in across cell types), unnest_wider can pack
+  # the WHOLE column into a single combined tibble instead of a list of
+  # one-tibble-per-row. That single tibble's length() is its column count
+  # (3: name/description/dysregulated_genes), not nrow(results), so the
+  # mutate() below -- which assumes one element per row -- fails with
+  # "must be size N or 1, not 3". Confirmed via live reproduction (ATOH7,
+  # 2026-07-31, Bug 2). Split it back into one tibble per row first.
+  if (is.data.frame(results$llm_disrupted_pathways)) {
+    results$llm_disrupted_pathways <- lapply(seq_len(nrow(results)), function(i) results$llm_disrupted_pathways[i, ])
+  }
 
   results <- tryCatch({
     results %>%
@@ -1291,17 +1308,23 @@ summarize_impact_in_lineage_context <- function(
       })
     )
   }, error = function(e) {
-    message("[DIAG] mutate() FAILED. Top-level message: ", conditionMessage(e))
-    message("[DIAG] Full condition (all parents):")
+    message("llm_disrupted_pathways consolidation failed. Top-level message: ", conditionMessage(e))
+    message("Full condition (all parents):")
     cnd <- e
     depth <- 0
     while (!is.null(cnd)) {
-      message(sprintf("[DIAG]   [%d] %s: %s", depth, paste(class(cnd), collapse=","), conditionMessage(cnd)))
+      message(sprintf("  [%d] %s: %s", depth, paste(class(cnd), collapse=","), conditionMessage(cnd)))
       cnd <- cnd$parent
       depth <- depth + 1
     }
     stop(e)
   })
+
+  # Surface which cell types never got a real LLM-authored summary (failed the
+  # main pass and the retry pass) so the caller can persist this for the
+  # portal to warn on -- an attribute, not a column, so it isn't accidentally
+  # treated as impact-table data by anything that reads this tibble.
+  attr(results, "llm_failed_cell_types") <- unique(still_failed_cell_types)
 
   results
 }
