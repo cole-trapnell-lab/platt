@@ -53,23 +53,72 @@ NULL
                       # Amy's confirmed 'too low' down-artifacts all at <=1.1%, with a clean ~10x gap;
                       # 2% sits in that gap. DIRECTIONAL (control arm, down only) -- NOT applied to up
                       # calls, because real GAINS can be sparse (phox2a is a real up-call at 0.7%
-                      # perturbation detection), so no analogous gap exists on the up side; up-blips
-                      # are handled by the thin-gain (arm-size) gate instead.
-# --- Minimum trustworthy cells in the THINNER arm (both directions), LOCATED PER EXPERIMENT ---
-# A complete absence of a gene in the thin arm is a real depletion only if that arm had enough cells
-# to have detected it; below the floor the arm is too thin to make any call (e.g. brd1b in a cell type
-# depleted to 8 perturbation cells, none expressing -- a too-few-cells call, not a loss). Keyed on
-# min(n_ctrl_cells, n_pert_cells) -- the arm CELL count, NOT detection or the control:perturbation
-# ratio (unreliable for rare cell types). The floor VALUE is located per experiment by a Poisson
-# power argument (used only to place the gate, not as a per-call test): a well-detected gene (the
-# .EFDR_DET_PCTL-th percentile of control detection, p) is expected in .EFDR_MIN_EXPECTED cells once
-# the arm holds .EFDR_MIN_EXPECTED / p cells, so below that a complete absence can't be told from
-# undersampling. K = ceil(.EFDR_MIN_EXPECTED / p). Self-adjusts to capture depth (a shallow run with
-# lower detection -> higher floor). Also subsumes the old up-only thin-gain gate (the control-split
-# null cannot generate a thin-arm GAIN, so the same cell floor covers both directions).
-.EFDR_MIN_EXPECTED  <- 3     # expected expressing cells for a callable complete absence (Poisson P(0)=0.05)
-.EFDR_DET_PCTL      <- 0.75  # reference control-detection percentile (a "well-detected" gene)
-.EFDR_MIN_ARM_CELLS <- 25L   # fallback floor if the detection distribution is degenerate (e.g. GENE6 locates 27)
+                      # perturbation detection), so no analogous gap exists on the up side.
+                      # OFF by default; see .EFDR_DEFAULT_GATES.
+# --- Is the thinner arm powered to see THIS gene? (per call, both directions) -----------------
+# A reduced-or-absent signal in the thinner arm is only callable if that arm held enough cells to
+# have detected the gene in the first place. If a gene is detected in a fraction p of cells, an arm
+# of n cells is expected to show it in n*p of them; at n*p = .EFDR_MIN_EXPECTED the Poisson chance
+# of seeing none is exp(-3) ~ 5%, so below that "we saw none" is not distinguishable from "we did
+# not sample it". The test is therefore expected detections >= .EFDR_MIN_EXPECTED, where
+#
+#     expected = min(n_ctrl_cells, n_pert_cells) * max(det_ctrl, det_pert)
+#
+# p is read as the MAX of the two arms' detection rates: whichever arm carries the gene supplies
+# the rate (that arm is well sampled, so the rate is well estimated), and the thinner arm supplies
+# only its cell COUNT, which is exact. Taking the max rather than the other arm's rate is what
+# keeps a gain from a zero baseline testable -- the reference arm's rate would be 0 there.
+#
+# This REPLACES a flat per-experiment cell floor K = ceil(3 / p75(det_ctrl)). That floor asked only
+# "how many cells are in this arm", so it discarded every gene in a small cell type regardless of
+# expression, while waving through trace genes in large ones. It also inherited two underivable
+# constants: the .75 percentile, and the notion of a single reference "well-detected" gene standing
+# in for all of them. The per-call form keeps only .EFDR_MIN_EXPECTED, the one constant with a
+# derivation. The K machinery is retained below solely so the old policy stays reproducible via
+# `gates` for back-comparison.
+.EFDR_MIN_EXPECTED  <- 3     # expected detections needed in the thinner arm (Poisson P(0)=0.05)
+.EFDR_DET_PCTL      <- 0.75  # legacy: percentile locating the retired flat cell floor K
+.EFDR_MIN_ARM_CELLS <- 25L   # legacy: fallback for K if the detection distribution is degenerate
+
+# Every uncallability gate that exists, in the order it is applied. Every one pins empirical_p
+# to 1. Which SUBSET runs is chosen by `gates` (see annotate_empirical_fdr_model); the default
+# is .EFDR_DEFAULT_GATES below. Names are the stable public identifiers -- the config, the CLI
+# and the diagnostics table all use these strings.
+.EFDR_GATES <- c("not_replicated",         # detected in <min_replicate_embryos embryos in BOTH arms
+                 "too_few_embryos",        # <2 perturbation embryos: no valid two-group contrast
+                 "not_detected_anywhere",  # ~0 UMI in BOTH arms: any |z| is shrinkage noise
+                 "gain_from_zero",         # UP call whose CONTROL arm has ~0 UMI
+                 "gain_no_counts",         # UP call whose PERTURBATION (gaining) arm has ~0 UMI
+                 "loss_from_trace",        # DOWN call detected in <MIN_SRC_DET of control cells
+                 "too_few_cells",          # thinner arm not powered to see THIS gene (expected < 3)
+                 "flat_cell_floor")        # legacy: thinner arm below the per-experiment floor K
+
+# The gates applied unless a caller says otherwise -- three rules.
+#
+#   too_few_embryos  <2 perturbation embryos: no two-group contrast exists.
+#   not_replicated   the gene was seen in <min_replicate_embryos distinct embryos in BOTH arms,
+#                    i.e. it was never observed more than once anywhere.
+#   too_few_cells    the thinner arm was not powered to see this gene (see .EFDR_MIN_EXPECTED).
+#
+# The previous policy's other five gates are off by default, each subsumed:
+#   not_detected_anywhere  a gene in >=2 embryos of either arm necessarily has counts somewhere.
+#   gain_from_zero         an absolute "control arm has 0 UMI" rule that could not tell one stray
+#                          cell from sixteen, so it removed real ectopic activation on low-depth
+#                          runs; the expected-detections test answers that question directly.
+#   gain_no_counts         measured to remove ZERO otherwise-significant calls in all six test
+#                          experiments once too_few_cells applies everywhere (it fires on up to
+#                          10% of calls but never on one that would have survived).
+#   flat_cell_floor        the retired per-experiment cell floor K; see .EFDR_MIN_EXPECTED above.
+#   loss_from_trace        a flat 2% control-detection floor. Removed calls well replicated across
+#                          20+ embryos purely for being lowly expressed, and 64-82% of what it
+#                          uniquely removed is caught by expected detections on a derived quantity.
+#
+# All five remain selectable, so the previous policy is reproducible for back-comparison:
+#   gates = c("too_few_embryos", "not_detected_anywhere", "gain_from_zero", "gain_no_counts",
+#             "loss_from_trace", "flat_cell_floor")
+.EFDR_DEFAULT_GATES <- c("too_few_embryos", "not_replicated", "too_few_cells")
+
+.EFDR_MIN_REP_EMB <- 2L
 
 #' Build a control-split empirical null for the DEG artifact.
 #'
@@ -222,12 +271,35 @@ build_empirical_null <- function(cds,
   # subsequent matmul + as.matrix() (silently comes out NA), the same class of problem
   # efdr_detection_rate()'s .rate() helper already coerces around above. Doing it once here
   # also avoids materializing exprs(cds) twice (once for S, once for D).
-  M <- methods::as(monocle3::exprs(cds), "dgCMatrix")
+  # drop0: a materialized BPCells matrix can carry EXPLICIT ZEROS in its sparsity pattern
+  # (4.65% of stored entries in GENE8's contrast_cds; 0% in SGSeq2's). The binarisation below
+  # sets every STORED entry to 1, so without dropping them a stored zero counts as a cell
+  # expressing the gene -- inflating n_expr_* and hence det_ctrl, which drives the
+  # low-source-detection gate, and n_emb_*. Symptom in a decorated table: K_ctrl < n_expr_ctrl,
+  # arithmetically impossible, in 19.6% of rows of GENE8 gata5 as shipped.
+  M <- Matrix::drop0(methods::as(monocle3::exprs(cds), "dgCMatrix"))
   S <- as.matrix(M %*% ind)                              # genes x (cell_type|arm) raw UMI totals
   # cells expressing the gene per (gene, cell_type|arm) -- binarized matmul, same grouping. Feeds
   # the per-arm DETECTION (expressing cells / arm cells) used by the down-call source-detection gate.
   Db <- M; Db@x[] <- 1                                   # binarise (stored entries are always > 0 for counts)
   D <- as.matrix(Db %*% ind)                             # genes x (cell_type|arm) cells expressing
+  # Distinct EMBRYOS detecting the gene per (gene, cell_type|arm) -- the replicate-level count the
+  # `not_replicated` gate needs. Accumulated one embryo at a time and kept sparse: the direct
+  # route (grouping by cell_type|arm|embryo in one matmul) is genes x ~C*2*E, which densifies to
+  # GBs on a full run. Per embryo the product is genes x (cell_type|arm), binarised to "this embryo
+  # saw it" and summed, so the accumulator never leaves the size of D.
+  smp <- as.character(cd[[sample_group]])
+  Nemb <- matrix(0L, nrow(M), nlevels(grp))              # genes x (cell_type|arm), dense int
+  for (s in unique(smp)) {
+    k <- which(smp == s)
+    Gs <- Matrix::sparseMatrix(i = seq_along(k), j = as.integer(grp[k]), x = 1,
+                               dims = c(length(k), nlevels(grp)))
+    Xs <- methods::as(Db[, k, drop = FALSE] %*% Gs, "TsparseMatrix")
+    # +1 only on the (gene, arm) entries this embryo touched: O(nnz) per embryo rather than a
+    # whole-matrix add, which is what makes ~500 embryos affordable.
+    ij <- cbind(Xs@i + 1L, Xs@j + 1L)
+    Nemb[ij] <- Nemb[ij] + 1L
+  }
   ids <- rownames(cds)
   gsym <- SummarizedExperiment::rowData(cds)$gene_short_name
   if (is.null(gsym)) gsym <- ids
@@ -241,7 +313,9 @@ build_empirical_null <- function(cds,
                K_ctrl = if (length(jc)) S[, jc] else 0,
                K_pert = if (length(jp)) S[, jp] else 0,
                n_expr_ctrl = if (length(jc)) D[, jc] else 0,
-               n_expr_pert = if (length(jp)) D[, jp] else 0, stringsAsFactors = FALSE)
+               n_expr_pert = if (length(jp)) D[, jp] else 0,
+               n_emb_ctrl = if (length(jc)) Nemb[, jc] else 0,
+               n_emb_pert = if (length(jp)) Nemb[, jp] else 0, stringsAsFactors = FALSE)
   })
   do.call(rbind, res)
 }
@@ -252,16 +326,24 @@ build_empirical_null <- function(cds,
 # computed the same way on both sides.
 .efdr_join_counts <- function(x, counts) {
   has_det <- all(c("n_expr_ctrl", "n_expr_pert") %in% names(counts))
+  has_emb <- all(c("n_emb_ctrl", "n_emb_pert") %in% names(counts))
   if ("id" %in% names(x) && "id" %in% names(counts)) {
     cols <- c("id", "cell_group", "K_ctrl", "K_pert",
-              if (has_det) c("n_expr_ctrl", "n_expr_pert"))
+              if (has_det) c("n_expr_ctrl", "n_expr_pert"),
+              if (has_emb) c("n_emb_ctrl", "n_emb_pert"))
     dplyr::left_join(x, counts[, cols], by = c("id", "cell_group"))
   } else {
+    # gene_short_name fallback: UMI and cell counts SUM across a symbol's ids, but embryo counts
+    # cannot -- the same embryo can detect two ids of one symbol, so summing double-counts the
+    # replicate. max() is the honest bound available without the per-embryo detail (it is the
+    # count for the single best-detected id, so it never overstates the number of distinct embryos).
     cnt <- counts %>%
       dplyr::group_by(.data$gene_short_name, .data$cell_group) %>%
       dplyr::summarise(K_ctrl = sum(.data$K_ctrl), K_pert = sum(.data$K_pert),
                        n_expr_ctrl = if (has_det) sum(.data$n_expr_ctrl) else NA_real_,
                        n_expr_pert = if (has_det) sum(.data$n_expr_pert) else NA_real_,
+                       n_emb_ctrl  = if (has_emb) max(.data$n_emb_ctrl)  else NA_real_,
+                       n_emb_pert  = if (has_emb) max(.data$n_emb_pert)  else NA_real_,
                        .groups = "drop")
     dplyr::left_join(x, cnt, by = c("gene_short_name", "cell_group"))
   }
@@ -536,6 +618,20 @@ train_efdr_model <- function(null, detection = NULL, taus = .EFDR_TAUS,
 #' @param detection Deprecated / unused (the %embryos covariate is retired).
 #' @param log_ratio Deprecated / ignored (the tail is conditioned on the actual
 #'   per-cell-type arm cell count, not a single global sampling ratio).
+#' @param gates Character vector of the uncallability gates to APPLY, from
+#'   `.EFDR_GATES`. Defaults to `.EFDR_DEFAULT_GATES` = `too_few_embryos`,
+#'   `not_replicated`, `too_few_cells`. The previous policy's other five gates
+#'   (`not_detected_anywhere`, `gain_from_zero`, `gain_no_counts`,
+#'   `loss_from_trace`, and `flat_cell_floor`, the retired per-experiment cell
+#'   floor K) are off by default because each is subsumed; pass them explicitly
+#'   to reproduce that policy for back-comparison. Gates not listed are still
+#'   computed and counted in the `efdr_stats` attribute -- they just stop pinning
+#'   `empirical_p` to 1, so those calls fall back to the two statistical floors
+#'   (`max(p_ashr, p_tail)`). Unknown names error rather than silently no-op.
+#' @param min_replicate_embryos Distinct embryos that must detect the gene in at
+#'   least one arm for the `not_replicated` gate to pass it (default
+#'   `.EFDR_MIN_REP_EMB` = 2). Needs `counts` to carry `n_emb_ctrl` / `n_emb_pert`
+#'   (produced by `.efdr_arm_counts`); without them nothing is gated on this axis.
 #' @param group_col Column to BH-adjust within (default `cell_group`).
 #' @return `deg_tbl` with added `empirical_p` and `empirical_fdr`.
 #' @details The tail null is conditioned on **expression x thin-arm cell count**
@@ -549,7 +645,18 @@ train_efdr_model <- function(null, detection = NULL, taus = .EFDR_TAUS,
 annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio = NULL, detection = NULL,
                                          support = NULL, counts = NULL, arm_cells = NULL,
                                          min_pseudobulks = .EFDR_MIN_PB,
+                                         gates = .EFDR_DEFAULT_GATES,
+                                         min_replicate_embryos = .EFDR_MIN_REP_EMB,
                                          group_col = "cell_group") {
+  gates <- setdiff(as.character(gates), c("", NA_character_))
+  if (length(bad <- setdiff(gates, .EFDR_GATES)))
+    stop("unknown gate(s): ", paste(bad, collapse = ", "),
+         ". Valid: ", paste(.EFDR_GATES, collapse = ", "))
+  # Gates are always COMPUTED (the diagnostics report membership either way); `on()` decides
+  # whether a gate is APPLIED to empirical_p.
+  on <- function(g) g %in% gates
+  message(sprintf("[efdr] gates applied: %s (min_replicate_embryos=%d)",
+                  paste(gates, collapse = ", "), as.integer(min_replicate_embryos)))
   # (Re)join the per-cell-type inputs, dropping any stale copies first so re-decoration
   # of an already-decorated table doesn't collide into `.x`/`.y` and silently NA a covariate.
   if (!is.null(support)) {                                # n_pert_pb -> <2-embryo gate
@@ -561,7 +668,8 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio = NULL, detec
     # when `counts` carries them): re-decorating an already-arm-matched-decorated table
     # otherwise collides into n_expr_ctrl.x/.y (dplyr's duplicate-column suffixing), and
     # det_ctrl's later reference to the plain column name silently resolves to nothing.
-    deg_tbl <- deg_tbl[, setdiff(names(deg_tbl), c("K_ctrl", "K_pert", "n_expr_ctrl", "n_expr_pert")), drop = FALSE]
+    deg_tbl <- deg_tbl[, setdiff(names(deg_tbl), c("K_ctrl", "K_pert", "n_expr_ctrl", "n_expr_pert",
+                                                   "n_emb_ctrl", "n_emb_pert")), drop = FALSE]
     deg_tbl <- .efdr_join_counts(deg_tbl, counts)         # id-keyed (falls back to summed symbol)
   }
   if (!is.null(arm_cells)) {                              # per-cell-type arm CELL counts -> tail axis
@@ -570,7 +678,7 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio = NULL, detec
                                 by = "cell_group")
   }
   for (col in c("n_pert_pb", "K_ctrl", "K_pert", "n_ctrl_cells", "n_pert_cells",
-                "n_expr_ctrl", "n_expr_pert"))
+                "n_expr_ctrl", "n_expr_pert", "n_emb_ctrl", "n_emb_pert"))
     if (!col %in% names(deg_tbl)) deg_tbl[[col]] <- NA_real_
 
   out <- deg_tbl %>%
@@ -606,23 +714,34 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio = NULL, detec
   # (thin-arm artifact). A missing tail drops out of the max (no fallback hole).
   out$empirical_p <- pmax(out$p_ashr, dplyr::coalesce(out$p_tail, 0))
 
+  # REPLICABILITY (not_replicated): the gene must have been seen in at least
+  # `min_replicate_embryos` distinct embryos of AT LEAST ONE arm. At ~500 UMI/cell most genes
+  # are absent from any given cell, so catching the same gene in two separate specimens of one
+  # arm and none of the other is not a coincidence the sampling produces easily -- which is
+  # exactly what the arm-matched null prices, and why this is a better instrument than the
+  # absolute zero-UMI rules it replaces. Direction-agnostic and arm-agnostic on purpose: it
+  # asks "is this gene really measured in this cell type at all", not "which way did it move".
+  # NA counts (no `counts` input) -> not gated, matching every other count-driven gate.
+  out$max_emb_det <- pmax(out$n_emb_ctrl, out$n_emb_pert, na.rm = TRUE)
+  not_replicated_gate <- is.finite(out$max_emb_det) & out$max_emb_det < min_replicate_embryos
+  if (on("not_replicated")) out$empirical_p[not_replicated_gate] <- 1
   # Gate 1 (<2 perturbation embryos): no valid two-group contrast; calls uncallable.
   gate <- is.finite(out$n_pert_pb) & out$n_pert_pb < min_pseudobulks
-  out$empirical_p[gate] <- 1
+  if (on("too_few_embryos")) out$empirical_p[gate] <- 1
   # Gate 2 (gene absent from the cell type): ~zero UMIs in BOTH arms -> not expressed here at all;
   # any |z| is pure shrinkage noise no floor can price. Gate only when the LARGER arm is empty
   # (max(K)), so a deep control arm with an empty perturbation arm = genuine COMPLETE DEPLETION is
   # KEPT. Not an expression floor: "the gene has no counts in either arm of this cell type".
   absent_gate <- is.finite(out$K_ctrl) & is.finite(out$K_pert) &
     pmax(out$K_ctrl, out$K_pert) < .EFDR_MIN_ARM_UMI
-  out$empirical_p[absent_gate] <- 1
+  if (on("not_detected_anywhere")) out$empirical_p[absent_gate] <- 1
   # Gate 3 (control-absent UP-call): the mirror of the gene-absent gate for gains. An UP call
   # (higher in perturbation) whose CONTROL arm carries ~zero UMIs is an "increase" over a baseline
   # we never detected -- uncallable, and the control-split null cannot price it (control-vs-control
   # is 0 in both arms). A DOWN call with an empty perturbation arm is the opposite case (a real
   # depletion) and is NOT gated. Directional on the control (reference) arm.
   up_absent_gate <- (out$z > 0) & is.finite(out$K_ctrl) & (out$K_ctrl < .EFDR_MIN_ARM_UMI)
-  out$empirical_p[up_absent_gate] <- 1
+  if (on("gain_from_zero")) out$empirical_p[up_absent_gate] <- 1
   # Gate 3c (empty-gaining-arm UP-call): an UP call (higher in perturbation) whose PERTURBATION
   # (gaining) arm carries ~zero UMIs cannot be a real gain -- the gene is absent from the very arm
   # it is called up in, so the shrunken-LFC sign is noise (a near-zero control arm plus size-factor
@@ -633,7 +752,7 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio = NULL, detec
   # floor used for losses: real GAINS can be sparse (phox2a is real at 0.7% perturbation detection,
   # K_pert>0), so only a truly empty gaining arm is gated. Directional on the perturbation arm.
   up_empty_gain_gate <- (out$z > 0) & is.finite(out$K_pert) & (out$K_pert < .EFDR_MIN_ARM_UMI)
-  out$empirical_p[up_empty_gain_gate] <- 1
+  if (on("gain_no_counts")) out$empirical_p[up_empty_gain_gate] <- 1
   # Gate 3b (low source-detection LOSS): a DOWN call whose CONTROL (source) arm detects the gene in
   # fewer than MIN_SRC_DET of its cells has no robustly-expressed baseline to lose -- its large |z|
   # is trend-dispersion shrinkage noise the control-split null cannot reach at moderate arm sizes
@@ -643,29 +762,37 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio = NULL, detec
   # low-expression artifacts (<=1.1%). NA detection -> not gated (no data to judge).
   out$det_ctrl <- out$n_expr_ctrl / out$n_ctrl_cells
   low_src_det_gate <- (out$z < 0) & is.finite(out$det_ctrl) & (out$det_ctrl < .EFDR_MIN_SRC_DET)
-  out$empirical_p[low_src_det_gate] <- 1
-  # Gate 4 (minimum cells in the thinner arm, BOTH directions): a contrast whose thinner arm holds
-  # fewer than MIN_ARM_CELLS cells is uncallable regardless of expression or direction. A complete
-  # absence of the gene in the thin arm is a real depletion ONLY if that arm had enough cells to have
-  # detected the gene -- e.g. brd1b in a cell type depleted to 8 perturbation cells (none expressing)
-  # is a too-few-cells call, not a loss. Gated on the CELL COUNT of the thinner arm only, NOT on
-  # detection or the control:perturbation ratio (which is unreliable for rare cell types), so it is
-  # robust for rare cell types and does not try to price sub-floor arms in the null (which cannot
-  # simulate a thin arm against a very deep control arm anyway). Being symmetric, it also subsumes the
-  # old up-only thin-gain gate: the control-split null structurally cannot generate a thin-arm GAIN,
-  # and the same cell floor covers that. The floor value is LOCATED per experiment by the Poisson
-  # power argument above (constants .EFDR_MIN_EXPECTED / .EFDR_DET_PCTL): a well-detected gene (p =
-  # .EFDR_DET_PCTL-th percentile of positive control detection) needs 3/p thin-arm cells before a
-  # complete absence is distinguishable from undersampling. Falls back to .EFDR_MIN_ARM_CELLS if the
-  # detection distribution is degenerate.
-  .p_det <- suppressWarnings(stats::quantile(
-    out$det_ctrl[is.finite(out$det_ctrl) & out$det_ctrl > 0], .EFDR_DET_PCTL, names = FALSE))
-  min_arm_cells <- if (is.finite(.p_det) && .p_det > 0)
-    as.integer(ceiling(.EFDR_MIN_EXPECTED / .p_det)) else .EFDR_MIN_ARM_CELLS
-  message(sprintf("[efdr] min-arm-cell floor located at K=%d (p%.0f control detection = %.3f)",
-                  min_arm_cells, 100 * .EFDR_DET_PCTL, .p_det))
-  min_arm_gate <- is.finite(out$thin_arm_cells) & (out$thin_arm_cells < min_arm_cells)
-  out$empirical_p[min_arm_gate] <- 1
+  if (on("loss_from_trace")) out$empirical_p[low_src_det_gate] <- 1
+  # too_few_cells (BOTH directions): was the thinner arm powered to see THIS gene? Expected
+  # detections = (cells in the thinner arm) x (the better-estimated of the two arms' detection
+  # rates); below .EFDR_MIN_EXPECTED, "we saw none / fewer" cannot be told from "we did not sample
+  # it" (derivation at the constant). A complete absence in the thin arm is a real depletion only
+  # if that arm could have detected the gene -- brd1b in a cell type depleted to 8 perturbation
+  # cells, none expressing, is a too-few-cells call, not a loss. Being per call, it keeps a
+  # well-detected gene callable in a small cell type and gates a trace gene even in a large one;
+  # the flat floor it replaces could do neither. Symmetric on purpose: it also covers thin-arm
+  # GAINS, which the control-split null structurally cannot generate. NA counts -> not gated.
+  out$det_pert  <- out$n_expr_pert / out$n_pert_cells
+  out$max_det   <- pmax(out$det_ctrl, out$det_pert, na.rm = TRUE)
+  out$expected_detections <- out$thin_arm_cells * out$max_det
+  underpowered_gate <- is.finite(out$expected_detections) &
+    out$expected_detections < .EFDR_MIN_EXPECTED
+  if (on("too_few_cells")) out$empirical_p[underpowered_gate] <- 1
+
+  # flat_cell_floor: the RETIRED per-experiment cell floor, off by default. Kept so the previous
+  # policy is reproducible via `gates` for back-comparison. K is located from the p75 of control
+  # detection, which is why it varied 24-58 across experiments and tracked cell-type size
+  # composition as much as capture depth.
+  min_arm_cells <- NA_integer_; .p_det <- NA_real_
+  if (on("flat_cell_floor")) {
+    .p_det <- suppressWarnings(stats::quantile(
+      out$det_ctrl[is.finite(out$det_ctrl) & out$det_ctrl > 0], .EFDR_DET_PCTL, names = FALSE))
+    min_arm_cells <- if (is.finite(.p_det) && .p_det > 0)
+      as.integer(ceiling(.EFDR_MIN_EXPECTED / .p_det)) else .EFDR_MIN_ARM_CELLS
+    message(sprintf("[efdr] legacy flat cell floor K=%d (p%.0f control detection = %.3f)",
+                    min_arm_cells, 100 * .EFDR_DET_PCTL, .p_det))
+    out$empirical_p[is.finite(out$thin_arm_cells) & out$thin_arm_cells < min_arm_cells] <- 1
+  }
 
   # empirical_fdr: BH-adjust EACH floor within the cell group, then take the max q -- NOT
   # BH(empirical_p) (the per-gene max compresses the p-distribution so BH crushes real hits).
@@ -685,9 +812,11 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio = NULL, detec
   # decorator stage -- can persist them; the located min-arm K in particular is otherwise only in
   # the log). Counts are gate MEMBERSHIP (a call may satisfy more than one gate, so they need not sum).
   attr(out, "efdr_stats") <- data.frame(
-    min_arm_cells_K       = as.integer(min_arm_cells),
+    min_arm_cells_K       = as.integer(min_arm_cells),   # NA unless flat_cell_floor is on
     p_ctrl_detection      = round(as.numeric(.p_det), 4),
     det_pctl              = .EFDR_DET_PCTL,
+    gates_applied         = paste(gates, collapse = ","),
+    min_replicate_embryos = as.integer(min_replicate_embryos),
     n_calls               = nrow(out),
     n_ashr_sig            = sum(out$p_ashr < 0.05, na.rm = TRUE),
     n_retained            = sum(out$empirical_p < 0.05, na.rm = TRUE),
@@ -698,7 +827,8 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio = NULL, detec
     n_gate_up_ctrl_absent = sum(up_absent_gate, na.rm = TRUE),
     n_gate_up_empty_gain  = sum(up_empty_gain_gate, na.rm = TRUE),
     n_gate_low_ctrl_det   = sum(low_src_det_gate, na.rm = TRUE),
-    n_gate_min_arm_cells  = sum(min_arm_gate, na.rm = TRUE),
+    n_gate_too_few_cells  = sum(underpowered_gate, na.rm = TRUE),
+    n_gate_not_replicated = sum(not_replicated_gate, na.rm = TRUE),
     stringsAsFactors = FALSE)
   out
 }
