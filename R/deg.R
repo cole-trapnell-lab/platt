@@ -2257,6 +2257,10 @@ update_summary <- function(model_tbl, dispersion_type = c("max", "fitted", "esti
 #' @param gene_patterns_within_state_graph A data frame containing gene pattern activity scores.
 #' @param gene_df A data frame containing gene information with columns `gene_short_name` and `gs_name`.
 #' @param sig_thresh A numeric value specifying the significance threshold for adjusted p-values. Default is 0.1.
+#' @param seed_key An optional character string identifying this call, used to derive a
+#'   deterministic RNG seed (fgseaMultilevel is Monte Carlo). Defaults to NULL, in which case
+#'   the seed is derived from `gene_ranking`/`gene_set_list` themselves, so results are still
+#'   reproducible per-input without requiring the caller to supply anything.
 #'
 #' @return A tibble containing the GSEA results filtered by the specified significance threshold.
 #'
@@ -2275,11 +2279,18 @@ update_summary <- function(model_tbl, dispersion_type = c("max", "fitted", "esti
 #' @export
 calc_gsea_enrichment_on_state_specific_genes <- function(gene_patterns_within_state_graph,
                                                          gene_df,
-                                                         sig_thresh = 0.1) {
+                                                         sig_thresh = 0.1,
+                                                         seed_key = NULL) {
   gene_set_list <- split(x = gene_df$gene_short_name, f = gene_df$gs_name)
   gene_ranking <- gene_patterns_within_state_graph$pattern_activity_score[, 1]
   names(gene_ranking) <- gene_patterns_within_state_graph %>% pull(gene_short_name)
-  gsea_res <- fgsea::fgsea(pathways = gene_set_list, stats = gene_ranking) %>% as_tibble()
+  if (is.null(seed_key)) {
+    seed_key <- paste(c(names(gene_ranking), names(gene_set_list)), collapse = "|")
+  }
+  seed <- .fgsea_seed_from_key(seed_key)
+  gsea_res <- withr::with_seed(seed, {
+    fgsea::fgsea(pathways = gene_set_list, stats = gene_ranking)
+  }) %>% as_tibble()
   gsea_res <- gsea_res %>% filter(padj < sig_thresh)
   return(gsea_res)
 }
