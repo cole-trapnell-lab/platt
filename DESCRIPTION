@@ -30,7 +30,8 @@ Imports:
     mgcv,
     scam,
     speedglm,
-    splines
+    splines,
+    withr
 Remotes:
     cole-trapnell-lab/speedglm,
     bioc::fgsea
