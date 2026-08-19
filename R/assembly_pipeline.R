@@ -83,6 +83,26 @@ run_wildtype_assembly <- function(cds,
     colData(cds)$subassembly_group <- stringr::str_c(partition_name, colData(cds)[, cell_group], sep = "-")
     colData(cds)[["cell_state"]] <- as.character(colData(cds)[[cell_group]])
 
+    # catch typos in edge_allowlist/edge_denylist cell type names before any model
+    # fitting happens, rather than after assemble_wt_graph() fails downstream
+    valid_cell_types <- unique(colData(cds)[["cell_state"]])
+    check_edge_list_cell_types <- function(edge_list, list_name) {
+        if (is.null(edge_list)) {
+            return(invisible(NULL))
+        }
+        unknown_cell_types <- setdiff(unique(c(edge_list$from, edge_list$to)), valid_cell_types)
+        if (length(unknown_cell_types) > 0) {
+            stop(
+                "Unknown cell type(s) in ", list_name, ": ",
+                paste(unknown_cell_types, collapse = ", "),
+                ". Valid cell types for '", cell_group, "' are: ",
+                paste(valid_cell_types, collapse = ", ")
+            )
+        }
+    }
+    check_edge_list_cell_types(edge_allowlist, "edge_allowlist")
+    check_edge_list_cell_types(edge_denylist, "edge_denylist")
+
     selected_colData <- colData(cds) %>%
         tibble::as_tibble() %>%
         dplyr::select(cell, !!sym(sample_group), !!sym(cell_group), subassembly_group, cell_state)
