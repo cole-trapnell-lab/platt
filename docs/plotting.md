@@ -52,7 +52,7 @@ The function `plot_degs`:
 * `cell_state_graph`
 * `deg_table`
 
-_To see how to run DEGs to make a deg_table, see our [DEG page](https://cole-trapnell-lab.github.io/platt/deg/)._
+_To see how to run DEGs to make a deg_table, see our [Perturbation DEGs page](https://cole-trapnell-lab.github.io/platt/perturbation_degs/)._
 
 ```
 plot_degs(notochord_state_graph, lmx1b_degs %>% filter(gene_short_name == "col2a1a"), node_size = 4.5, fc_limits = c(-1,1))

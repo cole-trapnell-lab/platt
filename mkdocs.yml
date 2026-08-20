@@ -1,14 +1,16 @@
 site_name: Platt
 site_author: Maddy Duran
-site_url: https://cole-trapnell-lab.github.io/platt
+site_url: https://cole-trapnell-lab.github.io/platt/v2/
 nav:
   - Overview: index.md
   - Background: background.md
   - Installation: install.md
   - Kinetics: kinetics.md
   - Graphs: graphs.md
-  - DEGs: deg.md
-  - DvEGs: dveg.md
+  - Reference DEGs: wt_degs.md
+  - Perturbation DEGs: perturbation_degs.md
+  - Gene patterns: patterns.md
+  - Phenotyping: phenotyping.md
   - Plotting: plotting.md
   - Reference: reference.md
 
