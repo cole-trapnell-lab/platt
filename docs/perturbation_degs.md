@@ -64,7 +64,7 @@ _(chosen to show a spread across `empirical_p`, rather than the literal first ro
 _Pax3a_ is a MLP gene observed in paraxial mesoderm progenitors as they commit to either head and neck mesoderm or fast muscle fates. 
 
 ```
-plot_gene_expr(muscle_state_graph, genes = c("pax3a"), node_size = 4, plot_labels = F) + 
+plot_gene_expression(muscle_state_graph, genes = c("pax3a"), node_size = 4, plot_labels = F) + 
   theme(legend.position = "right")
 ```
 

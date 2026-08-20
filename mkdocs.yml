@@ -9,7 +9,6 @@ nav:
   - Graphs: graphs.md
   - Reference DEGs: wt_degs.md
   - Perturbation DEGs: perturbation_degs.md
-  - Gene patterns: patterns.md
   - Phenotyping: phenotyping.md
   - Plotting: plotting.md
   - Reference: reference.md

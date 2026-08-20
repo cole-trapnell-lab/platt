@@ -110,10 +110,6 @@ Generates a plot of cell state graphs with various customization options.
 
 Plots gene expression data on a cell state graph.
 
-[`plot_gene_expr()`](plot_gene_expr)
-
-Deprecated: use `plot_gene_expression()` instead.
-
 [`plot_abundance_changes()`](plot_abundance_changes)
 
 Generates a plot to visualize changes in cell state abundances.

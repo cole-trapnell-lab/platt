@@ -35,14 +35,14 @@ The function `plot_gene_expr`:
 * `aggregate` - whether to sum the genes in the genes list
 
 ```
-plot_gene_expr(notochord_state_graph, genes=c("lmx1bb", "lmx1ba")) 
+plot_gene_expression(notochord_state_graph, genes=c("lmx1bb", "lmx1ba")) 
 ```
 
 ![](assets/noto_expr_lmx1bb.png)
 
 
 ```
-plot_gene_expr(notochord_state_graph, genes=c("lmx1bb", "lmx1ba"), aggregate = T) 
+plot_gene_expression(notochord_state_graph, genes=c("lmx1bb", "lmx1ba"), aggregate = T) 
 ```
 ![](assets/noto_expr_lmx1bba.png){width=75%}
 

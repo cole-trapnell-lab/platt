@@ -6,7 +6,7 @@ Finding regulatory genes with fate-restricted patterns may help identify new gen
 
 ![](assets/degs_over_graph.png)
 
-_See an explanation of gene patterns [here](https://cole-trapnell-lab.github.io/platt/patterns/):_
+_See an explanation of gene patterns [below](#gene-expression-patterns):_
 
 The function `compare_genes_over_graph()`:
 
@@ -62,7 +62,7 @@ plot_cells(pf_ccs@cds, genes = c("emilin3a"))
 ... or on our platt graph:
 
 ```
-plot_gene_expr(pf_cell_state_graph, genes = c("emilin3a"))
+plot_gene_expression(pf_cell_state_graph, genes = c("emilin3a"))
 ```
 
 ![](assets/pf_graph_emilin3a.png){width=75%}
@@ -100,6 +100,23 @@ condensate_genes = compare_genes_in_cell_state(cell_state = "pectoral fin conden
 ```
 
 _For the perturbation side of DEG calling — contrasting a perturbation against controls within each cell state, plus filtering artifact calls with empirical FDR — see our [Perturbation DEGs page](https://cole-trapnell-lab.github.io/platt/perturbation_degs/)._
+
+## Gene expression patterns
+
+![](assets/gene_patterns.png)
+
+Patterns:
+
+* **Activated**: expressed in self, but not in parent, no siblings
+* **Deactivated**: not expressed in self, expressed in parent, no siblings
+* **Upregulated**: expressed in self, expressed in parent, no siblings, higher than parent
+* **Downregulated**: expressed in self, expressed in parent, no siblings, lower than parent
+* **Maintained**: expressed in self, expressed in parents, no siblings, same as parent
+
+Prefixes:
+
+* **Specifically**: pattern is present in only one of the daughter cell types
+* **Selectively**: pattern is present in two or more of the daughter cell types but not all
 
 ## References
 1.	Hobert, O. Terminal selectors of neuronal identity. Curr. Top. Dev. Biol. 116, 455–475 (2016).
