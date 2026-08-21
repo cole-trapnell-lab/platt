@@ -14,7 +14,7 @@ The function `compare_genes_within_state_graph()`:
 For this example we will be using a subset of the skeletal muscle, for which we have 510,093 reference cells: 
 
 ```
-platt:::plot_annotations(muscle_state_graph, plot_labels = T, node_size = 4)
+plot_annotations(muscle_state_graph, plot_labels = T, node_size = 4)
 
 ```
 ![](assets/muscle_anno.png){width=75%}

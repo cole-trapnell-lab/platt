@@ -141,7 +141,7 @@ cluster_wt_graph = run_wildtype_assembly(cds,
 
 ```
 
-cluster_mt_graph = platt:::run_perturbation_assembly(cds,
+cluster_mt_graph = run_perturbation_assembly(cds,
                                    wt_graph = cluster_wt_graph,
                                    partition_name = "pectoral fin",
                                    sample_group = "embryo",
@@ -155,7 +155,7 @@ cluster_mt_graph = platt:::run_perturbation_assembly(cds,
 
 ```
 
-_`run_perturbation_assembly()` isn't exported from `platt`, so it's called with `platt:::`. If there's no perturbation data to fit, it just returns the wild-type graph back._
+_If there's no perturbation data to fit, `run_perturbation_assembly()` just returns the wild-type graph back._
 
 ...then contract the cluster-level graph, and use it as an edge prior for a graph built on cell types... 
 
@@ -179,7 +179,7 @@ cell_type_wt_graph = run_wildtype_assembly(cds,
                                    num_threads = 6,
                                    batch_col = "expt")
 
-cell_type_mt_graph = platt:::run_perturbation_assembly(cds,
+cell_type_mt_graph = run_perturbation_assembly(cds,
                                    wt_graph = cell_type_wt_graph,
                                    partition_name = "pectoral fin",
                                    sample_group = "embryo",

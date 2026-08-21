@@ -73,7 +73,7 @@ _For more information about plotting on a Platt graph, see our [plotting page](h
 
 `compare_genes_over_graph()` classifies every cell state in the graph by calling `compare_genes_in_cell_state()` once per node — it looks up that node's parents, children, and siblings in the `state_graph`, and compares expression at the node to each of those neighbors to decide whether a gene looks selectively activated, restricted to progenitors, excluded from a fate, and so on.
 
-Because `compare_genes_in_cell_state()` needs the coefficient matrices that `compare_genes_over_graph()` fits across the whole graph (via the unexported `collect_coefficients_for_shrinkage()` helper), most users will never call it directly — you get its output for free from `compare_genes_over_graph()`. Reach for it yourself if you already have `estimate_matrix`/`stderr_matrix` in hand (for example, kept around from a prior model fit) and want to re-examine or reclassify a single cell state — say, with a different `log_fc_thresh` or `sig_thresh` — without refitting every gene model in the graph:
+Because `compare_genes_in_cell_state()` needs the coefficient matrices that `compare_genes_over_graph()` fits across the whole graph (via the `collect_coefficients_for_shrinkage()` helper), most users will never call it directly — you get its output for free from `compare_genes_over_graph()`. Reach for it yourself if you already have `estimate_matrix`/`stderr_matrix` in hand (for example, kept around from a prior model fit) and want to re-examine or reclassify a single cell state — say, with a different `log_fc_thresh` or `sig_thresh` — without refitting every gene model in the graph:
 
 * `cell_state` - the cell state to classify
 * `state_graph` - an `igraph` object
@@ -88,7 +88,7 @@ pb_cds = hooke:::pseudobulk_ccs_for_states(pf_ccs, cell_agg_fun = "sum")
 pb_models = monocle3::fit_models(pb_cds, model_formula_str = "~ 0 + cell_group", cores = 4) %>%
   dplyr::select(gene_short_name, id, model, model_summary, status)
 
-pb_coeffs = platt:::collect_coefficients_for_shrinkage(pb_cds, pb_models, 
+pb_coeffs = collect_coefficients_for_shrinkage(pb_cds, pb_models, 
                                                        abs_expr_thresh = 1e-3, 
                                                        term_to_keep = "cell_group")
 
