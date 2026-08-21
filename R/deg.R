@@ -523,7 +523,7 @@ select_genes_for_deg <- function(expr_over_thresh,
 #' # Assuming `state_graph` is a pre-defined igraph object and `cell_state` is a valid node in the graph
 #' parents <- get_parents(state_graph, cell_state)
 #' print(parents)
-#' @noRd
+#' @export
 get_parents <- function(state_graph, cell_state) {
   graph_obj <- coerce_state_graph(state_graph)
   if (!cell_state %in% igraph::V(graph_obj)$name) {
@@ -578,7 +578,7 @@ get_all_parents <- function(state_graph, cell_state, visited = character()) {
 #' @param cell_state A vertex in the state graph for which to find the children.
 #' @return A character vector of the names of the children of the given cell state. If there are no children, an empty character vector is returned.
 #' @import igraph
-#' @noRd
+#' @export
 get_children <- function(state_graph, cell_state) {
   graph_obj <- coerce_state_graph(state_graph)
   if (!cell_state %in% igraph::V(graph_obj)$name) {
@@ -603,7 +603,7 @@ get_children <- function(state_graph, cell_state) {
 #' @return A character vector of sibling states. If the cell state has no parents, an empty vector is returned.
 #'
 #' @import igraph
-#' @noRd
+#' @export
 get_siblings <- function(state_graph, cell_state) {
   parents <- get_parents(state_graph, cell_state)
   if (length(parents) > 0) {
