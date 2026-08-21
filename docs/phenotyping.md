@@ -90,7 +90,7 @@ If you want more control over the plot — for instance, restricting to a subset
 * `map` - a named list mapping the phenotype roles (`lfc`, `q`, `ident`, `glyph`, `f1`-`f4`) to columns in `phenos_df`
 * `node_overlay` - `"glyphs"` (the default) to draw the identity glyphs on each node, or `"none"` to suppress them
 * `cell_types` - restrict the plot to a subset of cell states
-* `show_node_labels`
+* `show_node_labels` - if `TRUE` and `label_cell_types` is left unset, label every node
 
 ```
 plot_phenotypes_glyphs(muscle_state_graph, 

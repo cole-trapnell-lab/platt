@@ -26,7 +26,7 @@ A character vector of unique ancestor parent node names.
 
 ## Details
 
-`get_all_parents()` is the exported, recursive counterpart of the internal (non-exported) `get_parents()` helper. Where `get_parents()` returns only the immediate parent(s) of a cell state, `get_all_parents()` walks all the way up the graph to return every upstream ancestor, guarding against cycles by tracking which nodes have already been visited.
+`get_all_parents()` is the recursive counterpart of [`get_parents()`](get_parents). Where `get_parents()` returns only the immediate parent(s) of a cell state, `get_all_parents()` walks all the way up the graph to return every upstream ancestor, guarding against cycles by tracking which nodes have already been visited.
 
 ## Examples
 

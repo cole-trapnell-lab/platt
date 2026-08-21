@@ -38,3 +38,5 @@ devtools::install_github("cole-trapnell-lab/platt", ref="develop")
 ```
 See our [Github repository](https://github.com/cole-trapnell-lab/platt) for more details.
 
+_Next: see [Kinetics](https://cole-trapnell-lab.github.io/platt/kinetics/) to fit your first wild-type and perturbation kinetic models._
+

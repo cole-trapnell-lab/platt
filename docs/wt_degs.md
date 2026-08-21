@@ -15,13 +15,15 @@ The function `compare_genes_over_graph()`:
 * `gene_ids` - a list of genes to subset the analysis to 
 * `cores` - number of cores 
 
+Under the hood, every gene at every cell state is fit against its parent(s), children, and siblings (via `compare_genes_in_cell_state()`, below) and classified using three thresholds you can also override here: `log_fc_thresh` (how large a log-fold-change counts as a real difference, default `1`), `abs_expr_thresh` (the minimum expression level to call a gene "expressed" at all, default `1e-3`), and `sig_thresh` (the p-value cutoff for calling a comparison significant, default `0.05`). Those three thresholds are what ultimately decide whether a gene is called activated, maintained, excluded, and so on.
+
 ```
 pf_graph_degs = compare_genes_over_graph(pf_ccs,
                                          pf_cell_state_graph@graph, 
                                          cores = 4)
 ```
 
-The output of this table will look like this: 
+`compare_genes_over_graph()` returns one row per cell state in the graph, with the classification results for every gene tested at that state nested into a `gene_class_scores` tibble:
 
 | cell_state                     | gene_class_scores         |
 |--------------------------------|---------------------------|
@@ -50,6 +52,12 @@ pf_graph_degs %>%
 | pectoral fin condensate | ENSDARG000000116…  | `<tibble>` | Selectively activated      | 1.19                   | slc26a2         |
 | pectoral fin condensate | ENSDARG000000124…  | `<tibble>` | Selectively activated      | 3.77                   | col11a2         |
 | pectoral fin condensate | ENSDARG000000309…  | `<tibble>` | Selectively activated      | 2.00                   | mybl1           |
+
+A few of these columns are worth calling out:
+
+* `data` - the per-comparison statistics backing the call (log-fold-changes and p-values against the parent/children/siblings that were compared)
+* `interpretation` - the pattern label assigned to this gene at this cell state; these are the same category names defined in [Gene expression patterns](#gene-expression-patterns) below
+* `pattern_activity_score` - a magnitude for how strongly the pattern holds (e.g. for an "activated" call, how much higher expression is in this state than in its parent) — bigger isn't just "more significant," it's "more pronounced," which is why the example above filters on both `pattern_activity_score > 1` and a specific `interpretation`
 
 We can check some of these markers by plotting them either in the UMAP space:
 
@@ -99,13 +107,15 @@ condensate_genes = compare_genes_in_cell_state(cell_state = "pectoral fin conden
                                                n = ncol(pb_cds))
 ```
 
+`condensate_genes` is a single-cell-state slice of the same `gene_class_scores` tibble you'd get nested under `"pectoral fin condensate"` in `compare_genes_over_graph()`'s output — same `interpretation`/`pattern_activity_score` columns described above, just for one state instead of the whole graph.
+
 _For the perturbation side of DEG calling — contrasting a perturbation against controls within each cell state, plus filtering artifact calls with empirical FDR — see our [Perturbation DEGs page](https://cole-trapnell-lab.github.io/platt/perturbation_degs/)._
 
 ## Gene expression patterns
 
 ![](assets/gene_patterns.png)
 
-Patterns:
+These are the base pattern names that show up in the `interpretation` column above. Each one describes how a gene's expression at a cell state compares to its parent:
 
 * **Activated**: expressed in self, but not in parent, no siblings
 * **Deactivated**: not expressed in self, expressed in parent, no siblings
@@ -123,3 +133,5 @@ Prefixes:
 2.	Laslo, P. et al. Multilineage transcriptional priming and determination of alternate hematopoietic cell fates. Cell 126, 755–766 (2006).
 3.	Qiu, C. et al. Systematic reconstruction of cellular trajectories across mouse embryogenesis. Nat. Genet. 54, 328–341 (2022).
 4.	Packer, J. S. et al. A lineage-resolved molecular atlas of C. elegans embryogenesis at single-cell resolution. Science 365, (2019).
+
+_Next: see [Perturbation DEGs](https://cole-trapnell-lab.github.io/platt/perturbation_degs/) to contrast a perturbation against controls within each cell state._

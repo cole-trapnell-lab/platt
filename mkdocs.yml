@@ -3,7 +3,6 @@ site_author: Maddy Duran
 site_url: https://cole-trapnell-lab.github.io/platt/v2/
 nav:
   - Overview: index.md
-  - Background: background.md
   - Installation: install.md
   - Kinetics: kinetics.md
   - Graphs: graphs.md
@@ -11,6 +10,7 @@ nav:
   - Perturbation DEGs: perturbation_degs.md
   - Phenotyping: phenotyping.md
   - Plotting: plotting.md
+  - Background: background.md
   - Reference: reference.md
 
 theme:
@@ -19,8 +19,9 @@ theme:
     accent: teal
   name: material
   language: en
-  features: 
+  features:
     - content.code.copy
+    - toc.integrate
 #  logo: assets/ben_logo_embryo.png
 
 repo_url: https://github.com/cole-trapnell-lab/platt

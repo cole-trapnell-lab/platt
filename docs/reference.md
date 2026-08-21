@@ -40,9 +40,21 @@ Fits the wild-type model and assembles a state transition graph for a partition 
 
 Simplifies a directed state transition graph by contracting nodes according to a specified grouping variable.
 
+[`get_parents()`](get_parents)
+
+Retrieves the immediate parent node(s) of a given cell state in a state graph.
+
 [`get_all_parents()`](get_all_parents)
 
 Recursively retrieves all upstream ancestor parents for a given cell state in a state graph.
+
+[`get_children()`](get_children)
+
+Retrieves the children of a given cell state in a state graph.
+
+[`get_siblings()`](get_siblings)
+
+Retrieves the sibling states — those sharing the same parent — of a given cell state in a state graph.
 
 ### DEG functions
 

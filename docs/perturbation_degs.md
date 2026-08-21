@@ -9,7 +9,9 @@ The function `compare_genes_within_state_graph()`:
 * `control_ids` - list of control ids 
 * `cell_groups` - subset of cell groups to run DEGs on 
 * `perturbations` - defaults to perturbation
-* `cores`
+* `cores` - number of cores to use for parallel processing
+
+Within each cell type, this fits a perturbation-vs-control contrast per gene and calls it using the same three thresholds as the [Reference DEGs](https://cole-trapnell-lab.github.io/platt/wt_degs/) side: `log_fc_thresh` (default `1`), `abs_expr_thresh` (default `1e-3`), and `sig_thresh` (default `0.05`) — but there, they classify a gene's pattern *across the graph*; here, they decide whether a single perturbation-vs-control contrast counts as a call.
 
 For this example we will be using a subset of the skeletal muscle, for which we have 510,093 reference cells: 
 
@@ -42,7 +44,7 @@ genes_within_cell_state %>% head()
 
 _Row counts differ per cell type because they reflect the number of genes admitted for that cell state (after expression filtering), not a fixed panel size. The table now also carries the empirical-FDR columns described below, alongside the original per-contrast statistics — hence the wider `40`-column tibble._
 
-The results are nested by cell type. To look at a specific knockout term, you can unnest the dataframe and filter: 
+The results are nested two levels deep: `genes_within_cell_group` (one row per cell type, unnested first below) resolves to one row per `term` — `term` names which of the `perturbations` above (`"tbx16"`, `"tbx16-msgn1"`, `"tbx16-tbx16l"`) that row's contrast is for — and each `term` row carries its own nested `perturb_effects` tibble with the per-gene statistics for that contrast, unnested second below. To look at a specific knockout term, you can unnest the dataframe and filter: 
 
 ```
 genes_within_cell_state = genes_within_cell_state %>% tidyr::unnest(genes_within_cell_group)
@@ -60,6 +62,8 @@ genes_within_cell_state %>% filter(term == "tbx16,msgn1") %>% tidyr::unnest(pert
 | tbx16,msgn1 | paraxial mesoderm (tbx16+)     | ENSDARG00000060002   | ogg1              | 0.304                 | 0.327                | 0.608 |
 
 _(chosen to show a spread across `empirical_p`, rather than the literal first rows in file order; showing a subset of columns — the full table also carries `mean_log_sf`, `ctrl_log_sf`, `detected_genes`, `ctrl_detected_genes`, `perturb_to_ctrl_raw_lfc`, `perturb_to_ctrl_p_value`, `log_mean_expression`, `effect_skew`, `coefficient_mode`, and the arm-support columns discussed below)_
+
+`perturb_to_ctrl_shrunken_lfc` is an empirical-Bayes-shrunken version of the raw log-fold-change (`perturb_to_ctrl_raw_lfc`) — genes with noisy or low-confidence estimates get pulled toward zero, so a large shrunken LFC is a more trustworthy signal than the same-sized raw LFC would be. It's the fold-change `plot_degs()` colors nodes by, below, and what the empirical-FDR model (further down this page) is calibrated against.
 
 _Pax3a_ is a MLP gene observed in paraxial mesoderm progenitors as they commit to either head and neck mesoderm or fast muscle fates. 
 
@@ -97,7 +101,7 @@ _For the reference (wild-type) side of DEG calling — pattern classification ov
 
 ## Filtering artifact calls with empirical FDR
 
-Most of our perturbation screens are **control-heavy**: many more control embryos than knockout embryos per gene target. That asymmetry has a side effect on `perturb_to_ctrl_p_value` — for a lowly-expressed gene, the deep control arm can detect a transcript that the shallow perturbation arm simply misses by chance, which the model reads as a significant "down" call. It looks exactly like a real loss of expression, but it's a sampling artifact of how much data each arm has, not biology.
+Most of our perturbation screens are **control-heavy**: many more control embryos than knockout embryos per gene target. That asymmetry has a side effect on `perturb_to_ctrl_p_value` — for a lowly-expressed gene, the deep control arm can detect a transcript that the thin perturbation arm simply misses by chance, which the model reads as a significant "down" call. It looks exactly like a real loss of expression, but it's a sampling artifact of how much data each arm has, not biology.
 
 Diagnosing this under the null (no real perturbation effect) shows the artifact tracks **contrast imbalance**, not low expression on its own — it's specifically low-expression genes *combined with* a control-heavy design that inflate the false "down" call rate:
 
@@ -133,7 +137,7 @@ The per-embryo data behind these two calls makes the difference obvious: _pax3a_
 
 ![](assets/efdr_pax3a_irg1l_boxplot.png){width=90%}
 
-**What `empirical_fdr` means here** is a different thing from `empirical_p`, and worth being precise about since the column name is reused for two different computations on this page: for `annotate_empirical_fdr()` above, `empirical_fdr` was the raw rate-based quantity (null-stratum call rate ÷ observed call rate). Here, in the model-based tables, `empirical_fdr` is a **Benjamini-Hochberg-adjusted q-value computed from `empirical_p`, within each `cell_group`** — the usual multiple-testing correction, just built on top of the artifact-aware p-value instead of the raw one. So `empirical_p < 0.05` asks "is this one gene's call real, artifact-adjusted?", while `empirical_fdr < 0.1` asks "if I call every gene in this cell type below this threshold, what fraction of that whole called set is expected to be false?" — the standard per-gene-test vs. whole-list-error-rate distinction. _pax3a_'s `empirical_fdr = 0.053` says: among all genes called at that same stringency in that cell type, ~5% are expected to be false — reassuring at the list level, not just the single-gene level.
+**What `empirical_fdr` means here** is a different thing from `empirical_p`, and worth being precise about since the column name is reused for two different computations on this page: for `annotate_empirical_fdr()` above, `empirical_fdr` was the raw rate-based quantity (null-stratum call rate ÷ observed call rate). Here, in the model-based tables, `empirical_fdr` is **not** a BH adjustment of the already-combined `empirical_p` — the per-gene maximum floors every gene's combined p near the permutation resolution, which compresses the p-distribution so badly that BH would crush even genuine hits. Instead, `p_ashr` and `p_tail` are each BH-adjusted separately within `cell_group`, and the max of the two resulting q-values is taken: `empirical_fdr = max(BH(p_ashr), BH(p_tail))`. A gene must still clear both criteria at the FDR level — the intersection of the two FDR-controlled call sets — but the ordinary-significance q, which is genuinely small for real hits, is no longer discarded by an up-front per-gene maximum. So `empirical_p < 0.05` asks "is this one gene's call real, artifact-adjusted?", while `empirical_fdr < 0.1` asks "if I call every gene in this cell type below this threshold, what fraction of that whole called set is expected to be false?" — the standard per-gene-test vs. whole-list-error-rate distinction. _pax3a_'s `empirical_fdr = 0.053` says: among all genes called at that same stringency in that cell type, ~5% are expected to be false — reassuring at the list level, not just the single-gene level.
 
 The correction is worth trusting because it's calibrated: held out against a control-split null (no real perturbation effect), the ordinary p-value's false-positive rate balloons at low expression, while `empirical_p` stays close to the nominal 5% across the board.
 
@@ -190,3 +194,5 @@ This is the same computation that produces the `empirical_p`/`empirical_fdr` col
 _A documentation gap worth knowing about: `build_empirical_null()`'s documented return columns (`cell_group`, `log_mean_expression`, `z`, `log_ratio`) don't list `n_pert_cells`, even though `train_efdr_model()`'s own docs say its `null` input needs one. If you hit a missing-column error wiring these two together, that's why — check the current source rather than assuming the docs above are complete._
 
 _For the full argument list of each of these functions, see their reference pages: [`efdr_perturbation_support()`](https://cole-trapnell-lab.github.io/platt/reference/efdr_perturbation_support), [`build_empirical_null()`](https://cole-trapnell-lab.github.io/platt/reference/build_empirical_null), [`train_efdr_model()`](https://cole-trapnell-lab.github.io/platt/reference/train_efdr_model), and [`annotate_empirical_fdr_model()`](https://cole-trapnell-lab.github.io/platt/reference/annotate_empirical_fdr_model)._
+
+_Next: see [Phenotyping](https://cole-trapnell-lab.github.io/platt/phenotyping/) to turn these per-gene DEG calls into cell-state-level phenotype summaries._

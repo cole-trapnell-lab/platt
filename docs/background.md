@@ -31,3 +31,5 @@ Platt is implemented using the PLNmodels package. PLN models are a multivariate 
 2. [J. Chiquet, M. Mariadassou and S. Robin: Variational inference for sparse network reconstruction from count data, Proceedings of the 36th International Conference on Machine Learning (ICML), 2019.](http://proceedings.mlr.press/v97/chiquet19a.html)
 
 3. [J. Chiquet, M. Mariadassou and S. Robin: Variational inference for probabilistic Poisson PCA, the Annals of Applied Statistics, 12: 2674–2698, 2018.](http://dx.doi.org/10.1214/18%2DAOAS1177")
+
+_Next: see the [Reference](https://cole-trapnell-lab.github.io/platt/reference/) page for the complete function listing._
