@@ -197,6 +197,7 @@ connect_hidden_nodes_for_layers <- function(G_with_hidden, layers) {
     # next_layer_head_ids <- as.numeric(next_layer_head_nodes)
 
     num_heads <- length(next_layer_head_nodes)
+    if (num_heads == 0) next # no hidden head nodes in the next layer to connect to
 
     for (j in seq_along(current_layer_tail_nodes)) {
       tail_n <- current_layer_tail_nodes[j]
@@ -1232,6 +1233,8 @@ plot_state_abundance_changes <- function(...) {
 #' @param log_expr If TRUE, the expression values will be log-transformed
 #' @param pseudocount Pseudocount to add when log-transforming expression data. Default is 1e-5.
 #' @param expr_limits Numeric vector of length 2 specifying the limits for expression values. Default is NULL.
+#' @param frac_limits Numeric vector of length 2 specifying the limits for the fraction-expressing size scale. Default is c(0, 1), so size is comparable across separately-rendered plots.
+#' @param size_range Numeric vector of length 2 specifying the min/max physical point size (in mm) nodes are drawn at. Default is c(1, 5).
 #' @param group_label_size Numeric value for the font size of group labels. Default is 1.
 #'
 #' @return A ggplot2 object representing the gene expression on the cell state graph.
@@ -1265,6 +1268,8 @@ plot_gene_expression <- function(cell_state_graph,
                                  log_expr = FALSE,
                                  pseudocount = 1e-5,
                                  expr_limits = NULL,
+                                 frac_limits = c(0, 1),
+                                 size_range = c(1, 5),
                                  group_label_size = 1) {
   if (scale_to_range && aggregate) {
     message("Warning: scale_to_range is not compatible with aggregate. Setting scale_to_range to FALSE.")
@@ -1408,7 +1413,7 @@ plot_gene_expression <- function(cell_state_graph,
     scale_fill_viridis_c(limits = expr_limits) +
     ggnetwork::theme_blank() +
     scale_size_identity() +
-    scale_size(range = c(1, 5)) +
+    scale_size(range = size_range, limits = frac_limits) +
     hooke_theme_opts() + theme(legend.position = legend_position)
 
   if (plot_labels) {
@@ -1416,7 +1421,12 @@ plot_gene_expression <- function(cell_state_graph,
       data = g %>% select(x, y, name) %>% distinct(),
       aes(x, y, label = name),
       size = label_size,
-      color = I("black")
+      color = I("black"),
+      box.padding = 0.5,
+      max.overlaps = Inf,
+      min.segment.length = 0,
+      segment.color = "grey50",
+      segment.size = 0.25
     )
   }
 
@@ -1424,8 +1434,10 @@ plot_gene_expression <- function(cell_state_graph,
   if (scale_to_range) fill_title <- paste("Rel.", fill_title)
   if (log_expr) fill_title <- paste("log10(", fill_title, "+", pseudocount, ")")
   p <- p +
-    guides(fill = guide_colourbar(title = fill_title)) +
-    labs(size = "Fract. of Cells") +
+    guides(
+      size = guide_legend(title = "Fract. of Cells", order = 1),
+      fill = guide_colourbar(title = fill_title, order = 2)
+    ) +
     facet_wrap(~gene_short_name)
   x_range <- range(g$x) + c(-node_size * 1.2, node_size * 1.2)
   y_range <- range(g$y) + c(-node_size * 1.2, node_size * 1.2)
@@ -1784,21 +1796,22 @@ plot_perturb_effects <- function(cell_state_graph,
                                  arrow_unit = 7,
                                  node_size = 2,
                                  arrow_color = "darkgrey",
+                                 box_color = "lightgrey",
                                  fract_expr = 0.0,
                                  mean_expr = 0.0,
                                  legend_position = "none",
+                                 group_label_size = 4,
+                                 gene_label_size = 2,
                                  plot_labels = T) {
-  num_top_genes <- 3
   node_support_df <- igraph::as_data_frame(cell_state_graph@graph, what = "vertices") %>%
     tibble::as_tibble() %>%
     rename(id = name)
 
   g <- cell_state_graph@g
   bezier_df <- cell_state_graph@layout_info$bezier_df
+  grouping_df <- cell_state_graph@layout_info$grouping_df
 
   perturbation_table <- cell_state_graph@genetic_requirements
-  perturbation_table <- perturbation_table %>%
-    mutate(name = sapply(strsplit(id, "-"), `[`, 2))
 
   perturbation_table <- perturbation_table %>%
     group_by(id) %>%
@@ -1808,6 +1821,7 @@ plot_perturb_effects <- function(cell_state_graph,
       perturb_effect == "predicted" ~ glue::glue("<i style='color:#F8333C'>{perturb_name}</i>"),
       TRUE ~ glue::glue("<i style='color:#44AF69'>{perturb_name}</i>")
     )) %>%
+    arrange(match(perturb_effect, c("direct", "indirect", "predicted")), .by_group = TRUE) %>%
     summarize(perturb_effect_label = ifelse(n() > num_top_genes,
       paste0(c(perturb_display_name[1:num_top_genes], paste("+", n() - num_top_genes, " more", sep = "")), collapse = "<br>"),
       paste0(perturb_display_name, collapse = "<br>")
@@ -1816,8 +1830,22 @@ plot_perturb_effects <- function(cell_state_graph,
 
   g <- left_join(g, perturbation_table, by = c("name" = "id"), relationship = "many-to-many")
 
+  # group boxes + big colored group-name labels, same layout data as
+  # plot_annotations() -- only drawn when grouping is more than 1 node/group
+  has_groups <- is.null(grouping_df) == FALSE &&
+    identical(grouping_df$group_nodes_by, grouping_df$id) == FALSE
 
-  g <- g %>% mutate(label_nodes_by = perturb_effect_label)
+  y_plot_range <- max(g$y)
+  group_label_position_df <- g %>%
+    dplyr::select(x, y, group_nodes_by) %>%
+    dplyr::distinct() %>%
+    dplyr::group_by(group_nodes_by) %>%
+    dplyr::summarize(x = mean(x), y = max(y) + y_plot_range * 0.02)
+
+  num.colors <- g[["color_nodes_by"]] %>%
+    unique() %>%
+    length()
+  group_colors <- hooke:::get_colors(num.colors, type = "vibrant")
 
   p <- ggplot(aes(x, y), data = g) +
     ggplot2::geom_path(aes(x, y, group = edge_name),
@@ -1831,11 +1859,23 @@ plot_perturb_effects <- function(cell_state_graph,
       linejoin = "mitre"
     )
 
+  if (has_groups) {
+    p <- p + ggforce::geom_mark_rect(
+      aes(x, y, group = group_nodes_by, fill = color_nodes_by, color = I(box_color)),
+      size = 0.25,
+      alpha = 0.15,
+      radius = unit(0.5, "mm"),
+      expand = unit(1, "mm"),
+      con.type = "straight",
+      con.colour = box_color,
+      con.size = 0.25,
+      con.border = "one",
+      na.rm = TRUE,
+      data = g
+    )
+  }
+
   p <- p +
-    ggnewscale::new_scale_fill() +
-    # ggnetwork::geom_nodes(data = g,
-    #                       aes(x, y) ,
-    #                       color=I("black"), size=node_size*1.2) +
     ggnetwork::geom_nodes(
       data = g,
       mapping = aes(x, y, fill = color_nodes_by),
@@ -1843,26 +1883,45 @@ plot_perturb_effects <- function(cell_state_graph,
       color = I("black"),
       size = node_size
     ) +
+    scale_fill_manual(values = group_colors) +
     ggnetwork::theme_blank() +
     hooke_theme_opts() +
     scale_size_identity() +
     theme(legend.position = legend_position)
 
+  if (has_groups) {
+    p <- p + ggnewscale::new_scale_color() +
+      geom_text(
+        data = group_label_position_df,
+        aes(x, y, label = group_nodes_by, color = group_nodes_by),
+        size = group_label_size,
+        fontface = "bold",
+        show.legend = FALSE
+      ) +
+      scale_color_manual(values = group_colors)
+  }
+
   p <- p + annotate(
-    geom = "richtext", x = 0.15 * max(g$xend), y = 0.01 * max(g$yend),
+    geom = ggtext::GeomRichText, x = 0.15 * max(g$xend), y = 0.01 * max(g$yend),
     size = 2,
     fill = NA, label.color = NA,
     label = "<i style='color:#2B9EB3'>direct</i> <i style='color:#FCAB10'>indirect</i> <i style='color:#F8333C'>predicted</i> <i style='color:#44AF69'>other</i> "
   )
 
-  p <- p + guides(color = guide_colourbar(title = "log2(fc)"))
-
   if (plot_labels) {
-    p <- p + ggrepel::geom_text_repel(
-      data = g %>% select(x, y, name) %>% distinct(),
-      aes(x, y, label = name),
-      color = I("black"),
-      box.padding = 0.5
+    p <- p + ggtext::geom_richtext(
+      data = g %>%
+        select(x, y, perturb_effect_label) %>%
+        filter(!is.na(perturb_effect_label)) %>%
+        distinct(),
+      aes(x, y, label = perturb_effect_label),
+      size = gene_label_size,
+      nudge_x = node_size * 0.9,
+      nudge_y = node_size * 0.4,
+      fill = "white",
+      label.color = box_color,
+      label.size = 0.25,
+      label.padding = unit(c(1, 1, 1, 1), "pt")
     )
   }
 
