@@ -56,6 +56,18 @@ Retrieves the children of a given cell state in a state graph.
 
 Retrieves the sibling states — those sharing the same parent — of a given cell state in a state graph.
 
+[`get_descendants()`](get_descendants)
+
+Recursively retrieves every downstream descendant of a given cell state in a state graph.
+
+[`get_roots()`](get_roots)
+
+Finds the root node(s) — origins with no incoming edges — of a cell state's connected component in a state graph.
+
+[`get_perturbation_paths()`](get_perturbation_paths)
+
+Finds and scores paths from a perturbation's gained/parentless-lost cell groups to its lost cell groups on a pathfinding graph.
+
 ### DEG functions
 
 [`compare_genes_over_graph()`](compare_genes_over_graph)
@@ -94,11 +106,25 @@ Trains the empirical-FDR null model (2-D tail surfaces over expression x thin-ar
 
 Annotates a DEG table with per-gene `empirical_p`/`empirical_fdr` using a trained `efdr_model` — the fuller, arm-size-conditioned version of `annotate_empirical_fdr()`.
 
+### Enrichment functions
+
+[`calc_gsea_enrichment_on_state_specific_genes()`](calc_gsea_enrichment_on_state_specific_genes)
+
+Runs rank-based GSEA on a single cell state's genes, ranked by their pattern activity score, against a supplied gene set table.
+
+[`calc_graph_overrep_genes()`](calc_graph_overrep_genes)
+
+Runs over-representation analysis (ORA) on the up/down-regulated genes at every cell state in a graph-wide DEG table.
+
 ### Phenotyping functions
 
 [`categorize_genetic_requirements()`](categorize_genetic_requirements)
 
 Classifies lost cell states as directly or indirectly required for a genotype, based on state graph topology.
+
+[`summarize_impact_in_lineage_context()`](summarize_impact_in_lineage_context)
+
+Builds a lineage-wide impact table from your abundance/fitness/identity calls, DEGs, and pathway enrichment — pass `llm_fun = NULL` to build it without an LLM.
 
 [`impact_to_phenos()`](impact_to_phenos)
 
@@ -111,6 +137,10 @@ Converts an impact table with `impact_to_phenos()` and renders the annotated phe
 [`plot_phenotypes_glyphs()`](plot_phenotypes_glyphs)
 
 Draws phenotype calls (abundance fill + identity glyph) on a cell state graph from a table already run through `impact_to_phenos()`.
+
+[`plot_phenotype_counts()`](plot_phenotype_counts)
+
+Summarizes an impact table as stacked bar counts of abundance/fitness/identity phenotypes per tissue.
 
 ### Plotting functions
 
@@ -129,5 +159,9 @@ Generates a plot to visualize changes in cell state abundances.
 [`plot_degs()`](plot_degs)
 
 Plots differentially expressed genes (DEGs) on a cell state graph, with customizable appearance and layout options.
+
+[`plot_deg_heatmap()`](plot_deg_heatmap)
+
+Builds a clustered heatmap of log fold changes for a supplied gene list, retaining only cell groups with a detected, significant hit among them.
 
 

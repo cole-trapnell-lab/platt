@@ -66,6 +66,40 @@ tbx16_phenos %>% select(cell_group, abundance_code, abundance_log2fc, identity_g
 
 You won't usually call `impact_to_phenos()` directly, though — `plot_phenotypes_from_impact()` calls it for you as its first step.
 
+## Building the impact table automatically, without an LLM
+
+Typing out an impact table by hand only scales to a handful of cell types. For a whole lineage, `summarize_impact_in_lineage_context()` builds the same table for you: hand it your usual DEGs, abundance results, and pathway gene sets, plus the `abundance_phenotypes` / `fitness_phenotypes` / `identity_phenotypes` calls you'd otherwise type into the table above — now covering the whole graph instead of three rows — and it walks the lineage, joins everything in per cell type, pulls out each cell type's significant DEGs and genes-of-interest, and runs pathway enrichment (`fgsea::fora()`, the same over-representation test used on the [Functional Enrichment](https://cole-trapnell-lab.github.io/platt/enrichment/) page) to fill in a `disrupted_pathways` column:
+
+* `target_gene_expression` - target-gene expression calls by cell group, used to seed which cell types get analyzed
+* `dact_results` - a differential-abundance-over-time table for the perturbation (one row per cell type)
+* `degs` - the perturbation's DEG table, e.g. `tbx16_degs` from the [Perturbation DEGs](https://cole-trapnell-lab.github.io/platt/perturbation_degs/) page
+* `ref_expression` - the reference expression table
+* `ontologies` - a named list of `msigdbr`-style gene set tables, as on the [Functional Enrichment](https://cole-trapnell-lab.github.io/platt/enrichment/) page
+* `combined_psg` - the `cell_state_graph` to traverse
+* `genes_of_interest` - a regulator/TF panel to highlight in each cell type's genes-of-interest line
+* `abundance_phenotypes`, `fitness_phenotypes`, `identity_phenotypes` - your per-cell-type calls, in the same shape described above
+* `llm_fun` - a function that asks an LLM to write a short mechanistic summary for each cell type; left at its default of `NULL`, this whole step is skipped
+* `drop_llm_columns` - drop the LLM-narrative columns from the result; they're always empty when `llm_fun` is `NULL`, so set this `TRUE` for a clean table
+
+```
+tbx16_impact_table_auto = summarize_impact_in_lineage_context(
+  target_gene_expression = tbx16_target_gene_expression,
+  dact_results           = tbx16_dact_summary_tbl,
+  degs                   = tbx16_degs,
+  ref_expression         = ref_expression,
+  ontologies             = list(BP = gene_set_BP, MF = gene_set_MF, CC = gene_set_CC),
+  combined_psg           = muscle_state_graph,
+  genes_of_interest      = regulators$gene_short_name,
+  abundance_phenotypes   = tbx16_abundance_phenotypes,
+  fitness_phenotypes     = tbx16_fitness_phenotypes,
+  identity_phenotypes    = tbx16_identity_phenotypes,
+  llm_fun                = NULL,
+  drop_llm_columns       = TRUE
+)
+```
+
+`summarize_impact_in_lineage_context()` is the same function the full narrative pipeline uses to generate per-cell-type prose (via `llm_fun`) — passing `llm_fun = NULL` is the "null model": no LLM server, Python, or `reticulate` setup required, just the deterministic abundance/identity/fitness calls and pathway enrichment. `tbx16_impact_table_auto` has the same required columns as the hand-typed `tbx16_impact_table` above (plus DEG/pathway columns `impact_to_phenos()` ignores), so it drops into `impact_to_phenos()` / `plot_phenotypes_from_impact()` the same way — just built from real data across the whole graph instead of three rows typed by hand.
+
 ## Plotting phenotype calls on the graph
 
 `plot_phenotypes_from_impact()` is the entrypoint you'll reach for most often: hand it your `cell_state_graph` and an impact table, and it converts the table with `impact_to_phenos()` and renders the annotated lineage graph in one call:
