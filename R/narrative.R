@@ -1,3 +1,25 @@
+# Load one cell type's precomputed sig_pathways.rds (fgsea marker-specificity
+# output, see cell_type_vllm.R in the sulston repo) from a directory laid out
+# as <path>/<dashed_cell_type>/sig_pathways.rds. Standalone (not nested inside
+# load_ai_precompute_for_cell_types) so callers who only want the pathway
+# restriction -- not the markdown background files -- can use it directly via
+# `sig_pathways_path` without needing the full ai_notes_path convention.
+load_sig_pathways_for_cell_type <- function(ct, sig_pathways_path) {
+  rds_path <- file.path(sig_pathways_path, blogdown:::dash_filename(ct), "sig_pathways.rds")
+  if (fs::file_exists(rds_path)) {
+    tryCatch(
+      readRDS(rds_path),
+      error = function(e) {
+        message(paste("Error loading sig_pathways.rds for", ct, ":", e$message))
+        return(NULL)
+      }
+    )
+  } else {
+    message(paste("No sig_pathways.rds file found for cell type", ct))
+    return(NULL)
+  }
+}
+
 load_ai_precompute_for_cell_types <- function(cell_types, ai_notes_path = "../../../ai_notes/cell_types/") {
   breakFun <- function(x) {
     if (nchar(x) == 0) {
@@ -16,23 +38,6 @@ load_ai_precompute_for_cell_types <- function(cell_types, ai_notes_path = "../..
     } else {
       message(paste("No", bg_type, "file found for cell type", ct))
       return(NA_character_)
-    }
-  }
-
-  # Load sig_pathways.rds for each cell type
-  read_sig_pathways <- function(ct, ai_notes_path) {
-    rds_path <- file.path(ai_notes_path, blogdown:::dash_filename(ct), "sig_pathways.rds")
-    if (fs::file_exists(rds_path)) {
-      tryCatch(
-        readRDS(rds_path),
-        error = function(e) {
-          message(paste("Error loading sig_pathways.rds for", ct, ":", e$message))
-          return(NULL)
-        }
-      )
-    } else {
-      message(paste("No sig_pathways.rds file found for cell type", ct))
-      return(NULL)
     }
   }
 
@@ -55,7 +60,7 @@ load_ai_precompute_for_cell_types <- function(cell_types, ai_notes_path = "../..
   names(ai_summary_bg) <- cell_types
 
   # Load sig_pathways.rds for each cell type
-  sig_pathways <- lapply(cell_types, read_sig_pathways, ai_notes_path = ai_notes_path)
+  sig_pathways <- lapply(cell_types, load_sig_pathways_for_cell_type, sig_pathways_path = ai_notes_path)
   names(sig_pathways) <- cell_types
 
   bg_tibble <- tibble(
@@ -326,13 +331,13 @@ dact_grounding_for <- function(ct, dact_expectations) {
 
 summarize_cell_type_impact <- function(
   ct,
-  perturbation_description,
+  perturbation_description = NULL,
   target_gene_expression,
   dact_results,
   degs,
   ref_expression,
   ontologies,
-  ai_notes_path,
+  ai_notes_path = NULL,
   sig_p_val_thresh = 0.05,
   genes_of_interest = NULL,
   empirical_p_thresh = 1.0,
@@ -342,7 +347,21 @@ summarize_cell_type_impact <- function(
   fitness_phenotypes = NULL,
   identity_phenotypes = NULL,
   dact_expectations = NULL, # per-cell literature expectation output (expectation/rationale/thinking)
-  effect_type = NULL # "Cell-autonomous" / "Non-autonomous" for this summarize pass
+  effect_type = NULL, # "Cell-autonomous" / "Non-autonomous" for this summarize pass
+  # Precomputed marker-specificity GSEA (fgsea output, one row per pathway,
+  # must have a `pathway` column) restricting which pathways fora() considers
+  # for this cell type -- the same content ai_notes_path would otherwise read
+  # from <ai_notes_path>/<dashed_ct>/sig_pathways.rds. Named list keyed by cell
+  # type; lets callers supply it directly without standing up the full
+  # ai_notes_path directory/markdown-background convention. Takes precedence
+  # over ai_notes_path for this cell type when both are supplied.
+  sig_pathways_by_cell_type = NULL,
+  # Directory of precomputed sig_pathways.rds files, one per cell type, laid
+  # out as <sig_pathways_path>/<dashed_cell_type>/sig_pathways.rds -- the same
+  # convention ai_notes_path uses, but loaded lazily per cell type and without
+  # needing any of the markdown background files ai_notes_path also expects.
+  # Checked after sig_pathways_by_cell_type and before ai_notes_path.
+  sig_pathways_path = NULL
 ) {
   # 1. Abundance change (from abundance_phenotypes if available)
   abundance_row <- if (!is.null(abundance_phenotypes)) {
@@ -405,6 +424,11 @@ summarize_cell_type_impact <- function(
   # resolves per gene and does not hit the per-cell FDR floor. Falls back to
   # nominal p when the empirical_p column is absent (undecorated tables).
   cell_type_degs <- degs %>% filter(cell_group == ct)
+  # All genes tested for this cell type (pre-significance-filter), used as the
+  # ORA background when no ancestor-specific pathway restriction is available
+  # (see `ancestor_specific_pathways` below).
+  all_tested_genes <- unique(cell_type_degs$gene_short_name)
+  all_tested_genes <- all_tested_genes[!is.na(all_tested_genes) & nzchar(all_tested_genes)]
   # Whether the abundance analysis judged this cell type reliably present in the
   # experiment (longest-contiguous window above the abundance threshold; see
   # assembly_utils.R). Captured from the full cell DEGs BEFORE the empirical_p
@@ -433,10 +457,27 @@ summarize_cell_type_impact <- function(
   # max_per_compartment is tunable (see plan open items).
   goi <- format_goi(cell_type_degs, genes_of_interest, max_per_compartment = 15)
 
-  # 5. Pathway enrichment (using precomputed or run on the fly)
-  precompute_data <- load_ai_precompute_for_cell_types(cell_types = ct, ai_notes_path = ai_notes_path)
-  pathway_background <- precompute_data$pathway_background
-  sig_pathways <- precompute_data$sig_pathways[[1]]
+  # 5. Pathway enrichment (using precomputed or run on the fly). ai_notes_path
+  # is only needed to ground the LLM prompt in ancestor-specific precomputed
+  # background/pathways; with no path supplied (e.g. no LLM in use) enrichment
+  # just runs unrestricted, same as when the precompute files are absent.
+  pathway_background <- NA_character_
+  sig_pathways <- NULL
+  if (!is.null(sig_pathways_by_cell_type) && ct %in% names(sig_pathways_by_cell_type)) {
+    # Directly-supplied precomputed pathways for this cell type -- bypasses
+    # both the directory convention and the per-file disk read.
+    sig_pathways <- sig_pathways_by_cell_type[[ct]]
+  }
+  if (is.null(sig_pathways) && !is.null(sig_pathways_path)) {
+    # Lazy per-cell-type disk read, same <path>/<dashed_ct>/sig_pathways.rds
+    # layout as ai_notes_path, but without needing the markdown files.
+    sig_pathways <- load_sig_pathways_for_cell_type(ct, sig_pathways_path)
+  }
+  if (is.null(sig_pathways) && !is.null(ai_notes_path)) {
+    precompute_data <- load_ai_precompute_for_cell_types(cell_types = ct, ai_notes_path = ai_notes_path)
+    pathway_background <- precompute_data$pathway_background
+    sig_pathways <- precompute_data$sig_pathways[[1]]
+  }
   if (is.null(sig_pathways) || !is.data.frame(sig_pathways)) {
     sig_pathways <- tibble::tibble(pathway = character())
   }
@@ -449,19 +490,28 @@ summarize_cell_type_impact <- function(
     gene_set <- ontologies[[ont]]
     pathway_gene_sets <- split(gene_set$gene_short_name, gene_set$gs_name)
     if (!is.null(ancestor_specific_pathways) && nrow(ancestor_specific_pathways) > 0) {
-      universe_genes <- unique(unlist(pathway_gene_sets[names(pathway_gene_sets) %in% ancestor_specific_pathways$gs_name]))
-      if (length(universe_genes) > 0) {
-        fora_res <- suppressWarnings(
-          fgsea::fora(
-            genes = deg_genes,
-            pathways = pathway_gene_sets[names(pathway_gene_sets) %in% ancestor_specific_pathways$gs_name],
-            universe = universe_genes
-          )
+      # Restrict to pathways an ancestor cell type already flagged as
+      # significant (precomputed via ai_notes_path).
+      candidate_pathways <- pathway_gene_sets[names(pathway_gene_sets) %in% ancestor_specific_pathways$gs_name]
+      universe_genes <- unique(unlist(candidate_pathways))
+    } else {
+      # No ancestor-specific restriction available (no ai_notes_path, or
+      # nothing precomputed for this lineage) -- test every pathway in this
+      # ontology against all genes measured for this cell type.
+      candidate_pathways <- pathway_gene_sets
+      universe_genes <- all_tested_genes
+    }
+    if (length(universe_genes) > 0 && length(candidate_pathways) > 0) {
+      fora_res <- suppressWarnings(
+        fgsea::fora(
+          genes = deg_genes,
+          pathways = candidate_pathways,
+          universe = universe_genes
         )
-        fora_res_list[[ont]] <- fora_res %>%
-          arrange(pval) %>%
-          mutate(ontology = ont)
-      }
+      )
+      fora_res_list[[ont]] <- fora_res %>%
+        arrange(pval) %>%
+        mutate(ontology = ont)
     }
   }
   fora_res <- bind_rows(fora_res_list)
@@ -576,7 +626,7 @@ summarize_cell_type_impact <- function(
 
   summary_text <- paste(
     perturbed_genes_line,
-    paste0("Perturbation: ", perturbation_description),
+    if (!is.null(perturbation_description) && nzchar(perturbation_description)) paste0("Perturbation: ", perturbation_description),
     paste0("Cell type: ", ct),
     if (!is.null(effect_type) && nzchar(effect_type)) paste0("Effect type: ", effect_type),
     paste0("Abundance change: ", abundance_summary),
@@ -832,14 +882,14 @@ reencode_pathway_arrows <- function(tbl, lookup) {
 }
 
 summarize_impact_in_lineage_context <- function(
-  perturbation_description,
+  perturbation_description = NULL,
   target_gene_expression,
   dact_results,
   degs,
   ref_expression,
   ontologies,
   combined_psg,
-  ai_notes_path,
+  ai_notes_path = NULL,
   sig_p_val_thresh = 0.05,
   genes_of_interest = NULL,
   empirical_p_thresh = 1.0,
@@ -855,6 +905,22 @@ summarize_impact_in_lineage_context <- function(
   effect_type = NULL,
   pre_cited_gene_claims = NULL,
   verbose = FALSE,
+  # See summarize_cell_type_impact() -- named list of precomputed
+  # marker-specificity GSEA results (fgsea output with a `pathway` column),
+  # keyed by cell type. Lets callers restrict/ground fora() enrichment without
+  # needing the full ai_notes_path directory convention.
+  sig_pathways_by_cell_type = NULL,
+  # See summarize_cell_type_impact() -- directory of per-cell-type
+  # sig_pathways.rds files (<sig_pathways_path>/<dashed_ct>/sig_pathways.rds),
+  # loaded lazily without needing the markdown background files ai_notes_path
+  # also expects.
+  sig_pathways_path = NULL,
+  # If TRUE, drop the LLM-derived columns (llm_summary, lineage_context_summary,
+  # llm_disrupted_pathways, llm_other_dysregulated_genes) from the returned
+  # tibble -- they're always NA/empty when llm_fun is NULL, so this just
+  # trims dead columns for no-LLM runs. Caller-controlled rather than implicit
+  # on llm_fun so the output schema stays predictable for a given call site.
+  drop_llm_columns = FALSE,
   ...
 ) {
   g <- if (class(combined_psg) == "cell_state_graph") combined_psg@graph else combined_psg
@@ -927,7 +993,9 @@ summarize_impact_in_lineage_context <- function(
         fitness_phenotypes = fitness_phenotypes,
         identity_phenotypes = identity_phenotypes,
         dact_expectations = dact_expectations,
-        effect_type = effect_type
+        effect_type = effect_type,
+        sig_pathways_by_cell_type = sig_pathways_by_cell_type,
+        sig_pathways_path = sig_pathways_path
       )
       cell_impact_text <- build_lineage_context(ct, parents, results, all_types)
       if (!is.null(pre_cited_gene_claims) && nzchar(pre_cited_gene_claims)) {
@@ -1347,6 +1415,14 @@ summarize_impact_in_lineage_context <- function(
   # portal to warn on -- an attribute, not a column, so it isn't accidentally
   # treated as impact-table data by anything that reads this tibble.
   attr(results, "llm_failed_cell_types") <- unique(still_failed_cell_types)
+
+  if (isTRUE(drop_llm_columns)) {
+    results <- results %>%
+      select(-any_of(c(
+        "llm_summary", "lineage_context_summary",
+        "llm_disrupted_pathways", "llm_other_dysregulated_genes"
+      )))
+  }
 
   results
 }
