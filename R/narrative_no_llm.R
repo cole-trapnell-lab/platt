@@ -134,19 +134,6 @@ summarize_cell_type_impact_no_ai_notes <- function(
   abundance_severity <- if (nrow(abundance_row) > 0) abundance_row$abundance_severity[1] else NA_character_
 
   dact_row <- dact_results %>% dplyr::filter(.data$cell_group == ct)
-  abundance_summary <- if (!is.na(abundance_code)) {
-    abundance_code
-  } else if (nrow(dact_row) > 0 && all(c("delta_q_value", "delta_log_abund", "power") %in% colnames(dact_row))) {
-    if (dact_row$delta_q_value[1] < sig_p_val_thresh) {
-      if (dact_row$delta_log_abund[1] < 0) "depleted" else if (dact_row$delta_log_abund[1] > 0) "enriched" else "significant_no_direction"
-    } else if (dact_row$power[1] >= power_thresh) {
-      "no_change"
-    } else {
-      "unknown (underpowered)"
-    }
-  } else {
-    NA_character_
-  }
 
   fitness_rows <- if (!is.null(fitness_phenotypes)) {
     fitness_phenotypes %>% dplyr::filter(.data$cell_group == ct)
@@ -230,7 +217,6 @@ summarize_cell_type_impact_no_ai_notes <- function(
   }
 
   list(
-    abundance = abundance_summary,
     abundance_code = abundance_code,
     abundance_severity = abundance_severity,
     fitness_label = fitness_label,
