@@ -3028,7 +3028,7 @@ assess_support_for_transition_graph <- function(perturbation_ccm_tbl,
     group_by(from, to) %>%
     distinct() %>%
     summarize(
-      edge_name = stringr::str_c(from, to, sep = "~"),
+      edge_name = stringr::str_c(dplyr::first(from), dplyr::first(to), sep = "~"),
       # supporting_perturbs = perturb_name,
       support_label = ifelse(n() > 3, paste0(c(perturb_name[1:3], paste("+", n() - 3, " more", sep = "")), collapse = "\n"),
         paste0(perturb_name, collapse = "\n")
