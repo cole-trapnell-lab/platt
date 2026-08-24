@@ -985,8 +985,10 @@ reencode_pathway_arrows <- function(tbl, lookup) {
 #' at its default of `NULL` skips that step entirely — no LLM server, Python, or
 #' `reticulate` setup required — and returns the same tabular impact calls
 #' (abundance/identity/fitness plus deterministic pathway enrichment) without
-#' any generated prose. Set `drop_llm_columns = TRUE` in that case to omit the
-#' always-empty LLM columns from the result.
+#' any generated prose. In that case the always-empty LLM columns are dropped
+#' from the result automatically (`drop_llm_columns` is forced to `TRUE`); it
+#' only needs to be set explicitly to drop those columns while still
+#' supplying an `llm_fun`.
 #'
 #' @param perturbation_description Optional free-text description of the
 #'   perturbation, used only to build context text for `llm_fun`.
@@ -1040,14 +1042,15 @@ reencode_pathway_arrows <- function(tbl, lookup) {
 #'   `sig_pathways.rds` files, one per cell type.
 #' @param drop_llm_columns If `TRUE`, drop the LLM-derived columns
 #'   (`llm_summary`, `lineage_context_summary`, `llm_disrupted_pathways`,
-#'   `llm_other_dysregulated_genes`) from the result — they are always empty
-#'   when `llm_fun` is `NULL`.
+#'   `llm_other_dysregulated_genes`) from the result. Forced to `TRUE`
+#'   whenever `llm_fun` is `NULL`, regardless of what's passed here, since
+#'   those columns are always empty in that case.
 #' @param ... Additional arguments forwarded to `llm_fun`.
 #'
 #' @return A tibble with one row per cell type, including `abundance_code`,
 #'   `abundance_severity`, `identity_label`, `fitness_label`, per-cell-type
-#'   DEGs and pathway enrichment, and (unless `drop_llm_columns = TRUE`) the
-#'   LLM narrative columns.
+#'   DEGs and pathway enrichment, and — when `llm_fun` is supplied and
+#'   `drop_llm_columns` is left `FALSE` — the LLM narrative columns.
 #' @export
 summarize_impact_in_lineage_context <- function(
   perturbation_description = NULL,
@@ -1091,6 +1094,13 @@ summarize_impact_in_lineage_context <- function(
   drop_llm_columns = FALSE,
   ...
 ) {
+  # The LLM columns are always NA/empty when there's no llm_fun to populate
+  # them, so there's no case where a caller genuinely wants to keep them --
+  # force drop_llm_columns on regardless of what was passed in.
+  if (is.null(llm_fun)) {
+    drop_llm_columns <- TRUE
+  }
+
   g <- if (class(combined_psg) == "cell_state_graph") combined_psg@graph else combined_psg
 
   # Determine which cell types to analyze

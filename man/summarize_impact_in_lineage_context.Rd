@@ -112,16 +112,17 @@ marker-specificity GSEA results, keyed by cell type.}
 
 \item{drop_llm_columns}{If \code{TRUE}, drop the LLM-derived columns
 (\code{llm_summary}, \code{lineage_context_summary}, \code{llm_disrupted_pathways},
-\code{llm_other_dysregulated_genes}) from the result — they are always empty
-when \code{llm_fun} is \code{NULL}.}
+\code{llm_other_dysregulated_genes}) from the result. Forced to \code{TRUE}
+whenever \code{llm_fun} is \code{NULL}, regardless of what's passed here, since
+those columns are always empty in that case.}
 
 \item{...}{Additional arguments forwarded to \code{llm_fun}.}
 }
 \value{
 A tibble with one row per cell type, including \code{abundance_code},
 \code{abundance_severity}, \code{identity_label}, \code{fitness_label}, per-cell-type
-DEGs and pathway enrichment, and (unless \code{drop_llm_columns = TRUE}) the
-LLM narrative columns.
+DEGs and pathway enrichment, and — when \code{llm_fun} is supplied and
+\code{drop_llm_columns} is left \code{FALSE} — the LLM narrative columns.
 }
 \description{
 Walks every cell type reachable from the perturbation's target-gene-expressing
@@ -138,6 +139,8 @@ interest, or pathway enrichment of its own (\code{llm_summary},
 at its default of \code{NULL} skips that step entirely — no LLM server, Python, or
 \code{reticulate} setup required — and returns the same tabular impact calls
 (abundance/identity/fitness plus deterministic pathway enrichment) without
-any generated prose. Set \code{drop_llm_columns = TRUE} in that case to omit the
-always-empty LLM columns from the result.
+any generated prose. In that case the always-empty LLM columns are dropped
+from the result automatically (\code{drop_llm_columns} is forced to \code{TRUE}); it
+only needs to be set explicitly to drop those columns while still
+supplying an \code{llm_fun}.
 }
