@@ -1,47 +1,105 @@
 # Build a robust preranked vector from a DEG table
 # deg_tbl columns (customize names via args):
-#   gene, logFC
+#   gene, logFC, and (optionally) an empirical-p weight column
+#
+# When `weight_col` (default "empirical_p", written by the per-experiment
+# empirical-FDR model) is present, genes are ranked by the MODEL-WEIGHTED
+# statistic logFC * (1 - empirical_p): artifact-consistent genes (empirical_p
+# near 1) are compressed toward the middle of the ranking, which halves the
+# fitness/identity phenotype FDR without amplifying anything. Genes with no
+# empirical_p (NA) are left un-compressed (weight 1). When the column is absent
+# the ranking falls back to the raw shrunken logFC (backward compatible).
 make_rank <- function(deg_tbl,
                       gene_col = "gene_short_name",
-                      logFC_col = "perturb_to_ctrl_shrunken_lfc") {
+                      logFC_col = "perturb_to_ctrl_shrunken_lfc",
+                      weight_col = "empirical_p") {
     stopifnot(all(c(gene_col, logFC_col) %in% names(deg_tbl)))
+    use_weight <- !is.null(weight_col) && weight_col %in% names(deg_tbl)
     x <- deg_tbl %>%
         transmute(
             gene = .data[[gene_col]] %>% as.character(),
-            logFC = as.numeric(.data[[logFC_col]])
+            logFC = as.numeric(.data[[logFC_col]]),
+            p = if (use_weight) as.numeric(.data[[weight_col]]) else NA_real_
         ) %>%
         distinct(gene, .keep_all = TRUE) %>%
         filter(is.finite(logFC))
-    # Use shrunken logFC directly for ranking
-    r <- x$logFC
+    if (use_weight) {
+        # EXCLUDE gated (uncallable) genes -- empirical_p == 1 -- from the preranked list entirely,
+        # rather than letting the (1 - empirical_p) weight collapse them to rank 0 in the MIDDLE. Under
+        # heavy, asymmetric gating (e.g. the min-arm-cell gate demoting far more down- than up-calls),
+        # a large mid-list block of zeros unbalances the ranking and manufactures spurious
+        # one-directional GSEA enrichments (up-regulated fitness sets -- apoptosis/stress). Callable
+        # genes keep the soft model weight (1 - empirical_p); NA weights are treated as un-demoted.
+        x <- x %>% filter(!is.finite(.data$p) | .data$p < 1)
+        x$w <- 1 - pmin(pmax(replace(x$p, !is.finite(x$p), 0), 0), 1)
+    } else {
+        x$w <- 1
+    }
+    # Rank by the model-weighted statistic (logFC * (1 - empirical_p)) over the CALLABLE genes; with
+    # no weight column this reduces to the shrunken logFC over all genes.
+    r <- x$logFC * x$w
     names(r) <- x$gene
     sort(r, decreasing = TRUE)
 }
 
-# Run fgsea on the preranked vector for a list of gene sets
+# Deterministic 31-bit hash of a string, used to derive a reproducible RNG seed
+# from a call's own identity rather than from loop position. Double arithmetic
+# (not integer) avoids 32-bit overflow; strength/collision-resistance doesn't
+# matter here, only that identical keys always map to the same seed.
+.fgsea_seed_from_key <- function(key) {
+    h <- 5381
+    for (b in utf8ToInt(enc2utf8(key))) h <- (h * 33 + b) %% 2147483647
+    as.integer(h)
+}
+
+# Run fgsea on the preranked vector for a list of gene sets.
+#
+# Always dispatches to fgseaMultilevel (no `nperm` is ever forwarded to
+# fgsea::fgsea() -- passing nperm there forces the deprecated fgseaSimple path,
+# which floors padj resolution at ~1/(nperm+1) and emits a warning this
+# function used to swallow via suppressWarnings). `nperm` is kept as the
+# parameter name for backward compatibility with existing callers, but its
+# value now maps onto fgseaMultilevel's `nPermSimple` (preliminary estimation
+# permutations).
+#
+# Seeding: fgseaMultilevel is Monte Carlo, so identical inputs must get an
+# identical seed to be reproducible. The seed is derived from `seed_key` --
+# ideally the calling context's own identity (e.g. "<perturb_name>::<cell_group>::fitness"),
+# passed in by the caller -- so results depend only on that call's own inputs,
+# not on loop order, worker count, or serial vs. parallel execution. If no
+# seed_key is supplied, one is derived from the gene ranking and gene sets
+# themselves, which is still deterministic per-call but ties reproducibility
+# to the data rather than to caller-supplied metadata.
 run_fgsea_modules <- function(rank_vec,
                               gene_sets,
                               minSize = 10,
                               maxSize = 5000,
-                              nperm = 10000) {
+                              nperm = 1000,
+                              seed_key = NULL) {
     # Keep only present genes per set
     gs <- lapply(gene_sets, function(v) intersect(unique(v), names(rank_vec)))
     keep <- lengths(gs) >= minSize
     if (!any(keep)) {
-        return(tibble(path = character(), NES = numeric(), padj = numeric(), size = integer(), leading_edge = character()))
+        return(tibble(path = character(), NES = numeric(), padj = numeric(), size = integer(), log2err = numeric(), leading_edge = character()))
     }
     gs <- gs[keep]
-    suppressWarnings({
-        res <- fgsea::fgsea(
-            pathways = gs, stats = rank_vec,
-            minSize = minSize, maxSize = maxSize, nperm = nperm
-        )
+    if (is.null(seed_key)) {
+        seed_key <- paste(c(names(rank_vec), names(gs)), collapse = "|")
+    }
+    seed <- .fgsea_seed_from_key(seed_key)
+    res <- withr::with_seed(seed, {
+        suppressWarnings({
+            fgsea::fgsea(
+                pathways = gs, stats = rank_vec,
+                minSize = minSize, maxSize = maxSize, nPermSimple = nperm
+            )
+        })
     })
     res %>%
         as_tibble() %>%
-        select(pathway, size, NES, padj, leadingEdge) %>%
+        select(pathway, size, NES, padj, log2err, leadingEdge) %>%
         mutate(leading_edge = vapply(leadingEdge, function(x) paste(x, collapse = ";"), character(1))) %>%
-        select(pathway, size, NES, padj, leading_edge) %>%
+        select(pathway, size, NES, padj, log2err, leading_edge) %>%
         arrange(padj, desc(abs(NES))) %>%
         rename(path = pathway)
 }
@@ -157,7 +215,7 @@ score_fitness_from_deg <- function(deg_tbl,
                                    logFC_col = "logFC",
                                    padj_col = "padj",
                                    minSize = 10,
-                                   nperm = 10000,
+                                   nperm = 1000,
                                    nes_mod = 1.5,
                                    nes_sev = 2.0,
                                    q_cut = 0.05) {
@@ -241,7 +299,7 @@ assign_phenotypes <- function(
   use_summarized_tbl = TRUE,
   minSize = 10,
   maxSize = 5000,
-  nperm = 10000
+  nperm = 1000
 ) {
     # Get all cell types across all perturbations
     all_cell_types <- unique(unlist(
@@ -352,7 +410,7 @@ assign_phenotypes_to_cell_types <- function(
   num_threads = NULL,
   minSize = 10,
   maxSize = 5000,
-  nperm = 10000
+  nperm = 1000
 ) {
     cell_types <- unique(dact_tbl$cell_group)
     num_threads <- get_phenotype_threads(num_threads)
@@ -372,8 +430,8 @@ assign_phenotypes_to_cell_types <- function(
         dact_row <- dact_tbl %>% filter(cell_group == ct)
         abundance_code <- if (nrow(dact_row) > 0) assign_abundance_code(dact_row$change_when_present, dact_row$change_when_present_q_val) else NA_character_
         abundance_severity <- if (nrow(dact_row) > 0) assign_abundance_severity(dact_row$change_when_present, dact_row$change_when_present_q_val) else NA_character_
-        identity_assignment <- assign_identity_maturation_labels(deg_tbl, ct, identity_gene_sets, combined_psg, minSize = minSize, nperm = nperm, maxSize = maxSize)
-        fitness_assignment <- assign_fitness_labels(deg_tbl, ct, gene_sets, minSize = minSize, nperm = nperm, maxSize = maxSize)
+        identity_assignment <- assign_identity_maturation_labels(deg_tbl, ct, identity_gene_sets, combined_psg, minSize = minSize, nperm = nperm, maxSize = maxSize, perturb_name = perturb_name)
+        fitness_assignment <- assign_fitness_labels(deg_tbl, ct, gene_sets, minSize = minSize, nperm = nperm, maxSize = maxSize, perturb_name = perturb_name)
         if (!is.null(log_fn)) {
             elapsed <- as.numeric(difftime(Sys.time(), ct_start, units = "secs"))
             log_fn(sprintf(
@@ -420,8 +478,8 @@ assign_abundance_code <- function(change_when_present, change_when_present_q_val
     case_when(
         is.na(change_when_present) | is.na(change_when_present_q_val) ~ "A0 No change",
         change_when_present >= 0.5 & change_when_present_q_val < 0.1 ~ "A1 Expansion",
-        change_when_present <= -0.5 & change_when_present_q_val < 0.1 ~ "A2 Depletion",
         change_when_present <= -2.0 & change_when_present_q_val < 0.01 ~ "A3 Near-loss",
+        change_when_present <= -0.5 & change_when_present_q_val < 0.1 ~ "A2 Depletion",
         TRUE ~ "A0 No change"
     )
 }
@@ -438,11 +496,13 @@ assign_abundance_severity <- function(change_when_present, change_when_present_q
 assign_fitness_labels <- function(deg_tbl, ct, gene_sets,
                                   minSize = 10,
                                   maxSize = 5000,
-                                  nperm = 10000) {
+                                  nperm = 1000,
+                                  perturb_name = NULL) {
     degs_this_cell <- deg_tbl %>% filter(cell_group == ct)
     if (nrow(degs_this_cell) > 0) {
         rank_vec <- make_rank(degs_this_cell, gene_col = "gene_short_name", logFC_col = "perturb_to_ctrl_shrunken_lfc")
-        fgsea_res <- run_fgsea_modules(rank_vec, gene_sets, minSize = minSize, maxSize = maxSize, nperm = nperm)
+        seed_key <- paste(perturb_name, ct, "fitness", sep = "::")
+        fgsea_res <- run_fgsea_modules(rank_vec, gene_sets, minSize = minSize, maxSize = maxSize, nperm = nperm, seed_key = seed_key)
         list(
             labels = classify_fitness(fgsea_res),
             fgsea_res = fgsea_res
@@ -459,7 +519,8 @@ assign_identity_maturation_labels <- function(deg_tbl, ct, identity_gene_sets, c
                                               nes_mod = 1.5, nes_sev = 2.0, q_cut = 0.05,
                                               minSize = 10,
                                               maxSize = 5000,
-                                              nperm = 10000) {
+                                              nperm = 1000,
+                                              perturb_name = NULL) {
     degs_this_cell <- deg_tbl %>% filter(cell_group == ct)
     if (nrow(degs_this_cell) == 0) {
         return(list(
@@ -501,7 +562,8 @@ assign_identity_maturation_labels <- function(deg_tbl, ct, identity_gene_sets, c
 
     # Prepare for fgsea
     rank_vec <- make_rank(degs_this_cell, gene_col = "gene_short_name", logFC_col = "perturb_to_ctrl_shrunken_lfc")
-    fgsea_res <- run_fgsea_modules(rank_vec, gene_sets_list, minSize = minSize, maxSize = maxSize, nperm = nperm)
+    seed_key <- paste(perturb_name, ct, "identity", sep = "::")
+    fgsea_res <- run_fgsea_modules(rank_vec, gene_sets_list, minSize = minSize, maxSize = maxSize, nperm = nperm, seed_key = seed_key)
 
     # Annotate each result with its cell type and gene set
     fgsea_res <- fgsea_res %>%

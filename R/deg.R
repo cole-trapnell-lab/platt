@@ -523,7 +523,7 @@ select_genes_for_deg <- function(expr_over_thresh,
 #' # Assuming `state_graph` is a pre-defined igraph object and `cell_state` is a valid node in the graph
 #' parents <- get_parents(state_graph, cell_state)
 #' print(parents)
-#' @noRd
+#' @export
 get_parents <- function(state_graph, cell_state) {
   graph_obj <- coerce_state_graph(state_graph)
   if (!cell_state %in% igraph::V(graph_obj)$name) {
@@ -578,7 +578,7 @@ get_all_parents <- function(state_graph, cell_state, visited = character()) {
 #' @param cell_state A vertex in the state graph for which to find the children.
 #' @return A character vector of the names of the children of the given cell state. If there are no children, an empty character vector is returned.
 #' @import igraph
-#' @noRd
+#' @export
 get_children <- function(state_graph, cell_state) {
   graph_obj <- coerce_state_graph(state_graph)
   if (!cell_state %in% igraph::V(graph_obj)$name) {
@@ -603,7 +603,7 @@ get_children <- function(state_graph, cell_state) {
 #' @return A character vector of sibling states. If the cell state has no parents, an empty vector is returned.
 #'
 #' @import igraph
-#' @noRd
+#' @export
 get_siblings <- function(state_graph, cell_state) {
   parents <- get_parents(state_graph, cell_state)
   if (length(parents) > 0) {
@@ -2257,6 +2257,10 @@ update_summary <- function(model_tbl, dispersion_type = c("max", "fitted", "esti
 #' @param gene_patterns_within_state_graph A data frame containing gene pattern activity scores.
 #' @param gene_df A data frame containing gene information with columns `gene_short_name` and `gs_name`.
 #' @param sig_thresh A numeric value specifying the significance threshold for adjusted p-values. Default is 0.1.
+#' @param seed_key An optional character string identifying this call, used to derive a
+#'   deterministic RNG seed (fgseaMultilevel is Monte Carlo). Defaults to NULL, in which case
+#'   the seed is derived from `gene_ranking`/`gene_set_list` themselves, so results are still
+#'   reproducible per-input without requiring the caller to supply anything.
 #'
 #' @return A tibble containing the GSEA results filtered by the specified significance threshold.
 #'
@@ -2275,11 +2279,18 @@ update_summary <- function(model_tbl, dispersion_type = c("max", "fitted", "esti
 #' @export
 calc_gsea_enrichment_on_state_specific_genes <- function(gene_patterns_within_state_graph,
                                                          gene_df,
-                                                         sig_thresh = 0.1) {
+                                                         sig_thresh = 0.1,
+                                                         seed_key = NULL) {
   gene_set_list <- split(x = gene_df$gene_short_name, f = gene_df$gs_name)
   gene_ranking <- gene_patterns_within_state_graph$pattern_activity_score[, 1]
   names(gene_ranking) <- gene_patterns_within_state_graph %>% pull(gene_short_name)
-  gsea_res <- fgsea::fgsea(pathways = gene_set_list, stats = gene_ranking) %>% as_tibble()
+  if (is.null(seed_key)) {
+    seed_key <- paste(c(names(gene_ranking), names(gene_set_list)), collapse = "|")
+  }
+  seed <- .fgsea_seed_from_key(seed_key)
+  gsea_res <- withr::with_seed(seed, {
+    fgsea::fgsea(pathways = gene_set_list, stats = gene_ranking)
+  }) %>% as_tibble()
   gsea_res <- gsea_res %>% filter(padj < sig_thresh)
   return(gsea_res)
 }
@@ -3072,123 +3083,6 @@ compare_genes_in_cell_state <- function(cell_state,
   message("      completed ", cell_state)
   return(expr_df)
 }
-
-
-
-#' Calculate Differentially Expressed Genes (DVEGs)
-#'
-#' This function calculates differentially expressed genes (DVEGs) by comparing
-#' perturbation data with reference data. It identifies genes that are
-#' significantly underexpressed or overexpressed based on a specified p-value threshold.
-#'
-#' @param perturb_degs A data frame containing perturbation differentially expressed genes (DEGs).
-#' @param ref_degs A data frame containing reference differentially expressed genes (DEGs).
-#' @param sig_p_val_thresh A numeric value specifying the significance p-value threshold for filtering DVEGs. Default is 1.
-#'
-#' @return A data frame containing significantly differentially expressed genes (DVEGs) with their dysregulation type.
-#'
-#' @details The function performs the following steps:
-#' \itemize{
-#'   \item Mutates the `ref_degs` data frame to simplify the interpretation of gene expression.
-#'   \item Joins the `ref_degs` and `perturb_degs` data frames based on gene ID and cell state.
-#'   \item Selects and renames relevant columns for further analysis.
-#'   \item Creates a display name for each gene based on its interpretation and cell state.
-#'   \item Determines the dysregulation type (underexpressed or overexpressed) based on log fold change (LFC) and interpretation.
-#'   \item Filters the results to include only significantly dysregulated genes based on the specified p-value threshold.
-#' }
-#'
-#' @examples
-#' \dontrun{
-#' perturb_degs <- data.frame(id = c("gene1", "gene2"), cell_group = c("state1", "state2"), perturb_to_ctrl_shrunken_lfc = c(-1.5, 2.0), perturb_to_ctrl_p_value = c(0.01, 0.05))
-#' ref_degs <- data.frame(gene_id = c("gene1", "gene2"), cell_state = c("state1", "state2"), interpretation = c("Upregulated", "Downregulated"), gene_short_name = c("G1", "G2"))
-#' sig_dvegs <- calculate_dvegs(perturb_degs, ref_degs, sig_p_val_thresh = 0.05)
-#' print(sig_dvegs)
-#' }
-#'
-#' @import dplyr
-#' @import stringr
-#' @export
-calculate_dvegs <- function(perturb_degs,
-                            ref_degs,
-                            sig_p_val_thresh = 1) {
-  if ("gene_class_scores" %in% colnames(ref_degs)) {
-    ref_degs <- ref_degs %>% tidyr::unnest(gene_class_scores)
-  }
-
-  if ("genes_within_cell_group" %in% colnames(perturb_degs)) {
-    perturb_degs <- perturb_degs %>% tidyr::unnest(genes_within_cell_group)
-  }
-
-  if ("perturb_effects" %in% colnames(perturb_degs)) {
-    perturb_degs <- perturb_degs %>% tidyr::unnest(perturb_effects)
-  }
-
-
-  ref_degs <- ref_degs %>%
-    mutate(interpretation_simple = case_when(
-      NA ~ NA,
-      interpretation %in% c(
-        "Upregulated",
-        "Activated",
-        "Selectively upregulated",
-        "Specifically upregulated",
-        "Increasingly upregulated",
-        "Transiently upregulated",
-        "Precursor-depleted"
-      ) ~ "Up",
-      interpretation %in% c(
-        "Downregulated",
-        "Deactivated",
-        "Selectively downregulated",
-        "Specifically downregulated",
-        "Decreasingly downregulated",
-        "Transiently downregulated",
-        "Precursor-specific"
-      ) ~ "Down",
-      interpretation %in% c(
-        "Maintained",
-        "Specifically maintained",
-        "Selectively maintained"
-      ) ~ "Maintained",
-      TRUE ~ interpretation
-    ))
-
-  wt_vs_perturb_degs <- ref_degs %>%
-    select(cell_state, gene_id, gene_short_name, interpretation, interpretation_simple) %>%
-    left_join(perturb_degs, by = c("gene_id" = "id", "cell_state" = "cell_group", "gene_short_name"))
-
-  wt_vs_perturb_degs <- wt_vs_perturb_degs %>%
-    select(
-      cell_state,
-      term,
-      gene_id,
-      gene_short_name,
-      interpretation,
-      interpretation_simple,
-      perturb_to_ctrl_shrunken_lfc,
-      perturb_to_ctrl_p_value
-    ) %>%
-    distinct()
-
-  wt_vs_perturb_degs <- wt_vs_perturb_degs %>%
-    mutate(display_name = stringr::str_c(gene_short_name, ":\n", "Normally",
-      stringr::str_to_lower(interpretation), "in", cell_state,
-      sep = " "
-    ))
-
-  wt_vs_perturb_degs <- wt_vs_perturb_degs %>%
-    mutate(dysreg_type = case_when(
-      interpretation_simple %in% c("Up", "Maintained") & perturb_to_ctrl_shrunken_lfc < 0 ~ "Underexpressed",
-      interpretation_simple %in% c("Down", "Maintained") & perturb_to_ctrl_shrunken_lfc > 0 ~ "Overexpressed",
-      TRUE ~ "Other DEG"
-    ))
-
-  sig_dvegs <- wt_vs_perturb_degs %>% filter(perturb_to_ctrl_p_value < sig_p_val_thresh & dysreg_type %in% c("Underexpressed", "Overexpressed"))
-  sig_dvegs$dysreg_type <- factor(sig_dvegs$dysreg_type, levels = c("Underexpressed", "Overexpressed"))
-
-  return(sig_dvegs)
-}
-
 
 
 

@@ -16,7 +16,8 @@ phenotype_colors <- c(
     "fitness"        = "#f6c141",
     "apoptosis"      = "#000000",
     "stress"         = "#4daf4a",
-    "senescence"     = "#a65628"
+    "senescence"     = "#a65628",
+    "not present"    = "#cccccc"
 )
 
 
@@ -950,7 +951,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         g$.tooltip <- phenotype_tooltip_builder(g)
     }
 
-    color_priority <- c("severe", "medium", "mild", "none")
+    color_priority <- c("severe", "medium", "mild", "none", "not_present")
     g <- g %>%
         dplyr::mutate(
             has_fitness_change = (!is.na(f1_dir) & f1_dir %in% c("increase", "decrease")) |
@@ -987,8 +988,11 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             has_identity_change = !is.na(ident) & !(ident %in% c("I0", "I0 Identity intact", "Identity intact", "", NA)),
             expectation_norm = tolower(trimws(dplyr::coalesce(expectation, ""))),
             is_expected = expectation_norm %in% c("expected", "expected change"),
-            expected_shape = dplyr::if_else(is_expected, "Expected phenotype", "Observed phenotype")
+            expected_shape = dplyr::if_else(is_expected, "Expected phenotype", "Observed phenotype"),
+            present_above_thresh_flag = dplyr::coalesce(present_above_thresh, TRUE)
         )
+
+    g <- g %>% mutate(severity_fill = ifelse(present_above_thresh_flag == FALSE, "not_present", severity_fill))
 
     if (identical(render_mode, "global")) {
         # Mild horizontal spread keeps the global plot readable without shrinking nodes.
@@ -1081,8 +1085,8 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
         x = NA_real_,
         y = NA_real_,
         severity_fill = factor(
-            c("severe", "medium", "mild", "none"),
-            levels = c("severe", "medium", "mild", "none")
+            c("severe", "medium", "mild", "none", "not_present"),
+            levels = c("severe", "medium", "mild", "none", "not_present")
         )
     )
 
@@ -1102,15 +1106,17 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             values = c(
                 severe = unname(phenotype_colors["abundance_loss"]),
                 medium = unname(phenotype_colors["identity"]),
-                mild   = unname(phenotype_colors["abundance_gain"]),
-                none   = unname(phenotype_colors["none"])
+                mild = unname(phenotype_colors["abundance_gain"]),
+                none = unname(phenotype_colors["none"]),
+                not_present = unname(phenotype_colors["not_present"])
             ),
-            breaks = c("severe", "medium", "mild", "none"),
+            breaks = c("severe", "medium", "mild", "none", "not_present"),
             labels = c(
                 severe = "Severe phenotype",
                 medium = "Medium phenotype",
-                mild   = "Mild phenotype",
-                none   = "No phenotype"
+                mild = "Mild phenotype",
+                none = "No phenotype",
+                not_present = "Not present"
             ),
             drop = FALSE,
             name = "Node color",
@@ -1175,6 +1181,11 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             size_value = c("Powered", "Underpowered")
         )
 
+        # Data layer above maps `size = node_size_plot` (continuous) and is
+        # captured by `scale_size_identity()`. The discrete legend below uses a
+        # different scale_size_manual; without ggnewscale's reset, the data
+        # layer's continuous values would also flow into the manual scale and
+        # trip "Continuous value supplied to a discrete scale".
         p <- p +
             ggnewscale::new_scale("size") +
             ggplot2::geom_point(

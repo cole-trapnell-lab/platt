@@ -197,7 +197,9 @@ connect_hidden_nodes_for_layers <- function(G_with_hidden, layers) {
     # next_layer_head_ids <- as.numeric(next_layer_head_nodes)
 
     num_heads <- length(next_layer_head_nodes)
-    if (num_heads == 0) next # no hidden head nodes in the next layer to connect to
+    # No hidden head nodes in the next layer -> nothing to connect, and the
+    # modular arithmetic below (`%% num_heads`) would divide by zero (NaN index).
+    if (num_heads == 0) next
 
     for (j in seq_along(current_layer_tail_nodes)) {
       tail_n <- current_layer_tail_nodes[j]

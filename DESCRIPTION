@@ -22,11 +22,16 @@ Depends:
     hooke
 Imports:
     ashr (>= 2.2-63),
+    data.table,
     dplyr,
     fgsea,
     magrittr,
+    Matrix,
+    mgcv,
+    scam,
     speedglm,
-    splines
+    splines,
+    withr
 Remotes:
     cole-trapnell-lab/speedglm,
     bioc::fgsea
