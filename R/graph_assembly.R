@@ -966,6 +966,27 @@ compare_discordant_pruning_modes <- function(ref_ccs,
   )
 }
 
+#' Find and Score Paths Between Loss/Gain Cell Groups for a Perturbation
+#'
+#' Given a fitted genotype CCM and its per-cell-group loss/gain summary, finds
+#' shortest paths on `pathfinding_graph` from cell groups that are gained (or
+#' lost with no lost parent) to cell groups that are lost, and scores each path
+#' for how well it explains the perturbation's abundance changes.
+#'
+#' @param perturbation_ccm A fitted genotype CCM (see `fit_genotype_ccm()`),
+#'   passed through to `score_paths_for_perturbations()`.
+#' @param perturb_summary_tbl Per-cell-group loss/gain summary for this
+#'   perturbation; must have `cell_group`, `loss_when_present`, and
+#'   `gain_when_present` columns.
+#' @param pathfinding_graph An `igraph` used for path search.
+#' @param delta_log_abund_loss_thresh Minimum magnitude of
+#'   `loss_when_present`/`gain_when_present` for a cell group to count as lost
+#'   or gained (default `0`).
+#'
+#' @return A tibble of scored paths between gained/parentless-lost cell groups
+#'   and lost cell groups (one row per `from`/`to` pair with a path), or `NA`
+#'   if no lost cell groups are present, no paths are found, or path search
+#'   fails.
 #' @export
 get_perturbation_paths <- function(perturbation_ccm,
                                    perturb_summary_tbl,

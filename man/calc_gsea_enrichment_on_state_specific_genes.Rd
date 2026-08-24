@@ -7,7 +7,8 @@
 calc_gsea_enrichment_on_state_specific_genes(
   gene_patterns_within_state_graph,
   gene_df,
-  sig_thresh = 0.1
+  sig_thresh = 0.1,
+  seed_key = NULL
 )
 }
 \arguments{
@@ -16,6 +17,11 @@ calc_gsea_enrichment_on_state_specific_genes(
 \item{gene_df}{A data frame containing gene information with columns \code{gene_short_name} and \code{gs_name}.}
 
 \item{sig_thresh}{A numeric value specifying the significance threshold for adjusted p-values. Default is 0.1.}
+
+\item{seed_key}{An optional character string identifying this call, used to derive a
+deterministic RNG seed (fgseaMultilevel is Monte Carlo). Defaults to NULL, in which case
+the seed is derived from \code{gene_ranking}/\code{gene_set_list} themselves, so results are still
+reproducible per-input without requiring the caller to supply anything.}
 }
 \value{
 A tibble containing the GSEA results filtered by the specified significance threshold.

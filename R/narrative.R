@@ -257,6 +257,19 @@ build_pathway_tbl <- function(info, sig_p_val_thresh, top_n_pathways) {
   pathway_tbl
 }
 
+#' Get All Descendants of a Cell State in a State Graph
+#'
+#' Retrieves every downstream descendant of a given cell state — the
+#' counterpart to `get_all_parents()` in the other direction.
+#'
+#' @param cell_type The cell state for which to find descendants.
+#' @param combined_psg A `cell_state_graph` object or an `igraph`.
+#'
+#' @return A character vector of descendant node names, excluding `cell_type`
+#'   itself. Returns an empty character vector if `cell_type` is not in the
+#'   graph or has no descendants.
+#'
+#' @export
 get_descendants <- function(cell_type, combined_psg) {
   g <- coerce_state_graph(combined_psg)
   if (!cell_type %in% igraph::V(g)$name) {
@@ -267,6 +280,19 @@ get_descendants <- function(cell_type, combined_psg) {
     setdiff(cell_type)
 }
 
+#' Get the Root Nodes of a Cell State's Connected Component
+#'
+#' Finds every node with no incoming edges in the connected component
+#' containing `ct` — i.e. the origin(s) of `ct`'s lineage, treating the graph
+#' as undirected for the purpose of finding the component.
+#'
+#' @param ct The cell state whose component's roots should be found.
+#' @param combined_psg A `cell_state_graph` object or an `igraph`.
+#'
+#' @return A character vector of root node names in `ct`'s connected
+#'   component. Returns an empty character vector if `ct` is not in the graph.
+#'
+#' @export
 get_roots <- function(ct, combined_psg) {
   g <- coerce_state_graph(combined_psg)
   # Find all vertices in the connected component containing ct
@@ -329,6 +355,69 @@ dact_grounding_for <- function(ct, dact_expectations) {
   build_dact_grounding(exp, rat, thk)
 }
 
+#' Summarize a Single Cell Type's Perturbation Impact
+#'
+#' The per-cell-type worker behind `summarize_impact_in_lineage_context()`:
+#' looks up this cell type's abundance/fitness/identity phenotype calls,
+#' filters its significant DEGs (optionally gated on `empirical_p`), runs
+#' pathway enrichment (`fgsea::fora()`), and assembles a plain-text summary
+#' block (`summary`) that either becomes the impact-table row directly (when
+#' called with `llm_fun = NULL`) or is handed to an LLM as `cell_impact_text`
+#' context for that cell type.
+#'
+#' @param ct The cell type to summarize.
+#' @param perturbation_description Optional free-text description of the
+#'   perturbation, included in `summary`.
+#' @param target_gene_expression Data frame of target-gene expression calls by
+#'   cell group; used to report which perturbed genes are expressed here.
+#' @param dact_results Differential abundance result table (one row per cell
+#'   type); used as a fallback abundance call when `abundance_phenotypes` has
+#'   no row for `ct`.
+#' @param degs Differential expression table for the perturbation.
+#' @param ref_expression Reference expression table (accepted for interface
+#'   compatibility; not used directly by this function).
+#' @param ontologies Named list of ontology gene-set tables (`gs_name`/
+#'   `gene_short_name` columns) used for pathway enrichment.
+#' @param ai_notes_path Optional directory of precomputed per-cell-type
+#'   markdown background/pathway files; when supplied (and
+#'   `sig_pathways_by_cell_type`/`sig_pathways_path` are not), pathway
+#'   enrichment is restricted to pathways an ancestor cell type already
+#'   flagged as significant.
+#' @param sig_p_val_thresh Significance cutoff used for DEG and pathway calls.
+#' @param genes_of_interest Optional character vector used to build the
+#'   genes-of-interest line (e.g. a regulator/TF panel).
+#' @param empirical_p_thresh Optional artifact-aware significance cutoff
+#'   (`empirical_p`) applied to the DEG foreground; `1` disables it and falls
+#'   back to nominal `sig_p_val_thresh`.
+#' @param power_thresh Power threshold for classifying a non-significant
+#'   `dact_results` row as `"no_change"` vs `"unknown (underpowered)"`.
+#' @param top_n_pathways Maximum enriched pathways included per ontology in
+#'   `summary`'s pathway lines.
+#' @param abundance_phenotypes Optional precomputed abundance phenotype table
+#'   (`cell_group`, `abundance_code`, `abundance_severity`); takes precedence
+#'   over `dact_results` for this cell type when present.
+#' @param fitness_phenotypes Optional precomputed fitness phenotype table
+#'   (`cell_group`, `fitness_label`, ...).
+#' @param identity_phenotypes Optional precomputed identity phenotype table
+#'   (`cell_group`, `identity_label`, ...).
+#' @param dact_expectations Optional per-cell-type literature-expectation
+#'   table; surfaced in `summary` as a cited "Literature expectation" line.
+#' @param effect_type Optional label (e.g. `"Cell-autonomous"`), included in
+#'   `summary`.
+#' @param sig_pathways_by_cell_type Optional named list of precomputed
+#'   marker-specificity GSEA results, keyed by cell type; checked before
+#'   `sig_pathways_path` and `ai_notes_path`.
+#' @param sig_pathways_path Optional directory of precomputed
+#'   `sig_pathways.rds` files, one per cell type; checked before
+#'   `ai_notes_path`.
+#'
+#' @return A named list with (among others) `summary` (the plain-text block),
+#'   `abundance_code`, `abundance_severity`, `fitness_label`,
+#'   `identity_label`, `present_above_thresh`, `degs` (this cell type's
+#'   filtered DEG table), `goi_line`, `has_regulator_goi`, and `pathways`
+#'   (FDR-significant, non-empty-overlap enrichment results).
+#'
+#' @keywords internal
 summarize_cell_type_impact <- function(
   ct,
   perturbation_description = NULL,
@@ -881,6 +970,85 @@ reencode_pathway_arrows <- function(tbl, lookup) {
   tbl
 }
 
+#' Summarize Lineage-Wide Perturbation Impact
+#'
+#' Walks every cell type reachable from the perturbation's target-gene-expressing
+#' states, joins in your abundance/fitness/identity phenotype calls and
+#' significant DEGs, and runs pathway enrichment (`fgsea::fora()`) per cell type
+#' to build a single impact table — one row per cell type — ready for
+#' `impact_to_phenos()`/`plot_phenotypes_from_impact()`.
+#'
+#' An optional `llm_fun` can be supplied to additionally have an LLM write a
+#' short mechanistic summary for each cell type with a phenotype, genes of
+#' interest, or pathway enrichment of its own (`llm_summary`,
+#' `llm_disrupted_pathways`, `llm_other_dysregulated_genes`). Leaving `llm_fun`
+#' at its default of `NULL` skips that step entirely — no LLM server, Python, or
+#' `reticulate` setup required — and returns the same tabular impact calls
+#' (abundance/identity/fitness plus deterministic pathway enrichment) without
+#' any generated prose. Set `drop_llm_columns = TRUE` in that case to omit the
+#' always-empty LLM columns from the result.
+#'
+#' @param perturbation_description Optional free-text description of the
+#'   perturbation, used only to build context text for `llm_fun`.
+#' @param target_gene_expression Data frame of target-gene expression calls by
+#'   cell group; used to seed which cell types are analyzed when `cell_types`
+#'   is not supplied.
+#' @param dact_results Differential abundance result table (one row per cell
+#'   type, e.g. from `dacts_when_abundant()`).
+#' @param degs Differential expression table for the perturbation.
+#' @param ref_expression Reference expression table.
+#' @param ontologies Named list of ontology gene-set tables (columns
+#'   `gs_name`/`gene_short_name`) used for per-cell-type pathway enrichment.
+#' @param combined_psg A `cell_state_graph` object or `igraph` used for
+#'   lineage traversal.
+#' @param ai_notes_path Optional directory of precomputed per-cell-type
+#'   markdown background files, forwarded to `llm_fun`'s context; ignored when
+#'   `llm_fun` is `NULL`.
+#' @param sig_p_val_thresh Significance cutoff used for DEG/pathway calls.
+#' @param genes_of_interest Optional character vector used to highlight DEGs
+#'   (e.g. a regulator/TF panel) when building the genes-of-interest line.
+#' @param empirical_p_thresh Optional artifact-aware significance cutoff
+#'   (`empirical_p`) applied to the genes-of-interest foreground; `1` disables
+#'   it and falls back to nominal `sig_p_val_thresh`.
+#' @param llm_fun Optional function used to generate a per-cell-type narrative
+#'   summary; see Details. Defaults to `NULL`, which builds the impact table
+#'   without calling an LLM.
+#' @param max_lineage_depth Optional maximum graph depth from roots for
+#'   included cell types.
+#' @param cell_types Optional explicit cell types to seed lineage traversal,
+#'   instead of inferring them from `target_gene_expression`.
+#' @param primary_impact_summary Optional text summary of a prior
+#'   (e.g. cell-autonomous) pass, forwarded to `llm_fun` as context.
+#' @param excluded_cell_types Optional cell types to exclude from the result.
+#' @param abundance_phenotypes Optional precomputed abundance phenotype table
+#'   (`cell_group`, `abundance_code`, `abundance_severity`).
+#' @param fitness_phenotypes Optional precomputed fitness phenotype table
+#'   (`cell_group`, `fitness_label`, ...).
+#' @param identity_phenotypes Optional precomputed identity phenotype table
+#'   (`cell_group`, `identity_label`, ...).
+#' @param dact_expectations Optional per-cell-type literature-expectation table,
+#'   forwarded to `llm_fun` as context; ignored when `llm_fun` is `NULL`.
+#' @param effect_type Optional label (e.g. `"Cell-autonomous"`) recorded for
+#'   this pass and forwarded to `llm_fun` as context.
+#' @param pre_cited_gene_claims Optional pre-cited gene-background text
+#'   forwarded to `llm_fun`; ignored when `llm_fun` is `NULL`.
+#' @param verbose Logical; if `TRUE`, prints debug messages instead of a
+#'   progress bar.
+#' @param sig_pathways_by_cell_type Optional named list of precomputed
+#'   marker-specificity GSEA results, keyed by cell type.
+#' @param sig_pathways_path Optional directory of precomputed
+#'   `sig_pathways.rds` files, one per cell type.
+#' @param drop_llm_columns If `TRUE`, drop the LLM-derived columns
+#'   (`llm_summary`, `lineage_context_summary`, `llm_disrupted_pathways`,
+#'   `llm_other_dysregulated_genes`) from the result — they are always empty
+#'   when `llm_fun` is `NULL`.
+#' @param ... Additional arguments forwarded to `llm_fun`.
+#'
+#' @return A tibble with one row per cell type, including `abundance_code`,
+#'   `abundance_severity`, `identity_label`, `fitness_label`, per-cell-type
+#'   DEGs and pathway enrichment, and (unless `drop_llm_columns = TRUE`) the
+#'   LLM narrative columns.
+#' @export
 summarize_impact_in_lineage_context <- function(
   perturbation_description = NULL,
   target_gene_expression,

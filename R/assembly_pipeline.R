@@ -388,12 +388,30 @@ run_perturbation_assembly <- function(cds,
 }
 
 # Backward-compatible wrappers
+#' Deprecated Alias for `run_wildtype_assembly()`
+#'
+#' Forwards all arguments to [run_wildtype_assembly()]. Kept only for backward
+#' compatibility with existing scripts/pipelines; new code should call
+#' `run_wildtype_assembly()` directly.
+#'
+#' @param ... Forwarded to [run_wildtype_assembly()].
+#'
+#' @return See [run_wildtype_assembly()].
 #' @export
 wt_assembly <- function(...) {
     .Deprecated("run_wildtype_assembly")
     run_wildtype_assembly(...)
 }
 
+#' Deprecated Alias for `run_perturbation_assembly()`
+#'
+#' Forwards all arguments to [run_perturbation_assembly()]. Kept only for
+#' backward compatibility with existing scripts/pipelines; new code should
+#' call `run_perturbation_assembly()` directly.
+#'
+#' @param ... Forwarded to [run_perturbation_assembly()].
+#'
+#' @return See [run_perturbation_assembly()].
 #' @export
 mt_assembly <- function(...) {
     .Deprecated("run_perturbation_assembly")

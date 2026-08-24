@@ -17,8 +17,20 @@ makeprobsvec <- function(p) {
   phat
 }
 
-# Coerce a cell_state_graph (or similar S4 wrapper) to an igraph; otherwise return the input.
-# Stops with a clear message if the resulting object is not an igraph.
+#' Coerce a State Graph Object to a Plain `igraph`
+#'
+#' Unwraps a `cell_state_graph`'s `graph` slot if given one; otherwise returns
+#' the input unchanged. Used throughout the package so graph-traversal helpers
+#' (`get_parents()`, `get_children()`, `get_siblings()`, `get_descendants()`,
+#' `get_roots()`, ...) can accept either a `cell_state_graph` or a bare
+#' `igraph` interchangeably.
+#'
+#' @param g A `cell_state_graph` object or an `igraph`.
+#'
+#' @return The underlying `igraph`. Stops with a clear error if `g` is neither
+#'   a `cell_state_graph` nor an `igraph`.
+#'
+#' @keywords internal
 coerce_state_graph <- function(g) {
   if (methods::is(g, "cell_state_graph")) {
     if (!"graph" %in% slotNames(g)) {

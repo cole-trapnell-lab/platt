@@ -20,6 +20,8 @@ plot_gene_expression(
   log_expr = FALSE,
   pseudocount = 1e-05,
   expr_limits = NULL,
+  frac_limits = c(0, 1),
+  size_range = c(1, 5),
   group_label_size = 1
 )
 }
@@ -51,6 +53,10 @@ plot_gene_expression(
 \item{pseudocount}{Pseudocount to add when log-transforming expression data. Default is 1e-5.}
 
 \item{expr_limits}{Numeric vector of length 2 specifying the limits for expression values. Default is NULL.}
+
+\item{frac_limits}{Numeric vector of length 2 specifying the limits for the fraction-expressing size scale. Default is c(0, 1), so size is comparable across separately-rendered plots.}
+
+\item{size_range}{Numeric vector of length 2 specifying the min/max physical point size (in mm) nodes are drawn at. Default is c(1, 5).}
 
 \item{group_label_size}{Numeric value for the font size of group labels. Default is 1.}
 }

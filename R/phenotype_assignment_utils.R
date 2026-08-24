@@ -384,6 +384,32 @@ filter_denylisted_cell_types <- function(dact_tbl, deg_tbl, cell_type_denylist) 
 }
 
 
+#' Pick the Peak-Effect Timepoint per Cell Type from a Differential Abundance Table
+#'
+#' Collapses a per-timepoint differential-abundance table down to one row per
+#' cell type: the timepoint with the strongest (most significant) abundance
+#' change, restricted to timepoints where the cell type is reasonably abundant.
+#' This is the usual way to build the `dact_results` input expected by
+#' `summarize_impact_in_lineage_context()`/`summarize_impact_in_lineage_context_no_llm()`
+#' from a raw per-timepoint `differential_cell_abundance` table.
+#'
+#' @param differential_cell_abundance A per-timepoint differential abundance
+#'   table. Must have `cell_group`, `timepoint_x`, `delta_log_abund`,
+#'   `delta_q_value`, `percent_max_abund`, and `present_above_thresh`.
+#' @param percent_max_thresh Minimum `percent_max_abund` (relative to the cell
+#'   type's peak abundance) for a timepoint to be treated as having a real
+#'   abundance change; below this, `delta_log_abund` is zeroed out and
+#'   `delta_q_value` is forced to `1` before picking the peak (default `0.10`).
+#' @param with_ties Passed to `dplyr::slice_min()`; whether to keep all rows
+#'   tied for the minimum `delta_q_value` per cell type (default `FALSE`,
+#'   i.e. one row per cell type).
+#'
+#' @return `differential_cell_abundance`, filtered to rows with a non-`NA`
+#'   `delta_log_abund` and `present_above_thresh == TRUE`, then reduced to one
+#'   row per `cell_group` — the timepoint with the smallest `delta_q_value`
+#'   after the `percent_max_thresh` gate.
+#'
+#' @keywords internal
 dacts_when_abundant <- function(differential_cell_abundance, percent_max_thresh = 0.10, with_ties = FALSE) {
     perturb_table_at_when_abundant <- differential_cell_abundance %>%
         mutate(timepoint_x = as.numeric(timepoint_x)) %>%
