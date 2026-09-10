@@ -11,6 +11,7 @@ plot_annotations(
   arrow_unit = 7,
   node_size = 2,
   arrow_color = "darkgrey",
+  box_color = "lightgrey",
   legend_position = "none",
   min_edge_size = 0.1,
   max_edge_size = 2,
