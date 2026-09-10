@@ -289,6 +289,43 @@ get_phenotype_threads <- function(num_threads = NULL) {
     1L
 }
 
+#' Assign abundance, fitness, and identity phenotype labels for every perturbation
+#'
+#' Iterates over the perturbations in `contrast_tbls`, loads each one's DEG
+#' table, and classifies every cell type along three axes: abundance (`A*`
+#' codes from the differential cell abundance test), fitness, and identity
+#' (both from fgsea over the supplied gene sets).
+#'
+#' @param contrast_tbls A tibble with one row per perturbation, carrying the
+#'   columns `perturb_name`, `perturb_group`, `run`, the list-columns
+#'   `perturb_time_window` and `differential_expression_filename`, and the
+#'   differential cell abundance list-column selected by `use_summarized_tbl`.
+#' @param fitness_gene_sets Named list of gene sets used for the fitness fgsea.
+#' @param identity_gene_sets Per-cell-type identity gene sets, as returned by
+#'   [construct_identity_gene_sets()].
+#' @param combined_psg Cell state graph supplying the lineage relationships
+#'   (parents, descendants, alternative fates) used for identity labelling.
+#' @param cell_type_denylist Character vector of cell types to drop before
+#'   classification, or `NULL` to keep all of them.
+#' @param num_threads Number of workers. `NULL` or a non-positive value runs
+#'   serially.
+#' @param use_summarized_tbl If `TRUE`, read the `summarized_differential_cell_abundance`
+#'   column. If `FALSE`, derive the equivalent columns from
+#'   `differential_cell_abundance` via [dacts_when_abundant()].
+#' @param minSize,maxSize Gene set size bounds passed to fgsea.
+#' @param nperm Permutation count passed to fgsea.
+#' @param abundance_q_cut q-value cutoff for the abundance codes, passed to
+#'   [assign_abundance_code()]. Defaults to `0.1`; pass `0.01` to reproduce the
+#'   stricter `A3 Near-loss` gate used before this was configurable. Note that
+#'   [assign_abundance_severity()] keeps its own graded thresholds and is not
+#'   affected by this argument.
+#'
+#' @return A tibble with one row per perturbation and cell type, containing
+#'   `cell_group`, the perturbation identifiers, the time window bounds,
+#'   `abundance_code`, `abundance_severity`, and the `fitness_labels`,
+#'   `fitness_fgsea`, `identity_labels` and `identity_fgsea` list-columns.
+#'
+#' @keywords internal
 assign_phenotypes <- function(
   contrast_tbls,
   fitness_gene_sets,
@@ -402,6 +439,37 @@ dacts_when_abundant <- function(differential_cell_abundance, percent_max_thresh 
     return(perturb_table_at_when_abundant)
 }
 
+#' Assign phenotype labels for every cell type within one perturbation
+#'
+#' Worker behind [assign_phenotypes()]; classifies each cell type in
+#' `dact_tbl` along the abundance, fitness, and identity axes.
+#'
+#' @param dact_tbl Differential cell abundance table for this perturbation,
+#'   carrying `cell_group`, `change_when_present` and
+#'   `change_when_present_q_val`.
+#' @param deg_tbl Differential expression table for this perturbation.
+#' @param gene_sets Named list of gene sets used for the fitness fgsea.
+#' @param identity_gene_sets Per-cell-type identity gene sets, as returned by
+#'   [construct_identity_gene_sets()].
+#' @param combined_psg Cell state graph supplying lineage relationships.
+#' @param perturb_name,perturb_group,run Identifiers copied onto every output
+#'   row.
+#' @param perturb_time_window A list or data frame with `start_time` and
+#'   `stop_time`, recorded as the output's time window bounds.
+#' @param pb Optional progress bar object; ticked once per cell type.
+#' @param log_fn Optional logging function called with progress messages.
+#' @param num_threads Number of workers. `NULL` or a non-positive value runs
+#'   serially.
+#' @param minSize,maxSize Gene set size bounds passed to fgsea.
+#' @param nperm Permutation count passed to fgsea.
+#' @param abundance_q_cut q-value cutoff for the abundance codes, passed to
+#'   [assign_abundance_code()]. Defaults to `0.1`. Does not affect
+#'   [assign_abundance_severity()], which keeps its own graded thresholds.
+#'
+#' @return A tibble with one row per cell type; see [assign_phenotypes()] for
+#'   the columns.
+#'
+#' @keywords internal
 assign_phenotypes_to_cell_types <- function(
   dact_tbl, deg_tbl, gene_sets,
   identity_gene_sets,
