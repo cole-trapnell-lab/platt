@@ -299,7 +299,8 @@ assign_phenotypes <- function(
   use_summarized_tbl = TRUE,
   minSize = 10,
   maxSize = 5000,
-  nperm = 1000
+  nperm = 1000,
+  abundance_q_cut = 0.1
 ) {
     # Get all cell types across all perturbations
     all_cell_types <- unique(unlist(
@@ -370,7 +371,8 @@ assign_phenotypes <- function(
             num_threads = num_threads,
             minSize = minSize,
             maxSize = maxSize,
-            nperm = nperm
+            nperm = nperm,
+            abundance_q_cut = abundance_q_cut
         )
     })
 }
@@ -410,7 +412,8 @@ assign_phenotypes_to_cell_types <- function(
   num_threads = NULL,
   minSize = 10,
   maxSize = 5000,
-  nperm = 1000
+  nperm = 1000,
+  abundance_q_cut = 0.1
 ) {
     cell_types <- unique(dact_tbl$cell_group)
     num_threads <- get_phenotype_threads(num_threads)
@@ -428,7 +431,7 @@ assign_phenotypes_to_cell_types <- function(
         ct_start <- Sys.time()
         if (!is.null(pb)) pb$tick()
         dact_row <- dact_tbl %>% filter(cell_group == ct)
-        abundance_code <- if (nrow(dact_row) > 0) assign_abundance_code(dact_row$change_when_present, dact_row$change_when_present_q_val) else NA_character_
+        abundance_code <- if (nrow(dact_row) > 0) assign_abundance_code(dact_row$change_when_present, dact_row$change_when_present_q_val, q_cut = abundance_q_cut) else NA_character_
         abundance_severity <- if (nrow(dact_row) > 0) assign_abundance_severity(dact_row$change_when_present, dact_row$change_when_present_q_val) else NA_character_
         identity_assignment <- assign_identity_maturation_labels(deg_tbl, ct, identity_gene_sets, combined_psg, minSize = minSize, nperm = nperm, maxSize = maxSize, perturb_name = perturb_name)
         fitness_assignment <- assign_fitness_labels(deg_tbl, ct, gene_sets, minSize = minSize, nperm = nperm, maxSize = maxSize, perturb_name = perturb_name)
@@ -474,12 +477,12 @@ assign_phenotypes_to_cell_types <- function(
     results
 }
 
-assign_abundance_code <- function(change_when_present, change_when_present_q_val) {
+assign_abundance_code <- function(change_when_present, change_when_present_q_val, q_cut = 0.1) {
     case_when(
         is.na(change_when_present) | is.na(change_when_present_q_val) ~ "A0 No change",
-        change_when_present >= 0.5 & change_when_present_q_val < 0.1 ~ "A1 Expansion",
-        change_when_present <= -2.0 & change_when_present_q_val < 0.01 ~ "A3 Near-loss",
-        change_when_present <= -0.5 & change_when_present_q_val < 0.1 ~ "A2 Depletion",
+        change_when_present >= 0.5 & change_when_present_q_val < q_cut ~ "A1 Expansion",
+        change_when_present <= -2.0 & change_when_present_q_val < q_cut ~ "A3 Near-loss",
+        change_when_present <= -0.5 & change_when_present_q_val < q_cut ~ "A2 Depletion",
         TRUE ~ "A0 No change"
     )
 }
