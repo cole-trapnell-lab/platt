@@ -706,8 +706,42 @@ write_phenotype_outputs <- function(phenotype_tbl, base_dir) {
 # Gene set construction support
 
 
+# Preranked (by specificity) gene vector for ONE cell type.
+#
+# Kept as a standalone helper so the cell-type subset is unit-testable without
+# running fgsea, and so the subset is taken with base-R indexing rather than
+# inside a dplyr data mask. That last point is the whole reason this function
+# exists: callers may hand us a ref_expression carrying its own `cell_type`
+# COLUMN (sulston's make_gene_sets created one, equal to cell_group, from
+# 2026-01 onward). Inside filter(), such a column SHADOWS a function argument
+# of the same name, silently turning `cell_group == cell_type` into a row-wise
+# self-comparison that is TRUE for every row -- so no subset is taken, every
+# gene keeps its maximum specificity across all cell types, and every cell type
+# receives the same "identity" gene sets. Base-R indexing has no data mask and
+# is immune to whatever columns the caller supplies.
+.rank_genes_by_specificity <- function(ref_expression,
+                                       cell_type,
+                                       min_fraction_expressing = 0.01) {
+    required <- c("cell_group", "gene_short_name", "fraction_expressing", "specificity")
+    missing_cols <- setdiff(required, names(ref_expression))
+    if (length(missing_cols) > 0) {
+        stop(
+            "ref_expression is missing required column(s): ",
+            paste(missing_cols, collapse = ", "),
+            call. = FALSE
+        )
+    }
+    keep <- ref_expression$cell_group == cell_type &
+        ref_expression$fraction_expressing > min_fraction_expressing
+    keep[is.na(keep)] <- FALSE
+    rows <- ref_expression[keep, c("gene_short_name", "specificity"), drop = FALSE]
+    rows <- rows[order(rows$specificity, decreasing = TRUE), , drop = FALSE]
+    rows <- rows[!duplicated(rows$gene_short_name), , drop = FALSE]
+    stats::setNames(rows$specificity, rows$gene_short_name)
+}
+
 # FIXME: Move this to zscapetools?
-construct_identity_gene_sets <- function(ref_expression, gene_set_BP, gene_set_MF, gene_set_CC, cell_types, minSize = 15, maxSize = 500, padj_cutoff = 0.05) {
+construct_identity_gene_sets <- function(ref_expression, gene_set_BP, gene_set_MF, gene_set_CC, cell_types, minSize = 15, maxSize = 500, padj_cutoff = 0.05, min_fraction_expressing = 0.01) {
     # library(dplyr)
     # library(fgsea)
     # library(stringr)
@@ -720,37 +754,57 @@ construct_identity_gene_sets <- function(ref_expression, gene_set_BP, gene_set_M
         width = 60
     )
 
-    identity_gene_sets <- purrr::map_dfr(cell_types, function(cell_type) {
+    identity_gene_sets <- purrr::map_dfr(cell_types, function(this_cell_type) {
         pb$tick()
-        specificity_ranked_genes <- ref_expression %>%
-            filter(cell_group == cell_type, fraction_expressing > 0.01)
-        gene_ranks <- specificity_ranked_genes %>%
-            arrange(desc(specificity)) %>%
-            distinct(gene_short_name, .keep_all = TRUE) %>%
-            select(gene_short_name, specificity) %>%
-            deframe()
-        # Run fgsea for BP, MF, CC
-        fgsea_go_bp <- fgsea::fgsea(
-            scoreType = "pos",
-            pathways = split(gene_set_BP$gene_short_name, gene_set_BP$gs_name),
-            stats = gene_ranks,
-            minSize = minSize,
-            maxSize = maxSize
+        # NOTE: the loop variable is deliberately NOT named `cell_type`. A
+        # ref_expression column of that name would shadow it inside dplyr verbs.
+        # See .rank_genes_by_specificity() for the full story.
+        gene_ranks <- .rank_genes_by_specificity(
+            ref_expression, this_cell_type,
+            min_fraction_expressing = min_fraction_expressing
         )
-        fgsea_go_mf <- fgsea::fgsea(
-            scoreType = "pos",
-            pathways = split(gene_set_MF$gene_short_name, gene_set_MF$gs_name),
-            stats = gene_ranks,
-            minSize = minSize,
-            maxSize = maxSize
+        if (length(gene_ranks) < minSize) {
+            return(tibble(cell_type = character(), gene_set_name = character(), gene_short_name = character()))
+        }
+        # Run fgsea for BP, MF, CC.
+        #
+        # fgseaMultilevel is Monte Carlo, so an unseeded run makes *which*
+        # pathways clear padj_cutoff depend on RNG state -- i.e. on loop order,
+        # worker count, and serial vs. parallel execution. Seed from this cell
+        # type's own identity (same approach as run_fgsea_modules) so results
+        # depend only on the inputs. Determinism additionally assumes the caller
+        # has registered BiocParallel::SerialParam().
+        go_res <- withr::with_seed(
+            .fgsea_seed_from_key(paste(this_cell_type, "identity_go", sep = "::")),
+            {
+                suppressWarnings(list(
+                    bp = fgsea::fgsea(
+                        scoreType = "pos",
+                        pathways = split(gene_set_BP$gene_short_name, gene_set_BP$gs_name),
+                        stats = gene_ranks,
+                        minSize = minSize,
+                        maxSize = maxSize
+                    ),
+                    mf = fgsea::fgsea(
+                        scoreType = "pos",
+                        pathways = split(gene_set_MF$gene_short_name, gene_set_MF$gs_name),
+                        stats = gene_ranks,
+                        minSize = minSize,
+                        maxSize = maxSize
+                    ),
+                    cc = fgsea::fgsea(
+                        scoreType = "pos",
+                        pathways = split(gene_set_CC$gene_short_name, gene_set_CC$gs_name),
+                        stats = gene_ranks,
+                        minSize = minSize,
+                        maxSize = maxSize
+                    )
+                ))
+            }
         )
-        fgsea_go_cc <- fgsea::fgsea(
-            scoreType = "pos",
-            pathways = split(gene_set_CC$gene_short_name, gene_set_CC$gs_name),
-            stats = gene_ranks,
-            minSize = minSize,
-            maxSize = maxSize
-        )
+        fgsea_go_bp <- go_res$bp
+        fgsea_go_mf <- go_res$mf
+        fgsea_go_cc <- go_res$cc
         # Collect significant pathways
         sig_bp <- fgsea_go_bp %>% filter(padj < padj_cutoff)
         if (nrow(sig_bp) > 0) sig_bp$ontology <- "BP"
@@ -776,7 +830,7 @@ construct_identity_gene_sets <- function(ref_expression, gene_set_BP, gene_set_M
         } else {
             purrr::map_dfr(1:nrow(sig_pathways), function(i) {
                 tibble(
-                    cell_type = cell_type,
+                    cell_type = this_cell_type,
                     gene_set_name = sig_pathways$display_name[i],
                     gene_short_name = sig_pathways$leadingEdge[[i]]
                 )
