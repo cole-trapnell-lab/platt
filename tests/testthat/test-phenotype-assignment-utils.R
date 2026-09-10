@@ -95,3 +95,66 @@ testthat::test_that(".fgsea_seed_from_key gives different keys different seeds (
     testthat::expect_identical(s1, s3)
     testthat::expect_false(identical(s1, s2))
 })
+
+# Regression: a `cell_type` COLUMN in ref_expression must not shadow the
+# cell-type argument. sulston's make_gene_sets began supplying such a column in
+# 2026-01, which silently turned the subset in construct_identity_gene_sets into
+# a no-op: every cell type got a ranking pooled over all cell types, and so
+# received identical "identity" gene sets.
+testthat::test_that(".rank_genes_by_specificity subsets by cell type even when ref_expression has a cell_type column", {
+    ref <- tibble::tibble(
+        cell_group = rep(c("ct_a", "ct_b"), each = 2),
+        gene_short_name = c("a1", "a2", "b1", "b2"),
+        fraction_expressing = c(0.5, 0.4, 0.5, 0.4),
+        specificity = c(0.9, 0.8, 0.7, 0.6)
+    )
+    ref$cell_type <- ref$cell_group
+
+    ranks_a <- platt:::.rank_genes_by_specificity(ref, "ct_a")
+    testthat::expect_identical(names(ranks_a), c("a1", "a2"))
+    testthat::expect_identical(unname(ranks_a), c(0.9, 0.8))
+
+    testthat::expect_identical(
+        names(platt:::.rank_genes_by_specificity(ref, "ct_b")),
+        c("b1", "b2")
+    )
+})
+
+testthat::test_that(".rank_genes_by_specificity applies the expression floor per cell type and sorts descending", {
+    ref <- tibble::tibble(
+        cell_group = c("ct_a", "ct_a", "ct_a"),
+        gene_short_name = c("lo", "hi", "mid"),
+        fraction_expressing = c(0.001, 0.5, 0.5),
+        specificity = c(0.99, 0.3, 0.6)
+    )
+    ranks <- platt:::.rank_genes_by_specificity(ref, "ct_a")
+    # `lo` has the highest specificity but is below the floor, so it is dropped
+    # even though dropping it costs the top-ranked gene.
+    testthat::expect_identical(names(ranks), c("mid", "hi"))
+
+    # the floor is tunable rather than hardcoded
+    testthat::expect_identical(
+        names(platt:::.rank_genes_by_specificity(ref, "ct_a", min_fraction_expressing = 0)),
+        c("lo", "mid", "hi")
+    )
+})
+
+testthat::test_that(".rank_genes_by_specificity keeps the highest-specificity row per duplicated gene symbol", {
+    ref <- tibble::tibble(
+        cell_group = "ct_a",
+        gene_short_name = c("g1", "g1", "g2"),
+        fraction_expressing = 0.5,
+        specificity = c(0.2, 0.8, 0.5)
+    )
+    ranks <- platt:::.rank_genes_by_specificity(ref, "ct_a")
+    testthat::expect_identical(names(ranks), c("g1", "g2"))
+    testthat::expect_identical(unname(ranks), c(0.8, 0.5))
+})
+
+testthat::test_that(".rank_genes_by_specificity errors clearly on a missing required column", {
+    ref <- tibble::tibble(cell_group = "ct_a", gene_short_name = "g1", specificity = 0.5)
+    testthat::expect_error(
+        platt:::.rank_genes_by_specificity(ref, "ct_a"),
+        "fraction_expressing"
+    )
+})

@@ -289,6 +289,43 @@ get_phenotype_threads <- function(num_threads = NULL) {
     1L
 }
 
+#' Assign abundance, fitness, and identity phenotype labels for every perturbation
+#'
+#' Iterates over the perturbations in `contrast_tbls`, loads each one's DEG
+#' table, and classifies every cell type along three axes: abundance (`A*`
+#' codes from the differential cell abundance test), fitness, and identity
+#' (both from fgsea over the supplied gene sets).
+#'
+#' @param contrast_tbls A tibble with one row per perturbation, carrying the
+#'   columns `perturb_name`, `perturb_group`, `run`, the list-columns
+#'   `perturb_time_window` and `differential_expression_filename`, and the
+#'   differential cell abundance list-column selected by `use_summarized_tbl`.
+#' @param fitness_gene_sets Named list of gene sets used for the fitness fgsea.
+#' @param identity_gene_sets Per-cell-type identity gene sets, as returned by
+#'   [construct_identity_gene_sets()].
+#' @param combined_psg Cell state graph supplying the lineage relationships
+#'   (parents, descendants, alternative fates) used for identity labelling.
+#' @param cell_type_denylist Character vector of cell types to drop before
+#'   classification, or `NULL` to keep all of them.
+#' @param num_threads Number of workers. `NULL` or a non-positive value runs
+#'   serially.
+#' @param use_summarized_tbl If `TRUE`, read the `summarized_differential_cell_abundance`
+#'   column. If `FALSE`, derive the equivalent columns from
+#'   `differential_cell_abundance` via [dacts_when_abundant()].
+#' @param minSize,maxSize Gene set size bounds passed to fgsea.
+#' @param nperm Permutation count passed to fgsea.
+#' @param abundance_q_cut q-value cutoff for the abundance codes, passed to
+#'   [assign_abundance_code()]. Defaults to `0.1`; pass `0.01` to reproduce the
+#'   stricter `A3 Near-loss` gate used before this was configurable. Note that
+#'   [assign_abundance_severity()] keeps its own graded thresholds and is not
+#'   affected by this argument.
+#'
+#' @return A tibble with one row per perturbation and cell type, containing
+#'   `cell_group`, the perturbation identifiers, the time window bounds,
+#'   `abundance_code`, `abundance_severity`, and the `fitness_labels`,
+#'   `fitness_fgsea`, `identity_labels` and `identity_fgsea` list-columns.
+#'
+#' @keywords internal
 assign_phenotypes <- function(
   contrast_tbls,
   fitness_gene_sets,
@@ -299,7 +336,8 @@ assign_phenotypes <- function(
   use_summarized_tbl = TRUE,
   minSize = 10,
   maxSize = 5000,
-  nperm = 1000
+  nperm = 1000,
+  abundance_q_cut = 0.1
 ) {
     # Get all cell types across all perturbations
     all_cell_types <- unique(unlist(
@@ -370,7 +408,8 @@ assign_phenotypes <- function(
             num_threads = num_threads,
             minSize = minSize,
             maxSize = maxSize,
-            nperm = nperm
+            nperm = nperm,
+            abundance_q_cut = abundance_q_cut
         )
     })
 }
@@ -400,6 +439,37 @@ dacts_when_abundant <- function(differential_cell_abundance, percent_max_thresh 
     return(perturb_table_at_when_abundant)
 }
 
+#' Assign phenotype labels for every cell type within one perturbation
+#'
+#' Worker behind [assign_phenotypes()]; classifies each cell type in
+#' `dact_tbl` along the abundance, fitness, and identity axes.
+#'
+#' @param dact_tbl Differential cell abundance table for this perturbation,
+#'   carrying `cell_group`, `change_when_present` and
+#'   `change_when_present_q_val`.
+#' @param deg_tbl Differential expression table for this perturbation.
+#' @param gene_sets Named list of gene sets used for the fitness fgsea.
+#' @param identity_gene_sets Per-cell-type identity gene sets, as returned by
+#'   [construct_identity_gene_sets()].
+#' @param combined_psg Cell state graph supplying lineage relationships.
+#' @param perturb_name,perturb_group,run Identifiers copied onto every output
+#'   row.
+#' @param perturb_time_window A list or data frame with `start_time` and
+#'   `stop_time`, recorded as the output's time window bounds.
+#' @param pb Optional progress bar object; ticked once per cell type.
+#' @param log_fn Optional logging function called with progress messages.
+#' @param num_threads Number of workers. `NULL` or a non-positive value runs
+#'   serially.
+#' @param minSize,maxSize Gene set size bounds passed to fgsea.
+#' @param nperm Permutation count passed to fgsea.
+#' @param abundance_q_cut q-value cutoff for the abundance codes, passed to
+#'   [assign_abundance_code()]. Defaults to `0.1`. Does not affect
+#'   [assign_abundance_severity()], which keeps its own graded thresholds.
+#'
+#' @return A tibble with one row per cell type; see [assign_phenotypes()] for
+#'   the columns.
+#'
+#' @keywords internal
 assign_phenotypes_to_cell_types <- function(
   dact_tbl, deg_tbl, gene_sets,
   identity_gene_sets,
@@ -410,7 +480,8 @@ assign_phenotypes_to_cell_types <- function(
   num_threads = NULL,
   minSize = 10,
   maxSize = 5000,
-  nperm = 1000
+  nperm = 1000,
+  abundance_q_cut = 0.1
 ) {
     cell_types <- unique(dact_tbl$cell_group)
     num_threads <- get_phenotype_threads(num_threads)
@@ -428,7 +499,7 @@ assign_phenotypes_to_cell_types <- function(
         ct_start <- Sys.time()
         if (!is.null(pb)) pb$tick()
         dact_row <- dact_tbl %>% filter(cell_group == ct)
-        abundance_code <- if (nrow(dact_row) > 0) assign_abundance_code(dact_row$change_when_present, dact_row$change_when_present_q_val) else NA_character_
+        abundance_code <- if (nrow(dact_row) > 0) assign_abundance_code(dact_row$change_when_present, dact_row$change_when_present_q_val, q_cut = abundance_q_cut) else NA_character_
         abundance_severity <- if (nrow(dact_row) > 0) assign_abundance_severity(dact_row$change_when_present, dact_row$change_when_present_q_val) else NA_character_
         identity_assignment <- assign_identity_maturation_labels(deg_tbl, ct, identity_gene_sets, combined_psg, minSize = minSize, nperm = nperm, maxSize = maxSize, perturb_name = perturb_name)
         fitness_assignment <- assign_fitness_labels(deg_tbl, ct, gene_sets, minSize = minSize, nperm = nperm, maxSize = maxSize, perturb_name = perturb_name)
@@ -474,12 +545,12 @@ assign_phenotypes_to_cell_types <- function(
     results
 }
 
-assign_abundance_code <- function(change_when_present, change_when_present_q_val) {
+assign_abundance_code <- function(change_when_present, change_when_present_q_val, q_cut = 0.1) {
     case_when(
         is.na(change_when_present) | is.na(change_when_present_q_val) ~ "A0 No change",
-        change_when_present >= 0.5 & change_when_present_q_val < 0.1 ~ "A1 Expansion",
-        change_when_present <= -2.0 & change_when_present_q_val < 0.01 ~ "A3 Near-loss",
-        change_when_present <= -0.5 & change_when_present_q_val < 0.1 ~ "A2 Depletion",
+        change_when_present >= 0.5 & change_when_present_q_val < q_cut ~ "A1 Expansion",
+        change_when_present <= -2.0 & change_when_present_q_val < q_cut ~ "A3 Near-loss",
+        change_when_present <= -0.5 & change_when_present_q_val < q_cut ~ "A2 Depletion",
         TRUE ~ "A0 No change"
     )
 }
@@ -706,8 +777,42 @@ write_phenotype_outputs <- function(phenotype_tbl, base_dir) {
 # Gene set construction support
 
 
+# Preranked (by specificity) gene vector for ONE cell type.
+#
+# Kept as a standalone helper so the cell-type subset is unit-testable without
+# running fgsea, and so the subset is taken with base-R indexing rather than
+# inside a dplyr data mask. That last point is the whole reason this function
+# exists: callers may hand us a ref_expression carrying its own `cell_type`
+# COLUMN (sulston's make_gene_sets created one, equal to cell_group, from
+# 2026-01 onward). Inside filter(), such a column SHADOWS a function argument
+# of the same name, silently turning `cell_group == cell_type` into a row-wise
+# self-comparison that is TRUE for every row -- so no subset is taken, every
+# gene keeps its maximum specificity across all cell types, and every cell type
+# receives the same "identity" gene sets. Base-R indexing has no data mask and
+# is immune to whatever columns the caller supplies.
+.rank_genes_by_specificity <- function(ref_expression,
+                                       cell_type,
+                                       min_fraction_expressing = 0.01) {
+    required <- c("cell_group", "gene_short_name", "fraction_expressing", "specificity")
+    missing_cols <- setdiff(required, names(ref_expression))
+    if (length(missing_cols) > 0) {
+        stop(
+            "ref_expression is missing required column(s): ",
+            paste(missing_cols, collapse = ", "),
+            call. = FALSE
+        )
+    }
+    keep <- ref_expression$cell_group == cell_type &
+        ref_expression$fraction_expressing > min_fraction_expressing
+    keep[is.na(keep)] <- FALSE
+    rows <- ref_expression[keep, c("gene_short_name", "specificity"), drop = FALSE]
+    rows <- rows[order(rows$specificity, decreasing = TRUE), , drop = FALSE]
+    rows <- rows[!duplicated(rows$gene_short_name), , drop = FALSE]
+    stats::setNames(rows$specificity, rows$gene_short_name)
+}
+
 # FIXME: Move this to zscapetools?
-construct_identity_gene_sets <- function(ref_expression, gene_set_BP, gene_set_MF, gene_set_CC, cell_types, minSize = 15, maxSize = 500, padj_cutoff = 0.05) {
+construct_identity_gene_sets <- function(ref_expression, gene_set_BP, gene_set_MF, gene_set_CC, cell_types, minSize = 15, maxSize = 500, padj_cutoff = 0.05, min_fraction_expressing = 0.01) {
     # library(dplyr)
     # library(fgsea)
     # library(stringr)
@@ -720,37 +825,57 @@ construct_identity_gene_sets <- function(ref_expression, gene_set_BP, gene_set_M
         width = 60
     )
 
-    identity_gene_sets <- purrr::map_dfr(cell_types, function(cell_type) {
+    identity_gene_sets <- purrr::map_dfr(cell_types, function(this_cell_type) {
         pb$tick()
-        specificity_ranked_genes <- ref_expression %>%
-            filter(cell_group == cell_type, fraction_expressing > 0.01)
-        gene_ranks <- specificity_ranked_genes %>%
-            arrange(desc(specificity)) %>%
-            distinct(gene_short_name, .keep_all = TRUE) %>%
-            select(gene_short_name, specificity) %>%
-            deframe()
-        # Run fgsea for BP, MF, CC
-        fgsea_go_bp <- fgsea::fgsea(
-            scoreType = "pos",
-            pathways = split(gene_set_BP$gene_short_name, gene_set_BP$gs_name),
-            stats = gene_ranks,
-            minSize = minSize,
-            maxSize = maxSize
+        # NOTE: the loop variable is deliberately NOT named `cell_type`. A
+        # ref_expression column of that name would shadow it inside dplyr verbs.
+        # See .rank_genes_by_specificity() for the full story.
+        gene_ranks <- .rank_genes_by_specificity(
+            ref_expression, this_cell_type,
+            min_fraction_expressing = min_fraction_expressing
         )
-        fgsea_go_mf <- fgsea::fgsea(
-            scoreType = "pos",
-            pathways = split(gene_set_MF$gene_short_name, gene_set_MF$gs_name),
-            stats = gene_ranks,
-            minSize = minSize,
-            maxSize = maxSize
+        if (length(gene_ranks) < minSize) {
+            return(tibble(cell_type = character(), gene_set_name = character(), gene_short_name = character()))
+        }
+        # Run fgsea for BP, MF, CC.
+        #
+        # fgseaMultilevel is Monte Carlo, so an unseeded run makes *which*
+        # pathways clear padj_cutoff depend on RNG state -- i.e. on loop order,
+        # worker count, and serial vs. parallel execution. Seed from this cell
+        # type's own identity (same approach as run_fgsea_modules) so results
+        # depend only on the inputs. Determinism additionally assumes the caller
+        # has registered BiocParallel::SerialParam().
+        go_res <- withr::with_seed(
+            .fgsea_seed_from_key(paste(this_cell_type, "identity_go", sep = "::")),
+            {
+                suppressWarnings(list(
+                    bp = fgsea::fgsea(
+                        scoreType = "pos",
+                        pathways = split(gene_set_BP$gene_short_name, gene_set_BP$gs_name),
+                        stats = gene_ranks,
+                        minSize = minSize,
+                        maxSize = maxSize
+                    ),
+                    mf = fgsea::fgsea(
+                        scoreType = "pos",
+                        pathways = split(gene_set_MF$gene_short_name, gene_set_MF$gs_name),
+                        stats = gene_ranks,
+                        minSize = minSize,
+                        maxSize = maxSize
+                    ),
+                    cc = fgsea::fgsea(
+                        scoreType = "pos",
+                        pathways = split(gene_set_CC$gene_short_name, gene_set_CC$gs_name),
+                        stats = gene_ranks,
+                        minSize = minSize,
+                        maxSize = maxSize
+                    )
+                ))
+            }
         )
-        fgsea_go_cc <- fgsea::fgsea(
-            scoreType = "pos",
-            pathways = split(gene_set_CC$gene_short_name, gene_set_CC$gs_name),
-            stats = gene_ranks,
-            minSize = minSize,
-            maxSize = maxSize
-        )
+        fgsea_go_bp <- go_res$bp
+        fgsea_go_mf <- go_res$mf
+        fgsea_go_cc <- go_res$cc
         # Collect significant pathways
         sig_bp <- fgsea_go_bp %>% filter(padj < padj_cutoff)
         if (nrow(sig_bp) > 0) sig_bp$ontology <- "BP"
@@ -776,7 +901,7 @@ construct_identity_gene_sets <- function(ref_expression, gene_set_BP, gene_set_M
         } else {
             purrr::map_dfr(1:nrow(sig_pathways), function(i) {
                 tibble(
-                    cell_type = cell_type,
+                    cell_type = this_cell_type,
                     gene_set_name = sig_pathways$display_name[i],
                     gene_short_name = sig_pathways$leadingEdge[[i]]
                 )
