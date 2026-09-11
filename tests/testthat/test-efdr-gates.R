@@ -123,3 +123,109 @@ test_that("missing counts disable the count-driven gates rather than gating ever
                                       support = f$support)
   expect_true(all(out$empirical_p < 0.05))
 })
+
+
+# gate_reason: WHY a call was pinned, published alongside WHETHER it was.
+
+gr <- function(out, id) out$gate_reason[match(id, out$id)]
+
+test_that("gate_reason names the gate that pinned each call", {
+  f <- gate_fixture()
+  out <- annotate_empirical_fdr_model(stub_model(), f$deg, arm_cells = f$arm_cells,
+                                      counts = f$counts, support = f$support)
+
+  # Ungated calls carry no reason.
+  expect_true(is.na(gr(out, "well_det_small_arm")))
+  expect_true(is.na(gr(out, "complete_depletion")))
+
+  # Gated calls name their gate.
+  expect_equal(gr(out, "trace_big_arm"), "too_few_cells")
+  expect_equal(gr(out, "one_embryo"), "not_replicated")
+
+  # The reason is present exactly where the call was pinned, and nowhere else.
+  expect_equal(is.na(out$gate_reason), out$empirical_p < 1)
+})
+
+
+test_that("gate_reason explains pins that expected_detections cannot", {
+  # This is the case the column exists for. `one_embryo` clears the power gate
+  # -- 3 expected detections, at the threshold -- so every published count
+  # column says it was testable, yet it is pinned to 1 by not_replicated. Before
+  # gate_reason it was indistinguishable from a gene that was tested and found
+  # null, which is the DEG analogue of the A0 problem.
+  f <- gate_fixture()
+  out <- annotate_empirical_fdr_model(stub_model(), f$deg, arm_cells = f$arm_cells,
+                                      counts = f$counts, support = f$support)
+
+  row <- out[match("one_embryo", out$id), ]
+  expect_gte(row$expected_detections, 3)      # passes the power gate
+  expect_equal(row$empirical_p, 1)            # pinned anyway
+  expect_equal(row$gate_reason, "not_replicated")
+})
+
+
+test_that("a gate that is off records no reason", {
+  f <- gate_fixture()
+  out <- annotate_empirical_fdr_model(stub_model(), f$deg, arm_cells = f$arm_cells,
+                                      counts = f$counts, support = f$support,
+                                      gates = character(0))
+
+  expect_true(all(is.na(out$gate_reason)))
+  expect_true(all(out$empirical_p < 1))
+})
+
+
+test_that("gate_reason accumulates when several gates fire on one call", {
+  f <- gate_fixture()
+  all_gates <- c("too_few_embryos", "not_replicated", "too_few_cells",
+                 "not_detected_anywhere", "gain_from_zero", "gain_no_counts",
+                 "loss_from_trace", "flat_cell_floor")
+  out <- annotate_empirical_fdr_model(stub_model(), f$deg, arm_cells = f$arm_cells,
+                                      counts = f$counts, support = f$support,
+                                      gates = all_gates)
+
+  # absent_both trips four of them; all are recorded, in evaluation order.
+  reasons <- strsplit(gr(out, "absent_both"), ";", fixed = TRUE)[[1]]
+  expect_true(all(c("not_replicated", "not_detected_anywhere",
+                    "loss_from_trace", "too_few_cells") %in% reasons))
+  expect_false(anyDuplicated(reasons) > 0)
+
+  # and every named reason is a real gate name
+  named <- unique(unlist(strsplit(na.omit(out$gate_reason), ";", fixed = TRUE)))
+  expect_true(all(named %in% all_gates))
+})
+
+
+test_that("recording the reason does not change the verdict", {
+  # The column is purely additive: it must not move empirical_p or empirical_fdr
+  # under any gate configuration, including the retired full policy.
+  f <- gate_fixture()
+  all_gates <- c("too_few_embryos", "not_replicated", "too_few_cells",
+                 "not_detected_anywhere", "gain_from_zero", "gain_no_counts",
+                 "loss_from_trace", "flat_cell_floor")
+
+  for (gset in list(.EFDR_DEFAULT_GATES, all_gates, character(0))) {
+    out <- annotate_empirical_fdr_model(stub_model(), f$deg, arm_cells = f$arm_cells,
+                                        counts = f$counts, support = f$support,
+                                        gates = gset)
+    # Pinned exactly when a reason was recorded, and pinned to exactly 1.
+    expect_equal(out$empirical_p >= 1, !is.na(out$gate_reason))
+    expect_true(all(out$empirical_p[!is.na(out$gate_reason)] == 1))
+    expect_true(all(out$empirical_fdr[!is.na(out$gate_reason)] == 1))
+  }
+})
+
+
+test_that("expected_detections is published, not just used internally", {
+  # The design note assumed this was computed and discarded. It is not: it
+  # survives on the returned table, and build_efdr_model.R writes that table
+  # whole, so it already reaches the published DEG file.
+  f <- gate_fixture()
+  out <- annotate_empirical_fdr_model(stub_model(), f$deg, arm_cells = f$arm_cells,
+                                      counts = f$counts, support = f$support)
+
+  expect_true("expected_detections" %in% names(out))
+  expect_equal(out$expected_detections, out$thin_arm_cells * out$max_det)
+  # effect-independent: a function of arm size and detection rate only
+  expect_false(any(is.na(out$expected_detections[is.finite(out$max_det)])))
+})
