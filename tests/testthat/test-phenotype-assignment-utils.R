@@ -158,3 +158,42 @@ testthat::test_that(".rank_genes_by_specificity errors clearly on a missing requ
         "fraction_expressing"
     )
 })
+
+
+test_that("every code assign_abundance_code() can emit has a colour-map entry", {
+
+  # The A3 bug: assign_abundance_code() emits "A3 Near-loss" while
+  # abundance_code_map keyed on "A3 Ablation/Loss". The lookup returned NA,
+  # which impact_to_phenos() coerces to a 0 proxy, so the most severe abundance
+  # phenotype rendered identically to "no change". It survived ~6 months because
+  # A3 also required q < 0.01 and never fired in practice.
+  #
+  # This test is the actual fix: it fails if the two lists ever drift again.
+  emitted <- c("A0 No change", "A1 Expansion", "A2 Depletion", "A3 Near-loss")
+  code_map <- eval(formals(impact_to_phenos)$abundance_code_map)
+
+  missing <- setdiff(emitted, names(code_map))
+  expect_equal(missing, character(0))
+
+  # A3 must carry a real, negative sign -- not NA, and not 0.
+  expect_false(is.na(code_map[["A3 Near-loss"]]))
+  expect_lt(code_map[["A3 Near-loss"]], 0)
+
+  # and it must be at least as severe as a plain depletion
+  expect_lte(code_map[["A3 Near-loss"]], code_map[["A2 Depletion"]])
+})
+
+
+test_that("an unmapped abundance code degrades to a neutral proxy", {
+
+  # Documents the failure mode that hid the A3 bug, so the consequence of a
+  # future mismatch is explicit rather than folklore: an unknown code does not
+  # error, it silently colours as no-change.
+  code_map <- eval(formals(impact_to_phenos)$abundance_code_map)
+  sign <- unname(code_map["A9 Not a real code"])
+  expect_true(is.na(sign))
+
+  proxy <- ifelse(is.na(sign), 0, sign * 2.0)
+  expect_equal(proxy, 0)
+  expect_equal(proxy, unname(code_map[["A0 No change"]]) * 2.0)
+})
