@@ -38,10 +38,26 @@ format_abundance_change_percent <- function(lfc) {
     )
 }
 
-abundance_power_status_label <- function(power, powered_thresh = 0.8) {
+# Whether a contrast could have detected a change of `margin_fold_change`.
+#
+# Keyed on mdfc80, which depends only on the standard error, alpha and the
+# residual df. It used to be keyed on Hooke's `power`, which is strictly
+# increasing in |Z| and therefore a restatement of the p-value -- so the glyph
+# said "powered" almost exactly when the call was significant, duplicating the
+# effect size painted beside it instead of qualifying it.
+#
+#' Label whether a contrast could detect a change of a given size
+#'
+#' Exported so zscape_portal calls this rather than keeping a second copy.
+#'
+#' @param mdfc80 Minimum detectable fold change at 80% power.
+#' @param margin_fold_change Fold change to be powered against.
+#' @return "powered", "underpowered", or NA.
+#' @export
+abundance_power_status_label <- function(mdfc80, margin_fold_change = 2) {
     dplyr::case_when(
-        is.na(power) ~ NA_character_,
-        power >= powered_thresh ~ "powered",
+        is.na(mdfc80) ~ NA_character_,
+        mdfc80 <= margin_fold_change ~ "powered",
         TRUE ~ "underpowered"
     )
 }
@@ -264,7 +280,7 @@ plot_phenotypes_from_impact <- function(cell_state_graph,
         impact_table %>%
             dplyr::transmute(
                 cell_group = as.character(.data[[impact_cell_col]]),
-                has_real_abundance_change = !is.na(abundance_code) & abundance_code != "A0 No change"
+                has_real_abundance_change = !is.na(abundance_code) & !(abundance_code %in% NON_CALLED_ABUNDANCE_CODES)
             ) %>%
             dplyr::group_by(cell_group) %>%
             dplyr::summarise(
@@ -307,7 +323,14 @@ plot_phenotypes_from_impact <- function(cell_state_graph,
             abundance_code = dplyr::if_else(
                 has_real_abundance_change & abundance_q < 0.05,
                 as.character(abundance_code),
-                "A0 No change"
+                # Do NOT collapse AU/AN into A0 here. That would undo the whole
+                # point of the split: A0 asserts a resolved null, while AU and
+                # AN assert that no null can be claimed.
+                dplyr::if_else(
+                    as.character(abundance_code) %in% c("AU Undetermined", "AN Not assessed"),
+                    as.character(abundance_code),
+                    "A0 No change"
+                )
             )
         ) %>%
         dplyr::select(-has_real_abundance_change) %>%
@@ -338,6 +361,8 @@ impact_to_phenos <- function(impact_table,
                              sev_map = c(none = 0.25, mild = 0.6, moderate = 1.2, severe = 2.0),
                              abundance_code_map = c(
                                  "A0 No change" = 0,
+                                 "AU Undetermined" = 0,
+                                 "AN Not assessed" = 0,
                                  "A1 Expansion" = +1,
                                  "A2 Depletion" = -1,
                                  "A3 Ablation/Loss" = -1.5,
@@ -597,15 +622,25 @@ phenotype_tooltip_builder <- function(g, render_mode = c("tissue", "global")) {
             q = if ("q" %in% names(g)) as.numeric(q) else NA_real_,
             power = if ("power" %in% names(g)) as.numeric(power) else NA_real_,
             powered_thresh = if ("powered_thresh" %in% names(g)) as.numeric(powered_thresh) else 0.8,
+            # Effect-independent detectability, replacing `power` for the glyph.
+            abundance_mdfc80 = if ("abundance_mdfc80" %in% names(g)) as.numeric(abundance_mdfc80) else NA_real_,
+            margin_fold_change = if ("margin_fold_change" %in% names(g)) as.numeric(margin_fold_change) else 2,
             present_above_thresh = if ("present_above_thresh" %in% names(g)) as.logical(present_above_thresh) else NA,
             present_above_thresh_flag = if ("present_above_thresh_flag" %in% names(g)) as.logical(present_above_thresh_flag) else dplyr::coalesce(present_above_thresh, FALSE),
             abundance_text = dplyr::case_when(
-                (!is.na(abundance_code) & abundance_code == "A0 No change" & !is.na(power)) ~ "0%",
+                # "AU Undetermined" must NOT render a number. A0 now means a
+                # resolved null, so "0%" is a claim we can back; AU means we
+                # could not have seen the change, and printing the
+                # non-significant point estimate there would assert precision
+                # we do not have.
+                (!is.na(abundance_code) & abundance_code == "AU Undetermined") ~ "",
+                (!is.na(abundance_code) & abundance_code == "AN Not assessed") ~ "",
+                (!is.na(abundance_code) & abundance_code == "A0 No change") ~ "0%",
                 ((is.na(abundance_code) | abundance_code == "") & !is.na(power)) ~ "0%",
                 is.na(lfc) ~ "",
                 TRUE ~ format_abundance_change_percent(lfc)
             ),
-            abundance_power_status = abundance_power_status_label(power, powered_thresh),
+            abundance_power_status = abundance_power_status_label(abundance_mdfc80, margin_fold_change),
             abundance_display = dplyr::case_when(
                 abundance_text == "" ~ "",
                 is.na(abundance_power_status) ~ abundance_text,

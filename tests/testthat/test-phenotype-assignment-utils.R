@@ -158,3 +158,100 @@ testthat::test_that(".rank_genes_by_specificity errors clearly on a missing requ
         "fraction_expressing"
     )
 })
+
+
+test_that("assign_abundance_code splits A0 into four states", {
+
+  # Same non-significant observed change in every null row; only the standard
+  # error differs. Before the split these were one indistinguishable bucket.
+  lfc <- c(1.2, -2.5, -0.8, 0.02, 0.05, 0.05, 0.05, 0.00, NA)
+  q   <- c(0.01, 0.005, 0.02, 0.90, 0.80, 0.95, 0.90, 1.00, NA)
+  se  <- c(0.20, 0.30, 0.20, 0.10, 0.40, 1.20, NA, 0.00, 0.20)
+  df  <- 40
+
+  code <- assign_abundance_code(lfc, q, q_cut = 0.1, se = se, df = df)
+
+  # Called rows are untouched by the split.
+  expect_equal(code[1], "A1 Expansion")
+  expect_equal(code[2], "A3 Near-loss")
+  expect_equal(code[3], "A2 Depletion")
+
+  # A0 now means a RESOLVED null: not significant, and powered to exclude a
+  # two-fold change.
+  expect_equal(code[4], "A0 No change")
+  expect_lte(abundance_mdfc80(se[4], df, alpha = 0.1), 2)
+
+  # Not significant, but could not have seen a two-fold change.
+  expect_equal(code[5], "AU Undetermined")
+  expect_equal(code[6], "AU Undetermined")
+  expect_gt(abundance_mdfc80(se[5], df, alpha = 0.1), 2)
+
+  # No standard error at all: we cannot certify a null, so we do not claim one.
+  expect_equal(code[7], "AU Undetermined")
+
+  # A degenerate fit (SE present but zero) was never really tested, which is
+  # different from tested-and-inconclusive.
+  expect_equal(code[8], "AN Not assessed")
+
+  # No estimate at all.
+  expect_equal(code[9], "AN Not assessed")
+
+  # Every row lands in exactly one of the four states.
+  expect_true(all(code %in% c("A0 No change", "A1 Expansion", "A2 Depletion",
+                              "A3 Near-loss", "AU Undetermined", "AN Not assessed")))
+})
+
+
+test_that("assign_abundance_code is backward compatible when se/df are absent", {
+
+  # Tables written before the SE and df columns existed must still produce a
+  # code for every row, and must not silently claim a resolved null.
+  lfc <- c(1.2, 0.02)
+  q <- c(0.01, 0.90)
+
+  code <- assign_abundance_code(lfc, q, q_cut = 0.1)
+  expect_equal(code[1], "A1 Expansion")
+  expect_equal(code[2], "AU Undetermined")
+  expect_false(any(code == "A0 No change"))
+})
+
+
+test_that("abundance_mdfc80 is effect-independent and guards degenerate input", {
+
+  se <- c(0.1, 0.2, 0.4)
+  mdfc80 <- abundance_mdfc80(se, df = 40, alpha = 0.1)
+
+  # Depends only on the standard error, monotonically.
+  expect_equal(order(mdfc80), order(se))
+  expect_equal(mdfc80, exp((qt(0.95, 40) + qt(0.8, 40)) * se))
+
+  # A zero, negative, non-finite or missing SE has no detection limit, and an
+  # invalid df has none either. None of these may return 1-fold.
+  expect_true(is.na(abundance_mdfc80(0, 40)))
+  expect_true(is.na(abundance_mdfc80(-1, 40)))
+  expect_true(is.na(abundance_mdfc80(Inf, 40)))
+  expect_true(is.na(abundance_mdfc80(NA_real_, 40)))
+  expect_true(is.na(abundance_mdfc80(0.3, 0)))
+  expect_true(is.na(abundance_mdfc80(0.3, NA_real_)))
+})
+
+
+test_that("the margin is a fold change, not a log", {
+
+  # The design note wrote the resolved test as `mdfc80 < log(2)`. mdfc80 is a
+  # fold change and is always >= 1, so that comparison can never be TRUE and
+  # every null would have become AU. This pins the units.
+  se <- c(0.01, 0.05, 0.1)
+  mdfc80 <- abundance_mdfc80(se, df = 40, alpha = 0.1)
+  expect_true(all(mdfc80 >= 1))
+  expect_equal(sum(mdfc80 < log(2)), 0)
+
+  code <- assign_abundance_code(rep(0.01, 3), rep(0.9, 3), q_cut = 0.1,
+                                se = se, df = 40, margin_fold_change = 2)
+  expect_true(all(code == "A0 No change"))
+
+  # A stricter margin resolves fewer rows.
+  strict <- assign_abundance_code(rep(0.01, 3), rep(0.9, 3), q_cut = 0.1,
+                                  se = se, df = 40, margin_fold_change = 1.05)
+  expect_true(sum(strict == "A0 No change") < 3)
+})
