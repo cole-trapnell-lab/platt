@@ -280,3 +280,77 @@ test_that("the margin is a fold change, not a log", {
                                   se = se, df = 40, margin_fold_change = 1.05)
   expect_true(sum(strict == "A0 No change") < 3)
 })
+
+
+test_that("A3 is unreachable if its branch is moved below A2", {
+
+  # The two loss thresholds look backwards read in isolation: A2's -0.5 is a
+  # weaker cutoff than A3's -2.0, so every A3 row also satisfies A2. Order is
+  # what separates them. This pins that, so reordering the cascade fails here
+  # rather than silently retiring A3.
+  lfc <- c(-2.5, -0.8)
+  q   <- c(0.01, 0.01)
+  se  <- c(0.1, 0.1)
+
+  expect_equal(assign_abundance_code(lfc, q, q_cut = 0.1, se = se, df = 40),
+               c("A3 Near-loss", "A2 Depletion"))
+
+  # A severe loss satisfies BOTH conditions; only precedence keeps it in A3.
+  expect_true(lfc[1] <= -2.0)   # A3 condition
+  expect_true(lfc[1] <= -0.5)   # A2 condition, also true
+})
+
+
+test_that("present-but-invalid df is AN, absent df is AU", {
+
+  # Same rule already applied to `se`: a broken fit is "never tested" (AN); a
+  # missing column is "cannot certify" (AU). Without the df half, a row with a
+  # good SE and an invalid df produced mdfc80 = NA and fell through to AU.
+  lfc <- 0.02; q <- 0.9; good_se <- 0.1
+
+  # present but invalid -> AN
+  expect_equal(assign_abundance_code(lfc, q, q_cut = 0.1, se = good_se, df = 0),
+               "AN Not assessed")
+  expect_equal(assign_abundance_code(lfc, q, q_cut = 0.1, se = good_se, df = -3),
+               "AN Not assessed")
+  expect_equal(assign_abundance_code(lfc, q, q_cut = 0.1, se = good_se, df = Inf),
+               "AN Not assessed")
+
+  # absent -> AU (cannot certify, but nothing says the fit was broken)
+  expect_equal(assign_abundance_code(lfc, q, q_cut = 0.1, se = good_se, df = NA_real_),
+               "AU Undetermined")
+  expect_equal(assign_abundance_code(lfc, q, q_cut = 0.1, se = good_se, df = NULL),
+               "AU Undetermined")
+  expect_equal(assign_abundance_code(lfc, q, q_cut = 0.1, se = NULL, df = 40),
+               "AU Undetermined")
+
+  # a valid pair still resolves normally
+  expect_equal(assign_abundance_code(lfc, q, q_cut = 0.1, se = good_se, df = 40),
+               "A0 No change")
+
+  # and an invalid df never silently becomes a resolved null
+  for (bad in c(0, -1, Inf)) {
+    expect_false(assign_abundance_code(lfc, q, q_cut = 0.1, se = good_se, df = bad)
+                 == "A0 No change")
+  }
+})
+
+
+test_that("every route to an NA detection limit lands somewhere deliberate", {
+
+  # Enumerates the ways mdfc80 can be NA and asserts each maps to the intended
+  # code, so a future edit cannot quietly reroute one of them.
+  cases <- list(
+    list(se = 0,          df = 40,        want = "AN Not assessed"),  # degenerate SE
+    list(se = -1,         df = 40,        want = "AN Not assessed"),
+    list(se = Inf,        df = 40,        want = "AN Not assessed"),
+    list(se = 0.1,        df = 0,         want = "AN Not assessed"),  # invalid df
+    list(se = NA_real_,   df = 40,        want = "AU Undetermined"),  # absent SE
+    list(se = 0.1,        df = NA_real_,  want = "AU Undetermined")   # absent df
+  )
+  for (cs in cases) {
+    got <- assign_abundance_code(0.02, 0.9, q_cut = 0.1, se = cs$se, df = cs$df)
+    expect_equal(got, cs$want)
+    expect_true(is.na(abundance_mdfc80(cs$se, cs$df, alpha = 0.1)))
+  }
+})

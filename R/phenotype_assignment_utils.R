@@ -664,19 +664,43 @@ assign_abundance_code <- function(change_when_present, change_when_present_q_val
     mdfc80 <- abundance_mdfc80(se, df, alpha = q_cut, power = power)
     resolved <- !is.na(mdfc80) & mdfc80 <= margin_fold_change
 
+    # PRESENT BUT INVALID -> AN; ABSENT -> AU. Both inputs follow the same rule.
+    #
     # A standard error that is present but zero or non-finite is a degenerate
-    # fit -- the model reported no uncertainty at all -- which is "never
-    # tested", not "tested and inconclusive". An ABSENT standard error is
-    # different: the row may be fine, we just cannot certify it, so it falls
-    # through to AU below.
-    degenerate <- !is.na(se) & (se <= 0 | !is.finite(se))
+    # fit -- the model reported no uncertainty at all. Residual df that is
+    # present but <= 0 or non-finite is the same thing from the other side: an
+    # overparameterised fit, where n - k - 1 went underwater. Neither was
+    # really tested, so neither is "tested and inconclusive".
+    #
+    # An ABSENT se or df is a different situation: the row may be perfectly
+    # fine, the table just never carried the column. We cannot certify a null
+    # without it, so those fall through to AU below rather than claiming the
+    # fit was broken.
+    #
+    # Without the df half of this, a row with a good se and an invalid df
+    # produces mdfc80 = NA and lands in AU -- inconclusive -- when the fit
+    # behind it never supported a test at all. No production row currently
+    # does this (df runs 7-89 across v3.1.0, never NA, never <= 0), so this
+    # closes a path rather than fixing an observed miscall.
+    degenerate <- (!is.na(se) & (se <= 0 | !is.finite(se))) |
+                  (!is.na(df) & (df <= 0 | !is.finite(df)))
 
+    # ORDER IS LOAD-BEARING throughout: case_when takes the first match.
     case_when(
         is.na(change_when_present) | is.na(change_when_present_q_val) ~ "AN Not assessed",
         degenerate ~ "AN Not assessed",
         change_when_present >= lfc_cut & change_when_present_q_val < q_cut ~ "A1 Expansion",
+        # A3 MUST be tested before A2, and its threshold is the more extreme of
+        # the two on purpose. Read in isolation the next two lines look
+        # backwards -- A2's -lfc_cut (-0.5) is a weaker cutoff than A3's
+        # -near_loss_cut (-2.0), so every A3 row also satisfies A2. It is the
+        # ORDER that separates them, not the thresholds: a -2.5 loss matches
+        # A3 first and never reaches A2, while a -0.8 loss fails A3 and falls
+        # to A2. Swap these two lines and A3 becomes unreachable.
         change_when_present <= -near_loss_cut & change_when_present_q_val < q_cut ~ "A3 Near-loss",
         change_when_present <= -lfc_cut & change_when_present_q_val < q_cut ~ "A2 Depletion",
+        # Only non-calls reach here: anything significant with a real effect
+        # size exited above.
         resolved ~ "A0 No change",
         TRUE ~ "AU Undetermined"
     )
