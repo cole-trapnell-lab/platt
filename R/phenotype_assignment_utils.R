@@ -316,9 +316,9 @@ get_phenotype_threads <- function(num_threads = NULL) {
 #' @param nperm Permutation count passed to fgsea.
 #' @param abundance_q_cut q-value cutoff for the abundance codes, passed to
 #'   [assign_abundance_code()]. Defaults to `0.1`; pass `0.01` to reproduce the
-#'   stricter `A3 Near-loss` gate used before this was configurable. Note that
-#'   [assign_abundance_severity()] keeps its own graded thresholds and is not
-#'   affected by this argument.
+#'   stricter `A3 Near-loss` gate used before this was configurable. Also passed
+#'   to [assign_abundance_severity()], so that a cell type cannot come back as a
+#'   non-call with a graded severity.
 #'
 #' @return A tibble with one row per perturbation and cell type, containing
 #'   `cell_group`, the perturbation identifiers, the time window bounds,
@@ -462,9 +462,9 @@ dacts_when_abundant <- function(differential_cell_abundance, percent_max_thresh 
 #'   serially.
 #' @param minSize,maxSize Gene set size bounds passed to fgsea.
 #' @param nperm Permutation count passed to fgsea.
-#' @param abundance_q_cut q-value cutoff for the abundance codes, passed to
-#'   [assign_abundance_code()]. Defaults to `0.1`. Does not affect
-#'   [assign_abundance_severity()], which keeps its own graded thresholds.
+#' @param abundance_q_cut q-value cutoff for the abundance codes, passed to both
+#'   [assign_abundance_code()] and [assign_abundance_severity()] so the two stay
+#'   consistent. Defaults to `0.1`.
 #'
 #' @return A tibble with one row per cell type; see [assign_phenotypes()] for
 #'   the columns.
@@ -505,7 +505,9 @@ assign_phenotypes_to_cell_types <- function(
         abundance_df <- dact_row$change_when_present_tvalue_df
         abundance_code <- if (nrow(dact_row) > 0) assign_abundance_code(dact_row$change_when_present, dact_row$change_when_present_q_val, q_cut = abundance_q_cut, se = abundance_se, df = abundance_df) else NA_character_
         abundance_mdfc80_val <- if (nrow(dact_row) > 0) abundance_mdfc80(if (is.null(abundance_se)) NA_real_ else abundance_se, if (is.null(abundance_df)) NA_real_ else abundance_df, alpha = abundance_q_cut)[1] else NA_real_
-        abundance_severity <- if (nrow(dact_row) > 0) assign_abundance_severity(dact_row$change_when_present, dact_row$change_when_present_q_val) else NA_character_
+        # q_cut must match the one the code cascade used, or a non-call can come
+        # back graded.
+        abundance_severity <- if (nrow(dact_row) > 0) assign_abundance_severity(dact_row$change_when_present, dact_row$change_when_present_q_val, q_cut = abundance_q_cut) else NA_character_
         identity_assignment <- assign_identity_maturation_labels(deg_tbl, ct, identity_gene_sets, combined_psg, minSize = minSize, nperm = nperm, maxSize = maxSize, perturb_name = perturb_name)
         fitness_assignment <- assign_fitness_labels(deg_tbl, ct, gene_sets, minSize = minSize, nperm = nperm, maxSize = maxSize, perturb_name = perturb_name)
         if (!is.null(log_fn)) {
@@ -706,11 +708,43 @@ assign_abundance_code <- function(change_when_present, change_when_present_q_val
     )
 }
 
-assign_abundance_severity <- function(change_when_present, change_when_present_q_val) {
+# Graded severity for an abundance call.
+#
+# The "mild" tier is deliberately the SAME condition as being called A1/A2 at
+# all, so that `severity == "none"` and a non-call always agree. That invariant
+# used to hold by coincidence: this function hardcoded 0.5 and 0.1, which
+# happened to equal assign_abundance_code()'s defaults. Once those became
+# tunable arguments the coincidence broke -- setting lfc_cut = 0.8 produced
+# cell types reported as "A0 No change" with "mild" severity, and q_cut was
+# already user-facing, so that half was reachable in production.
+#
+# The shared cutoffs are therefore threaded, with the same defaults, so
+# behaviour is unchanged unless a caller tunes them -- at which point both
+# functions move together. `moderate_lfc_cut` and the stricter q levels are
+# severity's own grading and have no counterpart in the code cascade.
+assign_abundance_severity <- function(change_when_present, change_when_present_q_val,
+                                      q_cut = 0.1,
+                                      lfc_cut = 0.5,
+                                      near_loss_cut = 2.0,
+                                      moderate_lfc_cut = 1.0,
+                                      severe_q_cut = 0.01,
+                                      moderate_q_cut = 0.05) {
+    # Every tier must IMPLY the calling condition, or a tier can fire on a row
+    # the cascade rejected. Threading the shared cutoffs is not enough on its
+    # own: severity's private q levels are stricter than q_cut by default, but a
+    # caller tightening q_cut to 0.01 would leave `moderate` at 0.05 and grade
+    # rows that were never called. So each tier is clamped to be no looser than
+    # the calling condition on either axis.
+    severe_q   <- min(severe_q_cut, q_cut)
+    moderate_q <- min(moderate_q_cut, q_cut)
+    moderate_l <- max(moderate_lfc_cut, lfc_cut)
+    severe_l   <- max(near_loss_cut, moderate_l)
+
     case_when(
-        abs(change_when_present) >= 2.0 & change_when_present_q_val < 0.01 ~ "severe",
-        abs(change_when_present) >= 1.0 & change_when_present_q_val < 0.05 ~ "moderate",
-        abs(change_when_present) >= 0.5 & change_when_present_q_val < 0.1 ~ "mild",
+        abs(change_when_present) >= severe_l & change_when_present_q_val < severe_q ~ "severe",
+        abs(change_when_present) >= moderate_l & change_when_present_q_val < moderate_q ~ "moderate",
+        # same condition as A1/A2 in assign_abundance_code()
+        abs(change_when_present) >= lfc_cut & change_when_present_q_val < q_cut ~ "mild",
         TRUE ~ "none"
     )
 }

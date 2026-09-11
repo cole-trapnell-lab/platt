@@ -354,3 +354,52 @@ test_that("every route to an NA detection limit lands somewhere deliberate", {
     expect_true(is.na(abundance_mdfc80(cs$se, cs$df, alpha = 0.1)))
   }
 })
+
+
+test_that("severity and the code cascade agree for any shared cutoff", {
+
+  # The "mild" tier is the same condition as being called A1/A2, so
+  # severity == "none" must mean "not called" and vice versa. That used to hold
+  # only because assign_abundance_severity() hardcoded 0.5 and 0.1, matching
+  # assign_abundance_code()'s defaults by coincidence. Making those tunable
+  # broke it: lfc_cut = 0.8 produced rows reported as "A0 No change" with
+  # "mild" severity.
+  set.seed(11)
+  n <- 4000
+  lfc <- rnorm(n, 0, 1.2)
+  q   <- runif(n)^2
+  se  <- abs(rnorm(n, 0.25, 0.15)) + 0.01
+  non_called <- c("A0 No change", "AU Undetermined", "AN Not assessed")
+
+  for (lc in c(0.3, 0.5, 0.8, 1.0)) {
+    for (qc in c(0.01, 0.05, 0.1)) {
+      code <- assign_abundance_code(lfc, q, q_cut = qc, se = se, df = 40, lfc_cut = lc)
+      sev  <- assign_abundance_severity(lfc, q, q_cut = qc, lfc_cut = lc)
+
+      # no non-call carries a severity grade
+      expect_equal(sum(code %in% non_called & sev != "none"), 0,
+                   info = sprintf("lfc_cut=%.1f q_cut=%.2f", lc, qc))
+      # and no call is graded "none"
+      expect_equal(sum(!(code %in% non_called) & sev == "none"), 0,
+                   info = sprintf("lfc_cut=%.1f q_cut=%.2f", lc, qc))
+    }
+  }
+})
+
+
+test_that("severity defaults are unchanged from the hardcoded version", {
+
+  # Threading the cutoffs must not move any published severity label.
+  set.seed(12)
+  n <- 5000
+  lfc <- rnorm(n, 0, 1.2)
+  q   <- runif(n)^2
+
+  frozen <- dplyr::case_when(
+    abs(lfc) >= 2.0 & q < 0.01 ~ "severe",
+    abs(lfc) >= 1.0 & q < 0.05 ~ "moderate",
+    abs(lfc) >= 0.5 & q < 0.1  ~ "mild",
+    TRUE ~ "none"
+  )
+  expect_identical(assign_abundance_severity(lfc, q), frozen)
+})
