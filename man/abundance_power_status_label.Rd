@@ -4,12 +4,14 @@
 \alias{abundance_power_status_label}
 \title{Label whether a contrast could detect a change of a given size}
 \usage{
-abundance_power_status_label(mdfc80, margin_fold_change = 2)
+abundance_power_status_label(mdfc80, margin_fold_change = exp(0.5))
 }
 \arguments{
 \item{mdfc80}{Minimum detectable fold change at 80\% power.}
 
-\item{margin_fold_change}{Fold change to be powered against.}
+\item{margin_fold_change}{Fold change to be powered against. Defaults to
+\code{exp(0.5)}, the smallest change \code{\link[=assign_abundance_code]{assign_abundance_code()}} will call a
+phenotype, so "powered" means powered for something that would have counted.}
 }
 \value{
 "powered", "underpowered", or NA.

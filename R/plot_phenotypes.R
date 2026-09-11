@@ -51,10 +51,12 @@ format_abundance_change_percent <- function(lfc) {
 #' Exported so zscape_portal calls this rather than keeping a second copy.
 #'
 #' @param mdfc80 Minimum detectable fold change at 80% power.
-#' @param margin_fold_change Fold change to be powered against.
+#' @param margin_fold_change Fold change to be powered against. Defaults to
+#'   `exp(0.5)`, the smallest change [assign_abundance_code()] will call a
+#'   phenotype, so "powered" means powered for something that would have counted.
 #' @return "powered", "underpowered", or NA.
 #' @export
-abundance_power_status_label <- function(mdfc80, margin_fold_change = 2) {
+abundance_power_status_label <- function(mdfc80, margin_fold_change = exp(0.5)) {
     dplyr::case_when(
         is.na(mdfc80) ~ NA_character_,
         mdfc80 <= margin_fold_change ~ "powered",
@@ -624,7 +626,9 @@ phenotype_tooltip_builder <- function(g, render_mode = c("tissue", "global")) {
             powered_thresh = if ("powered_thresh" %in% names(g)) as.numeric(powered_thresh) else 0.8,
             # Effect-independent detectability, replacing `power` for the glyph.
             abundance_mdfc80 = if ("abundance_mdfc80" %in% names(g)) as.numeric(abundance_mdfc80) else NA_real_,
-            margin_fold_change = if ("margin_fold_change" %in% names(g)) as.numeric(margin_fold_change) else 2,
+            # Default matches assign_abundance_code()'s derived margin,
+            # exp(lfc_cut): the smallest change we would call a phenotype.
+            margin_fold_change = if ("margin_fold_change" %in% names(g)) as.numeric(margin_fold_change) else exp(0.5),
             present_above_thresh = if ("present_above_thresh" %in% names(g)) as.logical(present_above_thresh) else NA,
             present_above_thresh_flag = if ("present_above_thresh_flag" %in% names(g)) as.logical(present_above_thresh_flag) else dplyr::coalesce(present_above_thresh, FALSE),
             abundance_text = dplyr::case_when(

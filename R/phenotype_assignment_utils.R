@@ -625,13 +625,35 @@ abundance_mdfc80 <- function(se, df, alpha = 0.1, power = 0.8) {
 # are compared directly. (The design note wrote this as `mdfc80 < log(2)`, which
 # is a units error: mdfc80 is always >= 1, so nothing would ever have resolved.)
 #
+# WHERE THE MARGIN COMES FROM. It is not a free parameter and it is not a round
+# number. A "resolved null" claims we were powered to see a change we would have
+# called a phenotype. The smallest change this function will call is `lfc_cut`
+# on the log scale, so the margin that makes that claim true is exactly
+# exp(lfc_cut) -- 1.649-fold at the default 0.5. It is derived from an existing
+# declared threshold in the same way `.EFDR_MIN_EXPECTED = 3` is derived from
+# alpha (Poisson P(0 | 3) ~ 5%), rather than being invented alongside it.
+#
+# A larger margin is not merely conservative, it is WRONG in the lenient
+# direction. Set margin = 2 while calling phenotypes at 1.649, and every cell
+# type with mdfc80 in (1.649, 2.0] is labelled a resolved null even though its
+# detection limit exceeds the smallest change that would have counted -- the
+# claim "no phenotype, and we would have caught one" is false for exactly those
+# rows. That window is a ~39% band of standard-error space at every df the
+# screens run at, so it is not a corner case.
+#
+# Because the margin is derived, tuning `lfc_cut` keeps the verdict coherent
+# automatically. Override `margin_fold_change` only to answer a different
+# question ("were we powered for a 2-fold change?"), not to set policy.
+#
 # When `se`/`df` are unavailable -- older tables that never carried them -- every
 # non-significant row becomes "AU Undetermined". That is deliberate: without a
 # standard error we cannot certify a null, and saying so is the point.
 assign_abundance_code <- function(change_when_present, change_when_present_q_val,
                                   q_cut = 0.1,
                                   se = NULL, df = NULL,
-                                  margin_fold_change = 2,
+                                  lfc_cut = 0.5,
+                                  near_loss_cut = 2.0,
+                                  margin_fold_change = exp(lfc_cut),
                                   power = 0.8) {
     n <- length(change_when_present)
     fill <- function(x) {
@@ -652,9 +674,9 @@ assign_abundance_code <- function(change_when_present, change_when_present_q_val
     case_when(
         is.na(change_when_present) | is.na(change_when_present_q_val) ~ "AN Not assessed",
         degenerate ~ "AN Not assessed",
-        change_when_present >= 0.5 & change_when_present_q_val < q_cut ~ "A1 Expansion",
-        change_when_present <= -2.0 & change_when_present_q_val < q_cut ~ "A3 Near-loss",
-        change_when_present <= -0.5 & change_when_present_q_val < q_cut ~ "A2 Depletion",
+        change_when_present >= lfc_cut & change_when_present_q_val < q_cut ~ "A1 Expansion",
+        change_when_present <= -near_loss_cut & change_when_present_q_val < q_cut ~ "A3 Near-loss",
+        change_when_present <= -lfc_cut & change_when_present_q_val < q_cut ~ "A2 Depletion",
         resolved ~ "A0 No change",
         TRUE ~ "AU Undetermined"
     )

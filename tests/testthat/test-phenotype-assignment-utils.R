@@ -236,6 +236,31 @@ test_that("abundance_mdfc80 is effect-independent and guards degenerate input", 
 })
 
 
+test_that("the margin is derived from the phenotype-calling threshold", {
+
+  # A resolved null claims we were powered to see a change we would have called
+  # a phenotype. The smallest callable change is lfc_cut on the log scale, so
+  # the only margin that makes that claim true is exp(lfc_cut).
+  expect_equal(formals(assign_abundance_code)$margin_fold_change, quote(exp(lfc_cut)))
+  expect_equal(eval(formals(assign_abundance_code)$lfc_cut), 0.5)
+
+  # Tuning the call threshold keeps the verdict coherent automatically.
+  loose <- assign_abundance_code(0.02, 0.9, se = 0.3, df = 40, lfc_cut = 1.0)
+  tight <- assign_abundance_code(0.02, 0.9, se = 0.3, df = 40, lfc_cut = 0.25)
+  expect_equal(loose, "A0 No change")      # only needs to exclude 2.7-fold
+  expect_equal(tight, "AU Undetermined")   # must exclude 1.28-fold, cannot
+
+  # The over-claim window that margin = 2 would have created: a detection limit
+  # worse than the smallest callable phenotype must NOT read as a resolved null.
+  se_over <- log(1.8) / (qt(0.95, 40) + qt(0.8, 40))
+  expect_gt(abundance_mdfc80(se_over, 40, alpha = 0.1), exp(0.5))
+  expect_lt(abundance_mdfc80(se_over, 40, alpha = 0.1), 2)
+  expect_equal(assign_abundance_code(0.02, 0.9, se = se_over, df = 40), "AU Undetermined")
+  expect_equal(assign_abundance_code(0.02, 0.9, se = se_over, df = 40,
+                                     margin_fold_change = 2), "A0 No change")
+})
+
+
 test_that("the margin is a fold change, not a log", {
 
   # The design note wrote the resolved test as `mdfc80 < log(2)`. mdfc80 is a
@@ -247,7 +272,7 @@ test_that("the margin is a fold change, not a log", {
   expect_equal(sum(mdfc80 < log(2)), 0)
 
   code <- assign_abundance_code(rep(0.01, 3), rep(0.9, 3), q_cut = 0.1,
-                                se = se, df = 40, margin_fold_change = 2)
+                                se = se, df = 40)
   expect_true(all(code == "A0 No change"))
 
   # A stricter margin resolves fewer rows.
