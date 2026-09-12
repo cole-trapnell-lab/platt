@@ -723,11 +723,34 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio = NULL, detec
   # asks "is this gene really measured in this cell type at all", not "which way did it move".
   # NA counts (no `counts` input) -> not gated, matching every other count-driven gate.
   out$max_emb_det <- pmax(out$n_emb_ctrl, out$n_emb_pert, na.rm = TRUE)
+  # WHY a call was pinned, recorded alongside WHETHER it was. Until now a gated
+  # call and a tested-and-clearly-null call were both empirical_p == 1 in the
+  # published table, so "we could not call this gene here" and "we tested this
+  # gene here and it was null" were literally the same number. Only aggregate
+  # counts survived, in the efdr_stats attribute.
+  #
+  # This records the reason and changes nothing else: empirical_p, empirical_fdr
+  # and every gate's behaviour are untouched, and a gate that is off records
+  # nothing. NA means the row was not gated.
+  #
+  # Several gates can fire on one row, so reasons accumulate in evaluation order,
+  # ";"-separated. Note that expected_detections already tells you about the
+  # count-driven gates; it is the others -- not_replicated above all -- that are
+  # otherwise invisible, because a row can pass every count test and still be
+  # pinned.
+  out$gate_reason <- NA_character_
+  note_gate <- function(reason, hit, label) {
+    hit <- hit & !is.na(hit)
+    ifelse(hit, ifelse(is.na(reason), label, paste(reason, label, sep = ";")), reason)
+  }
+
   not_replicated_gate <- is.finite(out$max_emb_det) & out$max_emb_det < min_replicate_embryos
   if (on("not_replicated")) out$empirical_p[not_replicated_gate] <- 1
+  if (on("not_replicated")) out$gate_reason <- note_gate(out$gate_reason, not_replicated_gate, "not_replicated")
   # Gate 1 (<2 perturbation embryos): no valid two-group contrast; calls uncallable.
   gate <- is.finite(out$n_pert_pb) & out$n_pert_pb < min_pseudobulks
   if (on("too_few_embryos")) out$empirical_p[gate] <- 1
+  if (on("too_few_embryos")) out$gate_reason <- note_gate(out$gate_reason, gate, "too_few_embryos")
   # Gate 2 (gene absent from the cell type): ~zero UMIs in BOTH arms -> not expressed here at all;
   # any |z| is pure shrinkage noise no floor can price. Gate only when the LARGER arm is empty
   # (max(K)), so a deep control arm with an empty perturbation arm = genuine COMPLETE DEPLETION is
@@ -735,6 +758,7 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio = NULL, detec
   absent_gate <- is.finite(out$K_ctrl) & is.finite(out$K_pert) &
     pmax(out$K_ctrl, out$K_pert) < .EFDR_MIN_ARM_UMI
   if (on("not_detected_anywhere")) out$empirical_p[absent_gate] <- 1
+  if (on("not_detected_anywhere")) out$gate_reason <- note_gate(out$gate_reason, absent_gate, "not_detected_anywhere")
   # Gate 3 (control-absent UP-call): the mirror of the gene-absent gate for gains. An UP call
   # (higher in perturbation) whose CONTROL arm carries ~zero UMIs is an "increase" over a baseline
   # we never detected -- uncallable, and the control-split null cannot price it (control-vs-control
@@ -742,6 +766,7 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio = NULL, detec
   # depletion) and is NOT gated. Directional on the control (reference) arm.
   up_absent_gate <- (out$z > 0) & is.finite(out$K_ctrl) & (out$K_ctrl < .EFDR_MIN_ARM_UMI)
   if (on("gain_from_zero")) out$empirical_p[up_absent_gate] <- 1
+  if (on("gain_from_zero")) out$gate_reason <- note_gate(out$gate_reason, up_absent_gate, "gain_from_zero")
   # Gate 3c (empty-gaining-arm UP-call): an UP call (higher in perturbation) whose PERTURBATION
   # (gaining) arm carries ~zero UMIs cannot be a real gain -- the gene is absent from the very arm
   # it is called up in, so the shrunken-LFC sign is noise (a near-zero control arm plus size-factor
@@ -753,6 +778,7 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio = NULL, detec
   # K_pert>0), so only a truly empty gaining arm is gated. Directional on the perturbation arm.
   up_empty_gain_gate <- (out$z > 0) & is.finite(out$K_pert) & (out$K_pert < .EFDR_MIN_ARM_UMI)
   if (on("gain_no_counts")) out$empirical_p[up_empty_gain_gate] <- 1
+  if (on("gain_no_counts")) out$gate_reason <- note_gate(out$gate_reason, up_empty_gain_gate, "gain_no_counts")
   # Gate 3b (low source-detection LOSS): a DOWN call whose CONTROL (source) arm detects the gene in
   # fewer than MIN_SRC_DET of its cells has no robustly-expressed baseline to lose -- its large |z|
   # is trend-dispersion shrinkage noise the control-split null cannot reach at moderate arm sizes
@@ -763,6 +789,7 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio = NULL, detec
   out$det_ctrl <- out$n_expr_ctrl / out$n_ctrl_cells
   low_src_det_gate <- (out$z < 0) & is.finite(out$det_ctrl) & (out$det_ctrl < .EFDR_MIN_SRC_DET)
   if (on("loss_from_trace")) out$empirical_p[low_src_det_gate] <- 1
+  if (on("loss_from_trace")) out$gate_reason <- note_gate(out$gate_reason, low_src_det_gate, "loss_from_trace")
   # too_few_cells (BOTH directions): was the thinner arm powered to see THIS gene? Expected
   # detections = (cells in the thinner arm) x (the better-estimated of the two arms' detection
   # rates); below .EFDR_MIN_EXPECTED, "we saw none / fewer" cannot be told from "we did not sample
@@ -778,6 +805,7 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio = NULL, detec
   underpowered_gate <- is.finite(out$expected_detections) &
     out$expected_detections < .EFDR_MIN_EXPECTED
   if (on("too_few_cells")) out$empirical_p[underpowered_gate] <- 1
+  if (on("too_few_cells")) out$gate_reason <- note_gate(out$gate_reason, underpowered_gate, "too_few_cells")
 
   # flat_cell_floor: the RETIRED per-experiment cell floor, off by default. Kept so the previous
   # policy is reproducible via `gates` for back-comparison. K is located from the p75 of control
@@ -791,7 +819,9 @@ annotate_empirical_fdr_model <- function(model, deg_tbl, log_ratio = NULL, detec
       as.integer(ceiling(.EFDR_MIN_EXPECTED / .p_det)) else .EFDR_MIN_ARM_CELLS
     message(sprintf("[efdr] legacy flat cell floor K=%d (p%.0f control detection = %.3f)",
                     min_arm_cells, 100 * .EFDR_DET_PCTL, .p_det))
-    out$empirical_p[is.finite(out$thin_arm_cells) & out$thin_arm_cells < min_arm_cells] <- 1
+    flat_floor_gate <- is.finite(out$thin_arm_cells) & out$thin_arm_cells < min_arm_cells
+    out$empirical_p[flat_floor_gate] <- 1
+    out$gate_reason <- note_gate(out$gate_reason, flat_floor_gate, "flat_cell_floor")
   }
 
   # empirical_fdr: BH-adjust EACH floor within the cell group, then take the max q -- NOT
