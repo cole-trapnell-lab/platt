@@ -361,13 +361,30 @@ plot_phenotypes_from_impact <- function(cell_state_graph,
 #' @export
 impact_to_phenos <- function(impact_table,
                              sev_map = c(none = 0.25, mild = 0.6, moderate = 1.2, severe = 2.0),
+                             # Keys MUST match what assign_abundance_code() emits;
+                             # an unmatched code looks up NA and is then coerced
+                             # to a 0 proxy, i.e. renders as "no change".
+                             #
+                             # "A3 Near-loss" is what the assigner has emitted since
+                             # the initial commit; this map asked for
+                             # "A3 Ablation/Loss", which no code path has ever
+                             # produced, so the most severe abundance phenotype
+                             # coloured neutral. It went unnoticed because A3 also
+                             # required q < 0.01 and never fired -- 0 A3 rows across
+                             # 15 GENE6 impact tables, 4,973 rows. Commit a4e1ef9
+                             # loosened that gate to 0.1, so A3 is about to start
+                             # firing and the mismatch with it.
+                             #
+                             # The legacy spellings are kept as aliases: they cost
+                             # nothing and any older table using them still maps.
                              abundance_code_map = c(
                                  "A0 No change" = 0,
                                  "AU Undetermined" = 0,
                                  "AN Not assessed" = 0,
                                  "A1 Expansion" = +1,
                                  "A2 Depletion" = -1,
-                                 "A3 Ablation/Loss" = -1.5,
+                                 "A3 Near-loss" = -1.5,
+                                 "A3 Ablation/Loss" = -1.5,     # legacy alias
                                  "A4 Ectopic/extra state" = +1.2
                              ),
                              identity_glyph_map = c(
