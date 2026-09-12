@@ -442,6 +442,54 @@ filter_denylisted_cell_types <- function(dact_tbl, deg_tbl, cell_type_denylist) 
 }
 
 
+#' Pick one abundance contrast per cell type, where the cell type was abundant
+#'
+#' Reduces a decorated Hooke abundance contrast table to one row per cell type:
+#' the most significant timepoint among those where the cell type was actually
+#' present in the wild-type reference.
+#'
+#' This is the canonical implementation. It was duplicated verbatim in
+#' zscapetools for some time; that copy now calls this one. Do not reintroduce a
+#' second copy -- one of the two was exported and the other was not, so bare
+#' calls resolved by `library()` order.
+#'
+#' @section Rows are dropped, not flagged:
+#' Cell types are **removed entirely** when every one of their rows has
+#' `present_above_thresh` `FALSE` or `NA`, or a missing `delta_log_abund`. That
+#' matters more than it looks: `present_above_thresh` is a property of the
+#' WILD-TYPE reference, set in mcclintock's `fit_wt_model.R` as
+#' `percent_max_abund >= 0.1`, so it marks states the experiment's timepoint
+#' window could not assess -- not states the perturbation removed.
+#'
+#' On a 15-perturbation GENE6 run, 585 of 5,203 cell-type/perturbation pairs
+#' (11.2%) were dropped this way, every one of them for `present_above_thresh`
+#' and none for a missing `delta_log_abund`.
+#'
+#' Callers that build a per-cell-type table from this output therefore lose
+#' those cell types silently. To report them instead, capture the cell-type
+#' universe *before* calling this and pass it to
+#' [assign_phenotypes_to_cell_types()] as `all_cell_types`, which surfaces them
+#' as `"AN Not assessed"`.
+#'
+#' @param differential_cell_abundance A tibble of abundance contrasts carrying
+#'   `cell_group`, `timepoint_x`, `delta_log_abund`, `delta_q_value`,
+#'   `percent_max_abund` and `present_above_thresh`. The latter two are added
+#'   downstream of Hooke by the wild-type reference join, so a raw
+#'   `compare_abundances()` result will not have them.
+#' @param percent_max_thresh Rows below this fraction of the cell type's peak
+#'   abundance are neutralised rather than dropped: `delta_log_abund` is set to
+#'   `0` and `delta_q_value` to `1`. Defaults to `0.10`. Pass `0` to neutralise
+#'   nothing.
+#' @param with_ties Passed to [dplyr::slice_min()]. `FALSE` (the default) keeps
+#'   exactly one row per cell type even when several tie on `delta_q_value`.
+#' @return A tibble with at most one row per `cell_group`. Cell types with no
+#'   qualifying row are absent, not `NA` -- see the section above.
+#' @examples
+#' \dontrun{
+#' # one row per cell type, neutralising nothing
+#' dacts <- dacts_when_abundant(differential_cell_abundance, percent_max_thresh = 0)
+#' }
+#' @export
 dacts_when_abundant <- function(differential_cell_abundance, percent_max_thresh = 0.10, with_ties = FALSE) {
     perturb_table_at_when_abundant <- differential_cell_abundance %>%
         mutate(timepoint_x = as.numeric(timepoint_x)) %>%
