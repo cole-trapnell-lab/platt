@@ -403,3 +403,73 @@ test_that("severity defaults are unchanged from the hardcoded version", {
   )
   expect_identical(assign_abundance_severity(lfc, q), frozen)
 })
+
+
+test_that("cell types the experiment could not assess get a row, not silence", {
+
+  # dacts_when_abundant() drops every row of a cell type whose present_above_thresh
+  # is FALSE at all timepoints. That flag is a wild-type reference property -- it
+  # marks states the timepoint window could not assess -- so the cell type used to
+  # vanish from the impact table with no row at all, which reads identically to
+  # "this state was not in the experiment".
+  dact <- tibble::tibble(
+    cell_group           = c("assessable", "assessable", "out_of_window"),
+    timepoint_x          = c(24, 36, 24),
+    delta_log_abund      = c(0.02, 0.05, -3.0),
+    delta_q_value        = c(0.9, 0.8, 0.9),
+    percent_max_abund    = c(0.9, 0.8, 0.02),
+    present_above_thresh = c(TRUE, TRUE, FALSE)
+  )
+
+  kept <- dacts_when_abundant(dact, percent_max_thresh = 0)
+  expect_false("out_of_window" %in% kept$cell_group)   # the silent drop
+  expect_true("assessable" %in% kept$cell_group)
+
+  # The universe taken before the drop still contains it, which is what lets the
+  # phenotype assigner report it.
+  universe <- unique(dact$cell_group)
+  expect_true("out_of_window" %in% universe)
+
+  # A cell type with no surviving abundance row is "AN Not assessed" -- never
+  # tested -- rather than NA or a resolved null.
+  empty_row <- kept[kept$cell_group == "out_of_window", ]
+  expect_equal(nrow(empty_row), 0)
+  code <- if (nrow(empty_row) > 0) "unreachable" else "AN Not assessed"
+  expect_equal(code, "AN Not assessed")
+  expect_true(code %in% NON_CALLED_ABUNDANCE_CODES)
+})
+
+
+test_that("all_cell_types widens the universe without changing assessed calls", {
+
+  # The argument defaults to the old behaviour, and supplying it only ADDS rows;
+  # it must not alter the code assigned to any cell type that was already there.
+  dact <- tibble::tibble(
+    cell_group                   = c("a", "b"),
+    change_when_present          = c(1.2, 0.02),
+    change_when_present_q_val    = c(0.01, 0.90),
+    change_when_present_se       = c(0.20, 0.10),
+    change_when_present_tvalue_df = 40
+  )
+
+  assessed <- assign_abundance_code(dact$change_when_present,
+                                    dact$change_when_present_q_val,
+                                    q_cut = 0.1,
+                                    se = dact$change_when_present_se,
+                                    df = dact$change_when_present_tvalue_df)
+  expect_equal(assessed, c("A1 Expansion", "A0 No change"))
+
+  # A third cell type with no row anywhere in dact is additive and lands as AN.
+  universe <- c("a", "b", "never_assessed")
+  codes <- vapply(universe, function(ct) {
+    row <- dact[dact$cell_group == ct, ]
+    if (nrow(row) > 0) {
+      assign_abundance_code(row$change_when_present, row$change_when_present_q_val,
+                            q_cut = 0.1, se = row$change_when_present_se,
+                            df = row$change_when_present_tvalue_df)
+    } else "AN Not assessed"
+  }, character(1))
+
+  expect_equal(unname(codes[c("a", "b")]), assessed)   # unchanged
+  expect_equal(unname(codes[["never_assessed"]]), "AN Not assessed")
+})

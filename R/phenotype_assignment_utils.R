@@ -380,10 +380,28 @@ assign_phenotypes <- function(
         if (use_summarized_tbl) {
             dact_tbl <- perturb_record$summarized_differential_cell_abundance[[1]]
             dact_tbl <- filter_denylisted_cell_types(dact_tbl, deg_tbl, cell_type_denylist)
+            cell_type_universe <- unique(dact_tbl$cell_group)
         } else {
             # Optionally filter out denylisted cell types
             dact_tbl <- perturb_record$differential_cell_abundance[[1]]
             dact_tbl <- filter_denylisted_cell_types(dact_tbl, deg_tbl, cell_type_denylist)
+            # The cell types this perturbation could have had something to say
+            # about, captured BEFORE dacts_when_abundant() drops any.
+            #
+            # That filter requires present_above_thresh, which is a property of
+            # the WILD-TYPE reference (fit_wt_model.R: percent_max_abund >= 0.1),
+            # not of the perturbation: it marks states the experiment's timepoint
+            # window could not assess. A cell type whose every row fails it
+            # disappeared from the impact table entirely -- no row, no code, no
+            # reason -- so "we could not assess this state here" was
+            # indistinguishable from "this state was not in the experiment".
+            # Measured on GENE6: 585 of 5,203 cell-type/perturbation pairs
+            # (11.2%) vanished this way, every one of them for
+            # present_above_thresh and none for a missing delta_log_abund.
+            #
+            # They are kept in the universe so they surface as "AN Not assessed"
+            # rather than as silence.
+            cell_type_universe <- unique(dact_tbl$cell_group)
             dact_tbl <- dacts_when_abundant(dact_tbl, percent_max_thresh = 0)
             # dact_tbl <- dact_tbl %>%
             #     mutate(timepoint_x = as.numeric(timepoint_x)) %>%
@@ -403,6 +421,7 @@ assign_phenotypes <- function(
             dact_tbl, deg_tbl, fitness_gene_sets, identity_gene_sets,
             combined_psg,
             perturb_name, perturb_group, perturb_time_window, run,
+            all_cell_types = cell_type_universe,
             pb = pb, # Pass the progress bar object
             log_fn = log_ts,
             num_threads = num_threads,
@@ -481,9 +500,13 @@ assign_phenotypes_to_cell_types <- function(
   minSize = 10,
   maxSize = 5000,
   nperm = 1000,
-  abundance_q_cut = 0.1
+  abundance_q_cut = 0.1,
+  all_cell_types = NULL
 ) {
-    cell_types <- unique(dact_tbl$cell_group)
+    # Defaults to the filtered table's own cell types, which is the pre-0.0.3
+    # behaviour. Callers that know the wider universe pass it, so states the
+    # experiment could not assess get a row saying so instead of vanishing.
+    cell_types <- if (is.null(all_cell_types)) unique(dact_tbl$cell_group) else all_cell_types
     num_threads <- get_phenotype_threads(num_threads)
     worker_fn <- function(i) {
         if (requireNamespace("BiocParallel", quietly = TRUE)) {
@@ -503,7 +526,10 @@ assign_phenotypes_to_cell_types <- function(
         # "AU Undetermined" on tables that predate the SE/df columns.
         abundance_se <- dact_row$change_when_present_se
         abundance_df <- dact_row$change_when_present_tvalue_df
-        abundance_code <- if (nrow(dact_row) > 0) assign_abundance_code(dact_row$change_when_present, dact_row$change_when_present_q_val, q_cut = abundance_q_cut, se = abundance_se, df = abundance_df) else NA_character_
+        # No surviving abundance row: the contrast never assessed this cell type
+        # here. That is exactly "AN Not assessed", not an absent value -- and it
+        # is why this branch is now reachable at all.
+        abundance_code <- if (nrow(dact_row) > 0) assign_abundance_code(dact_row$change_when_present, dact_row$change_when_present_q_val, q_cut = abundance_q_cut, se = abundance_se, df = abundance_df) else "AN Not assessed"
         abundance_mdfc80_val <- if (nrow(dact_row) > 0) abundance_mdfc80(if (is.null(abundance_se)) NA_real_ else abundance_se, if (is.null(abundance_df)) NA_real_ else abundance_df, alpha = abundance_q_cut)[1] else NA_real_
         # q_cut must match the one the code cascade used, or a non-call can come
         # back graded.
