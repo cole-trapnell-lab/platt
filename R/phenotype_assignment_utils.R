@@ -316,9 +316,9 @@ get_phenotype_threads <- function(num_threads = NULL) {
 #' @param nperm Permutation count passed to fgsea.
 #' @param abundance_q_cut q-value cutoff for the abundance codes, passed to
 #'   [assign_abundance_code()]. Defaults to `0.1`; pass `0.01` to reproduce the
-#'   stricter `A3 Near-loss` gate used before this was configurable. Note that
-#'   [assign_abundance_severity()] keeps its own graded thresholds and is not
-#'   affected by this argument.
+#'   stricter `A3 Near-loss` gate used before this was configurable. Also passed
+#'   to [assign_abundance_severity()], so that a cell type cannot come back as a
+#'   non-call with a graded severity.
 #'
 #' @return A tibble with one row per perturbation and cell type, containing
 #'   `cell_group`, the perturbation identifiers, the time window bounds,
@@ -462,9 +462,9 @@ dacts_when_abundant <- function(differential_cell_abundance, percent_max_thresh 
 #'   serially.
 #' @param minSize,maxSize Gene set size bounds passed to fgsea.
 #' @param nperm Permutation count passed to fgsea.
-#' @param abundance_q_cut q-value cutoff for the abundance codes, passed to
-#'   [assign_abundance_code()]. Defaults to `0.1`. Does not affect
-#'   [assign_abundance_severity()], which keeps its own graded thresholds.
+#' @param abundance_q_cut q-value cutoff for the abundance codes, passed to both
+#'   [assign_abundance_code()] and [assign_abundance_severity()] so the two stay
+#'   consistent. Defaults to `0.1`.
 #'
 #' @return A tibble with one row per cell type; see [assign_phenotypes()] for
 #'   the columns.
@@ -499,8 +499,15 @@ assign_phenotypes_to_cell_types <- function(
         ct_start <- Sys.time()
         if (!is.null(pb)) pb$tick()
         dact_row <- dact_tbl %>% filter(cell_group == ct)
-        abundance_code <- if (nrow(dact_row) > 0) assign_abundance_code(dact_row$change_when_present, dact_row$change_when_present_q_val, q_cut = abundance_q_cut) else NA_character_
-        abundance_severity <- if (nrow(dact_row) > 0) assign_abundance_severity(dact_row$change_when_present, dact_row$change_when_present_q_val) else NA_character_
+        # `$` on an absent column yields NULL, so this degrades to
+        # "AU Undetermined" on tables that predate the SE/df columns.
+        abundance_se <- dact_row$change_when_present_se
+        abundance_df <- dact_row$change_when_present_tvalue_df
+        abundance_code <- if (nrow(dact_row) > 0) assign_abundance_code(dact_row$change_when_present, dact_row$change_when_present_q_val, q_cut = abundance_q_cut, se = abundance_se, df = abundance_df) else NA_character_
+        abundance_mdfc80_val <- if (nrow(dact_row) > 0) abundance_mdfc80(if (is.null(abundance_se)) NA_real_ else abundance_se, if (is.null(abundance_df)) NA_real_ else abundance_df, alpha = abundance_q_cut)[1] else NA_real_
+        # q_cut must match the one the code cascade used, or a non-call can come
+        # back graded.
+        abundance_severity <- if (nrow(dact_row) > 0) assign_abundance_severity(dact_row$change_when_present, dact_row$change_when_present_q_val, q_cut = abundance_q_cut) else NA_character_
         identity_assignment <- assign_identity_maturation_labels(deg_tbl, ct, identity_gene_sets, combined_psg, minSize = minSize, nperm = nperm, maxSize = maxSize, perturb_name = perturb_name)
         fitness_assignment <- assign_fitness_labels(deg_tbl, ct, gene_sets, minSize = minSize, nperm = nperm, maxSize = maxSize, perturb_name = perturb_name)
         if (!is.null(log_fn)) {
@@ -519,6 +526,12 @@ assign_phenotypes_to_cell_types <- function(
             time_window_end = perturb_time_window$stop_time,
             abundance_code = abundance_code,
             abundance_severity = abundance_severity,
+            # Carry the evidence behind the code, so a negative result can be
+            # evaluated without going back to the Hooke table.
+            abundance_lfc = if (nrow(dact_row) > 0) dact_row$change_when_present[1] else NA_real_,
+            abundance_se = if (is.null(abundance_se) || length(abundance_se) == 0) NA_real_ else as.numeric(abundance_se)[1],
+            abundance_df = if (is.null(abundance_df) || length(abundance_df) == 0) NA_real_ else as.numeric(abundance_df)[1],
+            abundance_mdfc80 = abundance_mdfc80_val,
             fitness_labels = list(fitness_assignment$labels),
             fitness_fgsea = list(fitness_assignment$fgsea_res),
             identity_labels = list(identity_assignment$labels),
@@ -545,21 +558,193 @@ assign_phenotypes_to_cell_types <- function(
     results
 }
 
-assign_abundance_code <- function(change_when_present, change_when_present_q_val, q_cut = 0.1) {
+#' Abundance codes that do not assert a phenotype
+#'
+#' `"A0 No change"` is a positive claim: the contrast was powered to detect a
+#' change of the declared margin and saw none. `"AU Undetermined"` and
+#' `"AN Not assessed"` are the absence of a claim. None of the three is a
+#' phenotype, so anything asking "did this cell type change?" must treat all
+#' three as no.
+#'
+#' Exported so that consumers outside platt -- zscape_portal in particular --
+#' key off one definition rather than repeating the strings.
+#'
+#' @export
+NON_CALLED_ABUNDANCE_CODES <- c("A0 No change", "AU Undetermined", "AN Not assessed")
+
+# Minimum detectable fold change at `power`, on the scale `se` is measured on.
+#
+# Effect-independent by construction: a function of the standard error, alpha,
+# the residual degrees of freedom and the requested power, never of the observed
+# change. Returns NA where no detection limit is defined, so a caller can tell
+# "we could not have seen it" apart from "there was nothing to see".
+#
+# Mirrors hooke::compare_abundances()'s `mdfc80`. Kept local because the
+# summarised abundance table carries its own SE and df
+# (`change_when_present_se`, `change_when_present_tvalue_df`), which are a
+# weighted mean across the timepoints a cell type was present.
+abundance_mdfc80 <- function(se, df, alpha = 0.1, power = 0.8) {
+    se <- as.numeric(se)
+    df <- as.numeric(df)
+    if (length(se) == 0 || length(df) == 0) return(numeric(0))
+    # Recycle to a common length BEFORE subsetting. Indexing a length-1 `df`
+    # with a longer logical yields NA past the first element, which would make
+    # a scalar df silently poison every row but the first.
+    n <- max(length(se), length(df))
+    se <- rep_len(se, n)
+    df <- rep_len(df, n)
+    usable <- is.finite(se) & se > 0 & is.finite(df) & df > 0
+    out <- rep(NA_real_, length(se))
+    if (any(usable)) {
+        out[usable] <- exp(
+            (qt(1 - alpha / 2, df[usable]) + qt(power, df[usable])) * se[usable]
+        )
+    }
+    out
+}
+
+# Assign a four-state abundance code.
+#
+# Before this was a two-state cascade whose `TRUE ~` fallthrough was
+# "A0 No change". That bucket absorbed, indistinguishably: a well-measured
+# genuine null; a cell type whose standard error was so large it could not have
+# caught a 68-fold change; and a degenerate fit reporting no estimate at all.
+# Because the impact table carried only the binned code, "A0 No change" was
+# unfalsifiable at the point of consumption.
+#
+# The four states, and what separates them:
+#
+#   A1/A2/A3         called   -- significant, as before
+#   A0 No change     resolved -- not significant, AND mdfc80 <= margin, i.e. we
+#                                were powered to see a change of that size and
+#                                did not
+#   AU Undetermined  not resolved -- not significant, and mdfc80 > margin (or
+#                                unknown), i.e. we could not have seen such a
+#                                change even if it were there
+#   AN Not assessed  no usable contrast at all
+#
+# `margin_fold_change` is a FOLD CHANGE, and `mdfc80` is a fold change, so they
+# are compared directly. (The design note wrote this as `mdfc80 < log(2)`, which
+# is a units error: mdfc80 is always >= 1, so nothing would ever have resolved.)
+#
+# WHERE THE MARGIN COMES FROM. It is not a free parameter and it is not a round
+# number. A "resolved null" claims we were powered to see a change we would have
+# called a phenotype. The smallest change this function will call is `lfc_cut`
+# on the log scale, so the margin that makes that claim true is exactly
+# exp(lfc_cut) -- 1.649-fold at the default 0.5. It is derived from an existing
+# declared threshold in the same way `.EFDR_MIN_EXPECTED = 3` is derived from
+# alpha (Poisson P(0 | 3) ~ 5%), rather than being invented alongside it.
+#
+# A larger margin is not merely conservative, it is WRONG in the lenient
+# direction. Set margin = 2 while calling phenotypes at 1.649, and every cell
+# type with mdfc80 in (1.649, 2.0] is labelled a resolved null even though its
+# detection limit exceeds the smallest change that would have counted -- the
+# claim "no phenotype, and we would have caught one" is false for exactly those
+# rows. That window is a ~39% band of standard-error space at every df the
+# screens run at, so it is not a corner case.
+#
+# Because the margin is derived, tuning `lfc_cut` keeps the verdict coherent
+# automatically. Override `margin_fold_change` only to answer a different
+# question ("were we powered for a 2-fold change?"), not to set policy.
+#
+# When `se`/`df` are unavailable -- older tables that never carried them -- every
+# non-significant row becomes "AU Undetermined". That is deliberate: without a
+# standard error we cannot certify a null, and saying so is the point.
+assign_abundance_code <- function(change_when_present, change_when_present_q_val,
+                                  q_cut = 0.1,
+                                  se = NULL, df = NULL,
+                                  lfc_cut = 0.5,
+                                  near_loss_cut = 2.0,
+                                  margin_fold_change = exp(lfc_cut),
+                                  power = 0.8) {
+    n <- length(change_when_present)
+    fill <- function(x) {
+        if (is.null(x) || length(x) == 0) rep(NA_real_, n) else rep_len(as.numeric(x), n)
+    }
+    se <- fill(se)
+    df <- fill(df)
+    mdfc80 <- abundance_mdfc80(se, df, alpha = q_cut, power = power)
+    resolved <- !is.na(mdfc80) & mdfc80 <= margin_fold_change
+
+    # PRESENT BUT INVALID -> AN; ABSENT -> AU. Both inputs follow the same rule.
+    #
+    # A standard error that is present but zero or non-finite is a degenerate
+    # fit -- the model reported no uncertainty at all. Residual df that is
+    # present but <= 0 or non-finite is the same thing from the other side: an
+    # overparameterised fit, where n - k - 1 went underwater. Neither was
+    # really tested, so neither is "tested and inconclusive".
+    #
+    # An ABSENT se or df is a different situation: the row may be perfectly
+    # fine, the table just never carried the column. We cannot certify a null
+    # without it, so those fall through to AU below rather than claiming the
+    # fit was broken.
+    #
+    # Without the df half of this, a row with a good se and an invalid df
+    # produces mdfc80 = NA and lands in AU -- inconclusive -- when the fit
+    # behind it never supported a test at all. No production row currently
+    # does this (df runs 7-89 across v3.1.0, never NA, never <= 0), so this
+    # closes a path rather than fixing an observed miscall.
+    degenerate <- (!is.na(se) & (se <= 0 | !is.finite(se))) |
+                  (!is.na(df) & (df <= 0 | !is.finite(df)))
+
+    # ORDER IS LOAD-BEARING throughout: case_when takes the first match.
     case_when(
-        is.na(change_when_present) | is.na(change_when_present_q_val) ~ "A0 No change",
-        change_when_present >= 0.5 & change_when_present_q_val < q_cut ~ "A1 Expansion",
-        change_when_present <= -2.0 & change_when_present_q_val < q_cut ~ "A3 Near-loss",
-        change_when_present <= -0.5 & change_when_present_q_val < q_cut ~ "A2 Depletion",
-        TRUE ~ "A0 No change"
+        is.na(change_when_present) | is.na(change_when_present_q_val) ~ "AN Not assessed",
+        degenerate ~ "AN Not assessed",
+        change_when_present >= lfc_cut & change_when_present_q_val < q_cut ~ "A1 Expansion",
+        # A3 MUST be tested before A2, and its threshold is the more extreme of
+        # the two on purpose. Read in isolation the next two lines look
+        # backwards -- A2's -lfc_cut (-0.5) is a weaker cutoff than A3's
+        # -near_loss_cut (-2.0), so every A3 row also satisfies A2. It is the
+        # ORDER that separates them, not the thresholds: a -2.5 loss matches
+        # A3 first and never reaches A2, while a -0.8 loss fails A3 and falls
+        # to A2. Swap these two lines and A3 becomes unreachable.
+        change_when_present <= -near_loss_cut & change_when_present_q_val < q_cut ~ "A3 Near-loss",
+        change_when_present <= -lfc_cut & change_when_present_q_val < q_cut ~ "A2 Depletion",
+        # Only non-calls reach here: anything significant with a real effect
+        # size exited above.
+        resolved ~ "A0 No change",
+        TRUE ~ "AU Undetermined"
     )
 }
 
-assign_abundance_severity <- function(change_when_present, change_when_present_q_val) {
+# Graded severity for an abundance call.
+#
+# The "mild" tier is deliberately the SAME condition as being called A1/A2 at
+# all, so that `severity == "none"` and a non-call always agree. That invariant
+# used to hold by coincidence: this function hardcoded 0.5 and 0.1, which
+# happened to equal assign_abundance_code()'s defaults. Once those became
+# tunable arguments the coincidence broke -- setting lfc_cut = 0.8 produced
+# cell types reported as "A0 No change" with "mild" severity, and q_cut was
+# already user-facing, so that half was reachable in production.
+#
+# The shared cutoffs are therefore threaded, with the same defaults, so
+# behaviour is unchanged unless a caller tunes them -- at which point both
+# functions move together. `moderate_lfc_cut` and the stricter q levels are
+# severity's own grading and have no counterpart in the code cascade.
+assign_abundance_severity <- function(change_when_present, change_when_present_q_val,
+                                      q_cut = 0.1,
+                                      lfc_cut = 0.5,
+                                      near_loss_cut = 2.0,
+                                      moderate_lfc_cut = 1.0,
+                                      severe_q_cut = 0.01,
+                                      moderate_q_cut = 0.05) {
+    # Every tier must IMPLY the calling condition, or a tier can fire on a row
+    # the cascade rejected. Threading the shared cutoffs is not enough on its
+    # own: severity's private q levels are stricter than q_cut by default, but a
+    # caller tightening q_cut to 0.01 would leave `moderate` at 0.05 and grade
+    # rows that were never called. So each tier is clamped to be no looser than
+    # the calling condition on either axis.
+    severe_q   <- min(severe_q_cut, q_cut)
+    moderate_q <- min(moderate_q_cut, q_cut)
+    moderate_l <- max(moderate_lfc_cut, lfc_cut)
+    severe_l   <- max(near_loss_cut, moderate_l)
+
     case_when(
-        abs(change_when_present) >= 2.0 & change_when_present_q_val < 0.01 ~ "severe",
-        abs(change_when_present) >= 1.0 & change_when_present_q_val < 0.05 ~ "moderate",
-        abs(change_when_present) >= 0.5 & change_when_present_q_val < 0.1 ~ "mild",
+        abs(change_when_present) >= severe_l & change_when_present_q_val < severe_q ~ "severe",
+        abs(change_when_present) >= moderate_l & change_when_present_q_val < moderate_q ~ "moderate",
+        # same condition as A1/A2 in assign_abundance_code()
+        abs(change_when_present) >= lfc_cut & change_when_present_q_val < q_cut ~ "mild",
         TRUE ~ "none"
     )
 }
