@@ -357,7 +357,7 @@ summarize_cell_type_impact <- function(
   dact_row <- dact_results %>% filter(cell_group == ct)
   abundance_summary <- if (!is.na(abundance_code)) {
     abundance_code
-  } else if (nrow(dact_row) > 0 && all(c("delta_q_value", "delta_log_abund", "power") %in% colnames(dact_row))) {
+  } else if (nrow(dact_row) > 0 && all(c("delta_q_value", "delta_log_abund") %in% colnames(dact_row))) {
     if (dact_row$delta_q_value[1] < sig_p_val_thresh) {
       if (dact_row$delta_log_abund[1] < 0) {
         "depleted"
@@ -367,7 +367,21 @@ summarize_cell_type_impact <- function(
         "significant_no_direction"
       }
     } else {
-      if (dact_row$power[1] >= power_thresh) {
+      # Calling a non-significant result "no_change" claims we could have seen
+      # a change worth calling and did not. `power` cannot support that claim:
+      # it is Hooke's observed_power, a restatement of delta_p_value, so it
+      # tracks the observed effect rather than how precisely the cell type was
+      # measured. `power_at_margin` is effect-independent and is the quantity
+      # the claim actually needs.
+      #
+      # Absent (tables predating Hooke 0.0.3) or NA means the claim cannot be
+      # made, so the narrative says so instead of asserting no change.
+      pam <- if ("power_at_margin" %in% colnames(dact_row)) {
+        suppressWarnings(as.numeric(dact_row$power_at_margin[1]))
+      } else {
+        NA_real_
+      }
+      if (!is.na(pam) && pam >= power_thresh) {
         "no_change"
       } else {
         "unknown (underpowered)"
