@@ -75,11 +75,15 @@ abundance_power_status_label <- function(mdfc80, margin_fold_change = exp(0.5)) 
 #'   phenotype annotation columns (see `impact_to_phenos()`).
 #' @param power_tbl Optional data frame with per-cell-type abundance statistics.
 #'   Must contain a cell identity column (`cell_type` or `cell_group`),
-#'   `delta_log_abund`, `delta_q_value`, and optionally `power` and
+#'   `delta_log_abund`, `delta_q_value`, and optionally `power_at_margin` and
 #'   `present_above_thresh`. When provided, node sizes reflect statistical
 #'   power and absent cell types are grayed out.
-#' @param powered_thresh Numeric threshold for the `power` column above which a
-#'   cell type is considered powered. Default `0.8`.
+#' @param powered_thresh Numeric threshold for the `power_at_margin` column
+#'   above which a cell type is considered powered. Default `0.8`. Tables
+#'   written before Hooke 0.0.3 carry no `power_at_margin`; every cell type is
+#'   then drawn as underpowered, which is the honest reading -- without a
+#'   standard error no null can be certified. Backfill such tables with
+#'   `hooke::decorate_contrast_detectability()`.
 #' @param filter_by_group Logical. If `TRUE` and `cell_types` is provided, only
 #'   keep nodes in the same `group_nodes_by` group as `cell_types`.
 #' @param cell_types Optional character vector of cell types to retain.
@@ -894,7 +898,11 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             name = .data[[map$id]],
             lfc = as.numeric(.data[[map$lfc]]),
             q = if (map$q %in% names(phenos_df)) as.numeric(.data[[map$q]]) else NA_real_,
-            power = if ("power" %in% names(phenos_df)) as.numeric(.data[["power"]]) else NA_real_,
+            # Hooke's `power` is observed_power: a restatement of delta_p_value,
+            # so it reports effect size, not precision. `power_at_margin` is the
+            # effect-independent quantity that actually answers "could we have
+            # seen a change worth calling here?".
+            power_at_margin = if ("power_at_margin" %in% names(phenos_df)) as.numeric(.data[["power_at_margin"]]) else NA_real_,
             powered_thresh = if ("powered_thresh" %in% names(phenos_df)) as.numeric(.data[["powered_thresh"]]) else 0.8,
             present_above_thresh = if ("present_above_thresh" %in% names(phenos_df)) as.logical(.data[["present_above_thresh"]]) else NA,
             abundance_code = if ("abundance_code" %in% names(phenos_df)) as.character(.data[["abundance_code"]]) else NA_character_,
@@ -984,8 +992,12 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 is.na(f3) ~ 0,
                 TRUE ~ scales::rescale(pmin(abs(f3), stress_cap), to = c(0.25, 1))
             ),
+            # NA (column absent, degenerate fit, insufficient df) is NOT
+            # powered. A contrast we cannot certify must not be drawn as one:
+            # power_status also scales node size, so an over-claim here is
+            # rendered as visual emphasis.
             power_status = dplyr::case_when(
-                !is.na(power) & power >= powered_thresh ~ "Powered",
+                !is.na(power_at_margin) & power_at_margin >= powered_thresh ~ "Powered",
                 TRUE ~ "Underpowered"
             ),
             node_size_plot = dplyr::case_when(
