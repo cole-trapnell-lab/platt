@@ -357,7 +357,9 @@ plot_phenotypes_from_impact <- function(cell_state_graph,
 #'
 #' @return A tibble with columns expected by `plot_phenotypes_glyphs()`,
 #'   including `cell_group`, `abundance_log2fc`, identity glyph fields, fitness
-#'   axes, and optional `dysregulated_genes`.
+#'   axes, and optional `dysregulated_genes`. `identity_label` is the bare code
+#'   (`"I3"`); `identity_full` is the code with its wording
+#'   (`"I3 Program failure within identity"`), for display.
 #' @export
 impact_to_phenos <- function(impact_table,
                              sev_map = c(none = 0.25, mild = 0.6, moderate = 1.2, severe = 2.0),
@@ -603,7 +605,12 @@ impact_to_phenos <- function(impact_table,
         abundance_severity = tab$abundance_severity,
         abundance_log2fc   = tab$abundance_log2fc_proxy,
         abundance_q        = NA_real_,
+        # `identity_label` is the bare code ("I3") -- long-standing, and platt's own plotting
+        # compares against it, so it keeps that meaning. `identity_full` carries the code together
+        # with its wording ("I3 Program failure within identity"), which is what a reader needs in a
+        # tooltip: a bare code there means nothing without the legend.
         identity_label     = tab$identity_code,
+        identity_full      = tab$identity_label,
         identity_glyph     = tab$identity_glyph,
         F1_dir             = tab$F1_dir,
         F2_apoptosis       = tab$F2_apoptosis,
