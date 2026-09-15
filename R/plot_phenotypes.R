@@ -79,7 +79,10 @@ abundance_power_status_label <- function(mdfc80, margin_fold_change = exp(0.5)) 
 #'   `present_above_thresh`. When provided, node sizes reflect statistical
 #'   power and absent cell types are grayed out.
 #' @param powered_thresh Numeric threshold for the `power_at_margin` column
-#'   above which a cell type is considered powered. Default `0.8`. Tables
+#'   above which a NON-CALLED cell type is considered powered. Default `0.8`.
+#'   Cell types the abundance cascade called (A1/A2/A3) are labelled `"Called"`
+#'   and never tested against it -- power asks whether a null is meaningful, and
+#'   says nothing about a change that was found. Tables
 #'   written before Hooke 0.0.3 carry no `power_at_margin`; every cell type is
 #'   then drawn as underpowered, which is the honest reading -- without a
 #'   standard error no null can be certified. Backfill such tables with
@@ -992,18 +995,37 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 is.na(f3) ~ 0,
                 TRUE ~ scales::rescale(pmin(abs(f3), stress_cap), to = c(0.25, 1))
             ),
-            # NA (column absent, degenerate fit, insufficient df) is NOT
-            # powered. A contrast we cannot certify must not be drawn as one:
-            # power_status also scales node size, so an over-claim here is
-            # rendered as visual emphasis.
+            # Power is only a question about a NULL. It asks "could we have seen
+            # a change worth calling?" -- which means something when nothing was
+            # found, and nothing at all once something was. A called cell type
+            # has already cleared the bar the question is about.
+            #
+            # Applying the test to every node mislabels the strongest findings.
+            # `late notochord sheath` in noto-mut is depleted 412-fold at
+            # q = 0.027, but its SE is 1.75, so it could only have detected
+            # changes above ~156-fold: power_at_margin = 0.06. True, and
+            # irrelevant -- the change WAS detected. Drawn as "Underpowered" it
+            # reads as a weak result, and because power_status also scales node
+            # size it renders SMALLER than a quiet, well-measured neighbour.
+            # On GAP16 that is 72% of significant cell types.
+            #
+            # So the states follow the abundance cascade rather than overriding
+            # it: a call is a call, and only non-calls get sorted by
+            # detectability into resolved-null and undetermined. NA (column
+            # absent, degenerate fit, insufficient df) is not powered -- a
+            # contrast we cannot certify must not be drawn as one.
             power_status = dplyr::case_when(
+                !is.na(abundance_code) & !(abundance_code %in% NON_CALLED_ABUNDANCE_CODES) ~ "Called",
                 !is.na(power_at_margin) & power_at_margin >= powered_thresh ~ "Powered",
                 TRUE ~ "Underpowered"
             ),
+            # "Called" and "Powered" are both things the reader should see: one
+            # is a finding, the other a null we can stand behind. Only
+            # "Underpowered" -- a null we cannot certify -- is de-emphasised.
             node_size_plot = dplyr::case_when(
-                identical(render_mode, "global") & power_status == "Powered" ~ node_size * 3.8,
+                identical(render_mode, "global") & power_status != "Underpowered" ~ node_size * 3.8,
                 identical(render_mode, "global") ~ node_size * 1.9,
-                power_status == "Powered" ~ node_size * 3.2,
+                power_status != "Underpowered" ~ node_size * 3.2,
                 TRUE ~ node_size * 2.0
             )
         )
