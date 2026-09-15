@@ -359,7 +359,9 @@ plot_phenotypes_from_impact <- function(cell_state_graph,
 #'   including `cell_group`, `abundance_log2fc`, identity glyph fields, fitness
 #'   axes, and optional `dysregulated_genes`. `identity_label` is the bare code
 #'   (`"I3"`); `identity_full` is the code with its wording
-#'   (`"I3 Program failure within identity"`), for display.
+#'   (`"I3 Program failure within identity"`), for display. `fitness_full` is the
+#'   fitness label as written, from which `F1_dir`/`F2_apoptosis`/`F3_stress_score`/
+#'   `F4_senescence` are parsed.
 #' @export
 impact_to_phenos <- function(impact_table,
                              sev_map = c(none = 0.25, mild = 0.6, moderate = 1.2, severe = 2.0),
@@ -611,6 +613,12 @@ impact_to_phenos <- function(impact_table,
         # tooltip: a bare code there means nothing without the legend.
         identity_label     = tab$identity_code,
         identity_full      = tab$identity_label,
+        # Same reason as identity_full, plus one of its own: the F1/F2/F3/F4 fields below are a lossy
+        # parse of this string. "F1 Proliferation reprogrammed (mixed S/G2M)" matches neither
+        # increase nor decrease, so F1_dir comes back NA and that cell type silently loses its
+        # fitness call. Rare -- 1 row in 17,252 across GENE5, GENE6 and GAP16 -- but a reader asking
+        # "which code fired" should be answered from the label, not from a reconstruction of it.
+        fitness_full       = tab$fitness_label,
         identity_glyph     = tab$identity_glyph,
         F1_dir             = tab$F1_dir,
         F2_apoptosis       = tab$F2_apoptosis,
