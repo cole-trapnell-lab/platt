@@ -1027,9 +1027,9 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 (!is.na(f3) & f3 != 0) |
                 dplyr::coalesce(f4, FALSE),
             primary_phenotype = dplyr::case_when(
-                !is.na(abundance_code) & grepl("^A2|^A3", abundance_code) ~ "abundance_loss",
+                !is.na(abundance_code) & abundance_code %in% LOSS_ABUNDANCE_CODES ~ "abundance_loss",
                 !is.na(ident) & !(ident %in% c("I0", "I0 Identity intact", "Identity intact", "", NA)) ~ "identity",
-                !is.na(abundance_code) & grepl("^A1|^A4", abundance_code) ~ "abundance_gain",
+                !is.na(abundance_code) & abundance_code %in% GAIN_ABUNDANCE_CODES ~ "abundance_gain",
                 has_fitness_change ~ "fitness",
                 TRUE ~ "none"
             ),
@@ -1539,8 +1539,12 @@ plot_phenotype_counts <- function(impact_table, facet_by = NULL) {
 
     phenotype_counts <- impact_table %>%
         mutate(
-            abundance_gain = !is.na(abundance_code) & abundance_code %in% c("A1 Expansion", "A4 Ectopic/extra state"),
-            abundance_loss = !is.na(abundance_code) & abundance_code %in% c("A2 Depletion", "A3 Ablation/Loss"),
+            # Membership comes from the exported constants, not a list written
+            # out here: this copy asked for "A3 Ablation/Loss", which the
+            # assigner has never emitted, so every A3 Near-loss cell type --
+            # the most severe depletion there is -- failed the loss test.
+            abundance_gain = !is.na(abundance_code) & abundance_code %in% GAIN_ABUNDANCE_CODES,
+            abundance_loss = !is.na(abundance_code) & abundance_code %in% LOSS_ABUNDANCE_CODES,
             fitness_phenotype = !is.na(fitness_label) & !(fitness_label %in% c("F0 No significant phenotype", "F0 Normal")),
             identity_phenotype = !is.na(identity_label) & identity_label != "I0 Identity intact"
         ) %>%
