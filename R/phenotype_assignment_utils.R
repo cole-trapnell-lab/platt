@@ -9,6 +9,10 @@
 # fitness/identity phenotype FDR without amplifying anything. Genes with no
 # empirical_p (NA) are left un-compressed (weight 1). When the column is absent
 # the ranking falls back to the raw shrunken logFC (backward compatible).
+#
+# The returned vector carries `efdr_weighted` / `n_gated` / `n_unweighted` attributes
+# recording which of those two regimes ran, so the distinction survives into the written
+# phenotype call instead of living only in the pipeline log. See .rank_provenance().
 make_rank <- function(deg_tbl,
                       gene_col = "gene_short_name",
                       logFC_col = "perturb_to_ctrl_shrunken_lfc",
@@ -30,17 +34,63 @@ make_rank <- function(deg_tbl,
         # a large mid-list block of zeros unbalances the ranking and manufactures spurious
         # one-directional GSEA enrichments (up-regulated fitness sets -- apoptosis/stress). Callable
         # genes keep the soft model weight (1 - empirical_p); NA weights are treated as un-demoted.
-        x <- x %>% filter(!is.finite(.data$p) | .data$p < 1)
+        gated <- is.finite(x$p) & x$p >= 1
+        n_gated <- sum(gated)
+        x <- x[!gated, , drop = FALSE]
+        n_unweighted <- sum(!is.finite(x$p))
         x$w <- 1 - pmin(pmax(replace(x$p, !is.finite(x$p), 0), 0), 1)
     } else {
+        n_gated <- NA_integer_
+        n_unweighted <- NA_integer_
         x$w <- 1
     }
     # Rank by the model-weighted statistic (logFC * (1 - empirical_p)) over the CALLABLE genes; with
     # no weight column this reduces to the shrunken logFC over all genes.
     r <- x$logFC * x$w
     names(r) <- x$gene
-    sort(r, decreasing = TRUE)
+    r <- sort(r, decreasing = TRUE)
+    # Record WHICH of those two regimes produced this vector. The fallback above is the one
+    # silent branch in the whole EFDR path: an EFDR stage that never ran, or that failed and
+    # left the tables raw, reaches here as an absent column and ranks on the bare logFC. The
+    # phenotype labels that result look exactly like fully-gated ones, so the regime has to
+    # travel with the vector and be stamped onto the written call -- see .rank_provenance()
+    # and the deg_ranking columns in assign_phenotypes_to_cell_types(). Set AFTER sort(),
+    # which indexes through order() and would otherwise drop them.
+    attr(r, "efdr_weighted") <- use_weight
+    attr(r, "n_gated") <- as.integer(n_gated)
+    attr(r, "n_unweighted") <- as.integer(n_unweighted)
+    r
 }
+
+# Ranking-regime provenance for one preranked vector, as a list of scalar columns to stamp
+# onto that cell type's phenotype row. `NULL` means nothing was ranked at all (the cell type
+# had no DEG rows), which is distinct from "ranked without weights".
+#
+#   deg_ranking       "efdr_weighted"  empirical_p was present and applied
+#                     "unweighted_lfc" no empirical_p column -- raw shrunken lfc ranking
+#                     NA               no DEG rows for this cell type; nothing was ranked
+#   deg_n_ranked      genes in the preranked list
+#   deg_n_gated       genes dropped as uncallable (empirical_p == 1); NA when unweighted
+#   deg_n_unweighted  ranked genes carrying NO empirical_p (NA -> treated as un-demoted); NA
+#                     when unweighted. A decorated table where this is most of deg_n_ranked
+#                     is only nominally weighted, which the bare regime string would hide.
+.rank_provenance <- function(rank_vec) {
+    if (is.null(rank_vec)) {
+        return(list(deg_ranking = NA_character_, deg_n_ranked = 0L,
+                    deg_n_gated = NA_integer_, deg_n_unweighted = NA_integer_))
+    }
+    weighted <- isTRUE(attr(rank_vec, "efdr_weighted"))
+    list(
+        deg_ranking = if (weighted) "efdr_weighted" else "unweighted_lfc",
+        deg_n_ranked = length(rank_vec),
+        deg_n_gated = as.integer(attr(rank_vec, "n_gated")),
+        deg_n_unweighted = as.integer(attr(rank_vec, "n_unweighted"))
+    )
+}
+
+# Columns .rank_provenance() contributes, in written order. Named once so the phenotype
+# writer and any consumer key off one definition.
+.RANK_PROVENANCE_COLS <- c("deg_ranking", "deg_n_ranked", "deg_n_gated", "deg_n_unweighted")
 
 # Deterministic 31-bit hash of a string, used to derive a reproducible RNG seed
 # from a call's own identity rather than from loop position. Double arithmetic
@@ -322,8 +372,11 @@ get_phenotype_threads <- function(num_threads = NULL) {
 #'
 #' @return A tibble with one row per perturbation and cell type, containing
 #'   `cell_group`, the perturbation identifiers, the time window bounds,
-#'   `abundance_code`, `abundance_severity`, and the `fitness_labels`,
-#'   `fitness_fgsea`, `identity_labels` and `identity_fgsea` list-columns.
+#'   `abundance_code`, `abundance_severity`, the ranking-provenance columns
+#'   `deg_ranking` / `deg_n_ranked` / `deg_n_gated` / `deg_n_unweighted` (which
+#'   regime produced the fitness and identity calls -- see `make_rank()`), and
+#'   the `fitness_labels`, `fitness_fgsea`, `identity_labels` and
+#'   `identity_fgsea` list-columns.
 #'
 #' @keywords internal
 assign_phenotypes <- function(
@@ -534,7 +587,7 @@ dacts_when_abundant <- function(differential_cell_abundance, percent_max_thresh 
 #'   consistent. Defaults to `0.1`.
 #'
 #' @return A tibble with one row per cell type; see [assign_phenotypes()] for
-#'   the columns.
+#'   the columns, including the `deg_ranking` provenance stamped on each row.
 #'
 #' @keywords internal
 assign_phenotypes_to_cell_types <- function(
@@ -556,6 +609,18 @@ assign_phenotypes_to_cell_types <- function(
     # experiment could not assess get a row saying so instead of vanishing.
     cell_types <- if (is.null(all_cell_types)) unique(dact_tbl$cell_group) else all_cell_types
     num_threads <- get_phenotype_threads(num_threads)
+    # Say once, up front, which ranking regime this perturbation is about to run under. An
+    # absent `empirical_p` means the EFDR decoration stage was disabled or failed and left
+    # the tables raw; the labels that come out are indistinguishable from gated ones, so
+    # this is logged here AND stamped onto every row below (deg_ranking).
+    if (!"empirical_p" %in% names(deg_tbl)) {
+        msg <- sprintf(paste0("[phenotypes] %s: DEG table carries no empirical_p column -- ",
+                              "ranking on the raw shrunken lfc (no artifact filtering). ",
+                              "Check the empirical-FDR stage if this was not intended."),
+                       perturb_name)
+        message(msg)
+        if (!is.null(log_fn)) log_fn(msg)
+    }
     worker_fn <- function(i) {
         if (requireNamespace("BiocParallel", quietly = TRUE)) {
             BiocParallel::register(BiocParallel::SerialParam())
@@ -606,6 +671,18 @@ assign_phenotypes_to_cell_types <- function(
             abundance_se = if (is.null(abundance_se) || length(abundance_se) == 0) NA_real_ else as.numeric(abundance_se)[1],
             abundance_df = if (is.null(abundance_df) || length(abundance_df) == 0) NA_real_ else as.numeric(abundance_df)[1],
             abundance_mdfc80 = abundance_mdfc80_val,
+            # Which ranking produced the fitness and identity calls on this row. Taken from
+            # the fitness rank vector, but it describes both: identity ranks the SAME
+            # `deg_tbl %>% filter(cell_group == ct)` subset through the same make_rank()
+            # call, so the regime and the gated/unweighted counts are identical. Abundance
+            # does not touch the DEG table and is deliberately not stamped.
+            #
+            # Without these, a fitness_phenotypes.tsv from a fully gated run and one from a
+            # run whose EFDR stage crashed are structurally identical files.
+            deg_ranking = fitness_assignment$ranking$deg_ranking,
+            deg_n_ranked = fitness_assignment$ranking$deg_n_ranked,
+            deg_n_gated = fitness_assignment$ranking$deg_n_gated,
+            deg_n_unweighted = fitness_assignment$ranking$deg_n_unweighted,
             fitness_labels = list(fitness_assignment$labels),
             fitness_fgsea = list(fitness_assignment$fgsea_res),
             identity_labels = list(identity_assignment$labels),
@@ -645,6 +722,32 @@ assign_phenotypes_to_cell_types <- function(
 #'
 #' @export
 NON_CALLED_ABUNDANCE_CODES <- c("A0 No change", "AU Undetermined", "AN Not assessed")
+
+#' Abundance codes that count as a loss or a gain
+#'
+#' Companions to [NON_CALLED_ABUNDANCE_CODES], for callers that need to know the
+#' DIRECTION of a call rather than whether one was made.
+#'
+#' These exist because the membership test was written out by hand in several
+#' places and drifted. `assign_abundance_code()` has emitted `"A3 Near-loss"`
+#' since the first commit, but the hand-written lists asked for
+#' `"A3 Ablation/Loss"`, a spelling no code path has ever produced -- so the
+#' most severe depletion silently failed every loss test. It went unnoticed
+#' because A3 additionally required `q < 0.01` and never fired; loosening that
+#' gate to 0.1 made it reachable, and the mismatch with it.
+#'
+#' The legacy spelling is retained as an alias: it costs nothing and any older
+#' impact table using it still matches.
+#'
+#' `"A4 Ectopic/extra state"` is likewise kept although nothing currently emits
+#' it, so a future producer does not have to remember to update this list.
+#'
+#' @export
+LOSS_ABUNDANCE_CODES <- c("A2 Depletion", "A3 Near-loss", "A3 Ablation/Loss")
+
+#' @rdname LOSS_ABUNDANCE_CODES
+#' @export
+GAIN_ABUNDANCE_CODES <- c("A1 Expansion", "A4 Ectopic/extra state")
 
 # Minimum detectable fold change at `power`, on the scale `se` is measured on.
 #
@@ -835,12 +938,14 @@ assign_fitness_labels <- function(deg_tbl, ct, gene_sets,
         fgsea_res <- run_fgsea_modules(rank_vec, gene_sets, minSize = minSize, maxSize = maxSize, nperm = nperm, seed_key = seed_key)
         list(
             labels = classify_fitness(fgsea_res),
-            fgsea_res = fgsea_res
+            fgsea_res = fgsea_res,
+            ranking = .rank_provenance(rank_vec)
         )
     } else {
         list(
             labels = tibble(fitness_label = NA_character_, severity = NA_character_, evidence = NA_character_),
-            fgsea_res = tibble()
+            fgsea_res = tibble(),
+            ranking = .rank_provenance(NULL)
         )
     }
 }
@@ -978,6 +1083,46 @@ assign_identity_maturation_labels <- function(deg_tbl, ct, identity_gene_sets, c
     )
 }
 
+# Installed platt version, or NA when the package is sourced rather than installed.
+# Recorded in the provenance sidecar so a written phenotype call names the code that
+# produced it -- the `make_rank()` weighting and the abundance code cascade have both
+# changed shape since these files first existed.
+.platt_version <- function() {
+    tryCatch(as.character(utils::packageVersion("platt")), error = function(e) NA_character_)
+}
+
+# One-row provenance record for a written phenotype directory.
+#
+# Answers, from the artifact alone, the question the labels themselves cannot: was this
+# call artifact-filtered? `deg_ranking` summarises the per-row stamp across the cell types
+# in this group -- "efdr_weighted" only if every ranked cell type was weighted, "mixed" if
+# the group straddles both regimes (which should not happen for a single DEG table and is
+# worth seeing if it does).
+.phenotype_provenance_row <- function(keys, tbl) {
+    has_cols <- all(.RANK_PROVENANCE_COLS %in% names(tbl))
+    ranking <- if (has_cols) tbl$deg_ranking else NA_character_
+    ranked <- ranking[!is.na(ranking)]
+    overall <- if (!has_cols) "unknown"
+               else if (length(ranked) == 0) "not_ranked"
+               else if (all(ranked == "efdr_weighted")) "efdr_weighted"
+               else if (all(ranked == "unweighted_lfc")) "unweighted_lfc"
+               else "mixed"
+    tibble(
+        perturb_group = as.character(keys$perturb_group),
+        run = as.character(keys$run),
+        perturb_name = as.character(keys$perturb_name),
+        platt_version = .platt_version(),
+        generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%S%z"),
+        n_cell_types = nrow(tbl),
+        deg_ranking = overall,
+        n_efdr_weighted = sum(ranking == "efdr_weighted", na.rm = TRUE),
+        n_unweighted_lfc = sum(ranking == "unweighted_lfc", na.rm = TRUE),
+        n_not_ranked = sum(is.na(ranking)),
+        n_genes_gated = if (has_cols) sum(tbl$deg_n_gated, na.rm = TRUE) else NA_integer_,
+        n_genes_unweighted = if (has_cols) sum(tbl$deg_n_unweighted, na.rm = TRUE) else NA_integer_
+    )
+}
+
 write_phenotype_outputs <- function(phenotype_tbl, base_dir) {
     phenotype_tbl %>%
         group_by(perturb_group, run, perturb_name) %>%
@@ -994,11 +1139,17 @@ write_phenotype_outputs <- function(phenotype_tbl, base_dir) {
                 select(cell_group, abundance_code, abundance_severity) %>%
                 readr::write_tsv(abundance_tsv)
 
+            # Write the ranking regime alongside the labels it produced, on both DEG-derived
+            # axes. all_of() and not any_of(): if a caller hands us a phenotype table built
+            # without the stamp, fail here rather than quietly writing the ambiguous file
+            # this column exists to eliminate.
+            stamp <- .RANK_PROVENANCE_COLS
+
             # Write fitness info (unnest fitness_labels if present)
             fitness_tsv <- file.path(out_dir, "fitness_phenotypes.tsv")
             if ("fitness_labels" %in% colnames(.x)) {
                 .x %>%
-                    select(cell_group, fitness_labels) %>%
+                    select(cell_group, all_of(stamp), fitness_labels) %>%
                     unnest(fitness_labels) %>%
                     readr::write_tsv(fitness_tsv)
             }
@@ -1015,7 +1166,7 @@ write_phenotype_outputs <- function(phenotype_tbl, base_dir) {
             identity_tsv <- file.path(out_dir, "identity_phenotypes.tsv")
             if ("identity_labels" %in% colnames(.x)) {
                 .x %>%
-                    select(cell_group, identity_labels) %>%
+                    select(cell_group, all_of(stamp), identity_labels) %>%
                     unnest(identity_labels) %>%
                     readr::write_tsv(identity_tsv)
             }
@@ -1027,6 +1178,15 @@ write_phenotype_outputs <- function(phenotype_tbl, base_dir) {
                     unnest(identity_fgsea) %>%
                     readr::write_tsv(identity_fgsea_tsv)
             }
+
+            # Run-level provenance: version, timestamp, and the ranking regime summarised
+            # over this perturbation. The gate POLICY itself is a property of the
+            # empirical-FDR stage, not of phenotyping, and is recorded by that stage in
+            # efdr_status.tsv / efdr_diagnostics.tsv beside efdr_model.rds.
+            readr::write_tsv(
+                .phenotype_provenance_row(.y, .x),
+                file.path(out_dir, "phenotype_provenance.tsv")
+            )
         })
 }
 # Example usage:
