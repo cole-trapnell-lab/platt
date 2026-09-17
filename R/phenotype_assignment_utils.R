@@ -460,24 +460,7 @@ assign_phenotypes <- function(
             #     mutate(timepoint_x = as.numeric(timepoint_x)) %>%
             #     group_by(cell_group) %>%
             #     slice_max(percent_max_abund, with_ties = F)
-            dact_tbl <- dact_tbl %>% mutate(change_when_present = delta_log_abund, change_when_present_q_val = delta_q_value)
-            # Carry the SE and df across too, under the names assign_abundance_code()
-            # reads. Without them it cannot compute mdfc80, so `resolved` is never
-            # TRUE and EVERY non-significant row becomes "AU Undetermined" -- A0 is
-            # arithmetically unreachable on this branch. The summarised table carries
-            # change_when_present_se/_tvalue_df natively; the unsummarised one holds
-            # the same quantities under hooke's names, so only the rename was missing.
-            #
-            # df_resid arrives from hooke 0.0.3 (or decorate_contrast_detectability()
-            # backfilling it onto an older table), so it is absent on tables that
-            # predate both. Guard rather than alias unconditionally: a bare mutate()
-            # would stop() with "object 'df_resid' not found" on those, and falling
-            # through to AU is the correct, documented answer there -- without an SE
-            # a null cannot be certified.
-            if (all(c("delta_log_abund_se", "df_resid") %in% names(dact_tbl))) {
-                dact_tbl <- dact_tbl %>% mutate(change_when_present_se = delta_log_abund_se,
-                                                change_when_present_tvalue_df = df_resid)
-            }
+            dact_tbl <- alias_change_when_present(dact_tbl)
         }
 
         log_ts(
@@ -559,6 +542,47 @@ filter_denylisted_cell_types <- function(dact_tbl, deg_tbl, cell_type_denylist) 
 #' # one row per cell type, neutralising nothing
 #' dacts <- dacts_when_abundant(differential_cell_abundance, percent_max_thresh = 0)
 #' }
+# Rename an unsummarised abundance table into the `change_when_present_*`
+# vocabulary that assign_phenotypes_to_cell_types() reads.
+#
+# All FOUR columns matter. Mapping only the estimate and the q-value -- which is
+# what this did before -- leaves assign_abundance_code() without a standard error
+# or residual df, so it cannot compute mdfc80, `resolved` is never TRUE, and
+# EVERY non-significant row degrades to "AU Undetermined". `A0 No change` is then
+# arithmetically unreachable on this branch, which is how the four-state split
+# shipped as an effective two-state one on every run with
+# use_summarized_tbl = FALSE.
+#
+# The summarised table carries change_when_present_se/_tvalue_df natively. The
+# unsummarised one holds the same quantities under hooke's names, and
+# dacts_when_abundant() is a filter()/slice_min() with no select(), so they are
+# still present here -- only the rename was missing.
+#
+# Pairing is per row and deliberate: `change_when_present` is the single
+# slice_min(delta_q_value) row's `delta_log_abund`, so the detection limit must
+# come from THAT row's `delta_log_abund_se` and `df_resid`, describing the same
+# contrast the code is assigned from.
+#
+# df_resid arrives from hooke 0.0.3, or from decorate_contrast_detectability()
+# backfilling it onto a legacy table, so it is absent on tables predating both.
+# Guard rather than alias unconditionally: a bare mutate() would stop() with
+# "object 'df_resid' not found" on those. Falling through to AU there is the
+# correct and documented answer -- without a standard error a null cannot be
+# certified.
+#
+# Kept as a named helper so the mapping is testable on its own; inlined, a
+# regression here is only visible through a full assign_phenotypes() run.
+alias_change_when_present <- function(dact_tbl) {
+    dact_tbl <- dact_tbl %>% mutate(change_when_present = delta_log_abund,
+                                    change_when_present_q_val = delta_q_value)
+    if (all(c("delta_log_abund_se", "df_resid") %in% names(dact_tbl))) {
+        dact_tbl <- dact_tbl %>% mutate(change_when_present_se = delta_log_abund_se,
+                                        change_when_present_tvalue_df = df_resid)
+    }
+    dact_tbl
+}
+
+
 #' @export
 dacts_when_abundant <- function(differential_cell_abundance, percent_max_thresh = 0.10, with_ties = FALSE) {
     perturb_table_at_when_abundant <- differential_cell_abundance %>%

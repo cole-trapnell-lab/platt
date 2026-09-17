@@ -690,3 +690,84 @@ test_that("every code assign_abundance_code() emits is classified by the code co
   # The legacy spelling still matches, so older impact tables keep working.
   expect_true("A3 Ablation/Loss" %in% LOSS_ABUNDANCE_CODES)
 })
+
+
+# A decorated unsummarised abundance table, shaped like hooke 0.0.3 output:
+# one timepoint per cell type, a resolved null and an underpowered one.
+.decorated_dact <- function() {
+  tibble::tibble(
+    cell_group           = c("resolved", "underpowered", "expanded"),
+    timepoint_x          = 24,
+    present_above_thresh = TRUE,
+    percent_max_abund    = 1,
+    delta_log_abund      = c(0.02, 0.05, 1.20),
+    delta_log_abund_se   = c(0.10, 1.20, 0.20),
+    delta_q_value        = c(0.90, 0.95, 0.01),
+    df_resid             = 40
+  )
+}
+
+
+test_that("the unsummarised branch carries se and df, so A0 can fire", {
+
+  # The regression this guards: mapping only the estimate and the q-value left
+  # assign_abundance_code() with no SE, making "A0 No change" unreachable
+  # whenever use_summarized_tbl = FALSE. See platt#56.
+  aliased <- alias_change_when_present(.decorated_dact())
+
+  expect_true(all(c("change_when_present", "change_when_present_q_val",
+                    "change_when_present_se", "change_when_present_tvalue_df")
+                  %in% names(aliased)))
+
+  # Paired per row, from the same contrast the code is assigned from.
+  expect_equal(aliased$change_when_present, aliased$delta_log_abund)
+  expect_equal(aliased$change_when_present_se, aliased$delta_log_abund_se)
+  expect_equal(aliased$change_when_present_tvalue_df, aliased$df_resid)
+
+  code <- assign_abundance_code(aliased$change_when_present,
+                                aliased$change_when_present_q_val,
+                                q_cut = 0.1,
+                                se = aliased$change_when_present_se,
+                                df = aliased$change_when_present_tvalue_df)
+
+  # The whole point: a resolved null is reachable on this branch.
+  expect_true(any(code == "A0 No change"))
+  expect_equal(code, c("A0 No change", "AU Undetermined", "A1 Expansion"))
+})
+
+
+test_that("dacts_when_abundant keeps the columns the alias needs", {
+
+  # The mapping gap was never a missing-data problem: dacts_when_abundant() is a
+  # filter()/slice_min() with no select(), so the SE and df survive it. If that
+  # ever stops being true the alias silently reverts to two-state.
+  kept <- dacts_when_abundant(.decorated_dact(), percent_max_thresh = 0)
+
+  expect_true(all(c("delta_log_abund_se", "df_resid") %in% names(kept)))
+  expect_true(any(assign_abundance_code(
+    kept$delta_log_abund, kept$delta_q_value, q_cut = 0.1,
+    se = kept$delta_log_abund_se, df = kept$df_resid) == "A0 No change"))
+})
+
+
+test_that("the alias degrades to AU on tables predating df_resid", {
+
+  # Legacy tables carry no df_resid. Aliasing unconditionally would stop() with
+  # "object 'df_resid' not found"; the honest outcome is AU, not a claimed null.
+  legacy <- .decorated_dact() %>% dplyr::select(-df_resid)
+
+  expect_no_error(aliased <- alias_change_when_present(legacy))
+  expect_false("change_when_present_se" %in% names(aliased))
+  expect_false("change_when_present_tvalue_df" %in% names(aliased))
+
+  # What the worker then reads. `[[` rather than `$` only to keep tibble's
+  # "unknown column" warning out of the test output -- both yield NULL, which is
+  # the degradation being asserted.
+  code <- assign_abundance_code(aliased$change_when_present,
+                                aliased$change_when_present_q_val,
+                                q_cut = 0.1,
+                                se = aliased[["change_when_present_se"]],
+                                df = aliased[["change_when_present_tvalue_df"]])
+  expect_false(any(code == "A0 No change"))
+  expect_equal(code, c("AU Undetermined", "AU Undetermined", "A1 Expansion"))
+})
