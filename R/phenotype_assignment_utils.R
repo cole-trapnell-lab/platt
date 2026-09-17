@@ -461,6 +461,23 @@ assign_phenotypes <- function(
             #     group_by(cell_group) %>%
             #     slice_max(percent_max_abund, with_ties = F)
             dact_tbl <- dact_tbl %>% mutate(change_when_present = delta_log_abund, change_when_present_q_val = delta_q_value)
+            # Carry the SE and df across too, under the names assign_abundance_code()
+            # reads. Without them it cannot compute mdfc80, so `resolved` is never
+            # TRUE and EVERY non-significant row becomes "AU Undetermined" -- A0 is
+            # arithmetically unreachable on this branch. The summarised table carries
+            # change_when_present_se/_tvalue_df natively; the unsummarised one holds
+            # the same quantities under hooke's names, so only the rename was missing.
+            #
+            # df_resid arrives from hooke 0.0.3 (or decorate_contrast_detectability()
+            # backfilling it onto an older table), so it is absent on tables that
+            # predate both. Guard rather than alias unconditionally: a bare mutate()
+            # would stop() with "object 'df_resid' not found" on those, and falling
+            # through to AU is the correct, documented answer there -- without an SE
+            # a null cannot be certified.
+            if (all(c("delta_log_abund_se", "df_resid") %in% names(dact_tbl))) {
+                dact_tbl <- dact_tbl %>% mutate(change_when_present_se = delta_log_abund_se,
+                                                change_when_present_tvalue_df = df_resid)
+            }
         }
 
         log_ts(
