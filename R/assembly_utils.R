@@ -1166,8 +1166,8 @@ estimate_abundances_marginal <- function(ccm,
   sampled_vals <- sort(unique(sampled$.iv))
   off_grid <- setdiff(sampled_vals, grid)
   if (length(off_grid) > 0) {
-    warning("sampled ", interval_col, " values not on the interval grid were added to it: ",
-      paste(off_grid, collapse = ", "), ". The contiguity interval assumes a uniform grid.")
+    message("sampled ", interval_col, " values not on the interval grid were added to it: ",
+      paste(off_grid, collapse = ", "))
     grid <- sort(union(grid, off_grid))
   }
 
@@ -1252,17 +1252,26 @@ get_extant_cell_types <- function(ccm,
     ) %>%
     ungroup()
 
+  # Longest run of consecutive grid points with present_flag == TRUE, reported as the interval values
+  # at its ends. Same answer as the previous ts()/na.contiguous() implementation on a uniform grid
+  # (first run wins a tie), but it does not assume uniform spacing, so a grid that includes off-step
+  # sampled values (e.g. 5.5 hpf added by estimate_abundances_marginal) is handled correctly.
   longest_present_interval <- function(tps_df) {
     tryCatch(
       {
-        delta_t <- as.numeric(tps_df[2, 1] - tps_df[1, 1])
-        ts_la <- ts(tps_df$present_flag,
-          start = min(tps_df[, 1]),
-          # end=max(tps_df[,1]),
-          deltat = delta_t
-        )
-        longest_contig <- na.contiguous(ts_la)
-        return(tibble(longest_contig_start = start(longest_contig)[1], longest_contig_end = end(longest_contig)[1]))
+        tps_df <- tps_df[order(tps_df[[1]]), , drop = FALSE]
+        present <- !is.na(tps_df$present_flag) & tps_df$present_flag
+        if (!any(present)) {
+          return(tibble(longest_contig_start = NA, longest_contig_end = NA))
+        }
+        r <- rle(present)
+        ends <- cumsum(r$lengths)
+        starts <- ends - r$lengths + 1
+        i <- which(r$values)[which.max(r$lengths[r$values])]
+        return(tibble(
+          longest_contig_start = as.numeric(tps_df[[1]][starts[i]]),
+          longest_contig_end = as.numeric(tps_df[[1]][ends[i]])
+        ))
       },
       error = function(e) {
         return(tibble(longest_contig_start = NA, longest_contig_end = NA))
