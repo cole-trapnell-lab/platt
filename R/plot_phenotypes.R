@@ -304,12 +304,22 @@ plot_phenotypes_from_impact <- function(cell_state_graph,
         dplyr::transmute(
             cell_group = as.character(.data[[power_cell_col]]),
             power = if ("power" %in% names(power_tbl)) as.numeric(power) else NA_real_,
+            # plot_phenotypes_glyphs() keys `power_status` on this column, so it
+            # has to survive the join. Without it every cell type silently fell
+            # through to "Underpowered", because the impact table carries no
+            # detectability columns and nothing else supplied one.
+            power_at_margin = if ("power_at_margin" %in% names(power_tbl)) as.numeric(power_at_margin) else NA_real_,
+            margin_fold_change = if ("margin_fold_change" %in% names(power_tbl)) as.numeric(margin_fold_change) else NA_real_,
+            power_status = if ("power_status" %in% names(power_tbl)) as.character(power_status) else NA_character_,
             abundance_log2fc = as.numeric(delta_log_abund),
             abundance_q = as.numeric(delta_q_value)
         ) %>%
         dplyr::group_by(cell_group) %>%
         dplyr::summarise(
             power = first_non_missing(power, NA_real_),
+            power_at_margin = first_non_missing(power_at_margin, NA_real_),
+            margin_fold_change = first_non_missing(margin_fold_change, NA_real_),
+            power_status = first_non_missing(power_status, NA_character_),
             abundance_log2fc = first_non_missing(abundance_log2fc, NA_real_),
             abundance_q = first_non_missing(abundance_q, NA_real_),
             .groups = "drop"
@@ -324,7 +334,7 @@ plot_phenotypes_from_impact <- function(cell_state_graph,
     }
 
     phenos_df %>%
-        dplyr::select(-dplyr::any_of(c("power", "abundance_log2fc", "abundance_q"))) %>%
+        dplyr::select(-dplyr::any_of(c("power", "power_at_margin", "margin_fold_change", "power_status", "abundance_log2fc", "abundance_q"))) %>%
         dplyr::left_join(power_join_tbl, by = "cell_group") %>%
         dplyr::mutate(
             abundance_q = dplyr::if_else(has_real_abundance_change, dplyr::coalesce(abundance_q, 1), 1),
@@ -907,6 +917,9 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             # seen a change worth calling here?".
             power_at_margin = if ("power_at_margin" %in% names(phenos_df)) as.numeric(.data[["power_at_margin"]]) else NA_real_,
             powered_thresh = if ("powered_thresh" %in% names(phenos_df)) as.numeric(.data[["powered_thresh"]]) else 0.8,
+            # Hooke >= 0.0.5 writes this column; prefer it so the figure shows
+            # what the table asserts instead of a second opinion computed here.
+            power_status_col = if ("power_status" %in% names(phenos_df)) as.character(.data[["power_status"]]) else NA_character_,
             present_above_thresh = if ("present_above_thresh" %in% names(phenos_df)) as.logical(.data[["present_above_thresh"]]) else NA,
             abundance_code = if ("abundance_code" %in% names(phenos_df)) as.character(.data[["abundance_code"]]) else NA_character_,
             ident = if (map$ident %in% names(phenos_df)) as.character(.data[[map$ident]]) else "I0",
@@ -1014,8 +1027,17 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             # detectability into resolved-null and undetermined. NA (column
             # absent, degenerate fit, insufficient df) is not powered -- a
             # contrast we cannot certify must not be drawn as one.
+            # ORDER IS LOAD-BEARING. "Called" must stay first: `power_status_col`
+            # is hooke's own column, which knows nothing about the abundance
+            # cascade and can only say "powered"/"underpowered". Let it match
+            # first and a called cell type is graded on power again, which is
+            # precisely what the paragraph above describes. It fills in for
+            # NON-calls only, where it is the more authoritative answer --
+            # computed from the contrast's own SE and df rather than whatever
+            # the impact table happened to carry.
             power_status = dplyr::case_when(
                 !is.na(abundance_code) & !(abundance_code %in% NON_CALLED_ABUNDANCE_CODES) ~ "Called",
+                !is.na(power_status_col) ~ power_status_col,
                 !is.na(power_at_margin) & power_at_margin >= powered_thresh ~ "Powered",
                 TRUE ~ "Underpowered"
             ),
