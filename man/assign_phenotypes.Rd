@@ -15,7 +15,7 @@ assign_phenotypes(
   minSize = 10,
   maxSize = 5000,
   nperm = 1000,
-  abundance_q_cut = 0.1
+  abundance_q_cut = 0.05
 )
 }
 \arguments{
@@ -47,10 +47,11 @@ column. If \code{FALSE}, derive the equivalent columns from
 \item{nperm}{Permutation count passed to fgsea.}
 
 \item{abundance_q_cut}{q-value cutoff for the abundance codes, passed to
-\code{\link[=assign_abundance_code]{assign_abundance_code()}}. Defaults to \code{0.1}; pass \code{0.01} to reproduce the
-stricter \verb{A3 Near-loss} gate used before this was configurable. Note that
-\code{\link[=assign_abundance_severity]{assign_abundance_severity()}} keeps its own graded thresholds and is not
-affected by this argument.}
+\code{\link[=assign_abundance_code]{assign_abundance_code()}}. Defaults to \code{0.05}, which is the \code{alpha} that
+\code{\link[hooke:compare_abundances]{hooke::compare_abundances()}} computes \code{power_at_margin} and \code{mdfc80} at,
+so the contrast table and the codes agree about which rows were
+adequately powered. Also passed to \code{\link[=assign_abundance_severity]{assign_abundance_severity()}}, so that
+a cell type cannot come back as a non-call with a graded severity.}
 }
 \value{
 A tibble with one row per perturbation and cell type, containing

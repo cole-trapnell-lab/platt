@@ -31,6 +31,7 @@ Imports:
     scam,
     speedglm,
     splines,
+    utils,
     withr
 Remotes:
     cole-trapnell-lab/speedglm,
