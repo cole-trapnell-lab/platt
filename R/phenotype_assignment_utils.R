@@ -365,10 +365,11 @@ get_phenotype_threads <- function(num_threads = NULL) {
 #' @param minSize,maxSize Gene set size bounds passed to fgsea.
 #' @param nperm Permutation count passed to fgsea.
 #' @param abundance_q_cut q-value cutoff for the abundance codes, passed to
-#'   [assign_abundance_code()]. Defaults to `0.1`; pass `0.01` to reproduce the
-#'   stricter `A3 Near-loss` gate used before this was configurable. Also passed
-#'   to [assign_abundance_severity()], so that a cell type cannot come back as a
-#'   non-call with a graded severity.
+#'   [assign_abundance_code()]. Defaults to `0.05`, which is the `alpha` that
+#'   [hooke::compare_abundances()] computes `power_at_margin` and `mdfc80` at,
+#'   so the contrast table and the codes agree about which rows were
+#'   adequately powered. Also passed to [assign_abundance_severity()], so that
+#'   a cell type cannot come back as a non-call with a graded severity.
 #'
 #' @return A tibble with one row per perturbation and cell type, containing
 #'   `cell_group`, the perturbation identifiers, the time window bounds,
@@ -390,7 +391,7 @@ assign_phenotypes <- function(
   minSize = 10,
   maxSize = 5000,
   nperm = 1000,
-  abundance_q_cut = 0.1
+  abundance_q_cut = 0.05
 ) {
     # Get all cell types across all perturbations
     all_cell_types <- unique(unlist(
@@ -625,7 +626,7 @@ dacts_when_abundant <- function(differential_cell_abundance, percent_max_thresh 
 #' @param nperm Permutation count passed to fgsea.
 #' @param abundance_q_cut q-value cutoff for the abundance codes, passed to both
 #'   [assign_abundance_code()] and [assign_abundance_severity()] so the two stay
-#'   consistent. Defaults to `0.1`.
+#'   consistent. Defaults to `0.05`.
 #'
 #' @return A tibble with one row per cell type; see [assign_phenotypes()] for
 #'   the columns, including the `deg_ranking` provenance stamped on each row.
@@ -642,7 +643,7 @@ assign_phenotypes_to_cell_types <- function(
   minSize = 10,
   maxSize = 5000,
   nperm = 1000,
-  abundance_q_cut = 0.1,
+  abundance_q_cut = 0.05,
   all_cell_types = NULL
 ) {
     # Defaults to the filtered table's own cell types, which is the pre-0.0.3
@@ -868,8 +869,19 @@ abundance_mdfc80 <- function(se, df, alpha = 0.1, power = 0.8) {
 # When `se`/`df` are unavailable -- older tables that never carried them -- every
 # non-significant row becomes "AU Undetermined". That is deliberate: without a
 # standard error we cannot certify a null, and saying so is the point.
+
+# WHERE `q_cut` COMES FROM. Like the margin, it is not free. `abundance_mdfc80()`
+# is called with `alpha = q_cut`, and hooke's `compare_abundances()` computes
+# `power_at_margin` and `mdfc80` at its own `alpha`, which defaults to 0.05.
+# While the two disagreed, the contrast table and the codes answered "were we
+# powered here?" at different levels, and the same cell type could read
+# "underpowered" in one and "A0 No change" in the other -- 0.05 is the stricter
+# of the two, so the disagreement ran one way only. Matching them makes
+# `power_status == "powered"` and `resolved` the SAME predicate on the same
+# numbers, given the shared margin and power. Change this only together with
+# hooke's `alpha`, or the two drift apart again.
 assign_abundance_code <- function(change_when_present, change_when_present_q_val,
-                                  q_cut = 0.1,
+                                  q_cut = 0.05,
                                   se = NULL, df = NULL,
                                   lfc_cut = 0.5,
                                   near_loss_cut = 2.0,
@@ -941,7 +953,7 @@ assign_abundance_code <- function(change_when_present, change_when_present_q_val
 # functions move together. `moderate_lfc_cut` and the stricter q levels are
 # severity's own grading and have no counterpart in the code cascade.
 assign_abundance_severity <- function(change_when_present, change_when_present_q_val,
-                                      q_cut = 0.1,
+                                      q_cut = 0.05,
                                       lfc_cut = 0.5,
                                       near_loss_cut = 2.0,
                                       moderate_lfc_cut = 1.0,

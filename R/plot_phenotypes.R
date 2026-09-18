@@ -98,6 +98,11 @@ abundance_power_status_label <- function(mdfc80, margin_fold_change = exp(0.5)) 
 #' @param show_group_labels Logical. If `TRUE`, draw text labels for grouping
 #'   boxes.
 #' @param group_label_font_size Numeric size for grouping-box labels.
+#' @param abundance_q_cut Numeric q-value cutoff used to decide whether an
+#'   abundance call survives into the glyph. MUST match the `abundance_q_cut`
+#'   that produced `impact_table`'s codes (see [assign_abundance_code()]) --
+#'   a looser value here re-admits rows the cascade rejected, a stricter one
+#'   silently rewrites called rows to `"A0 No change"`. Defaults to `0.05`.
 #' @param ... Additional arguments passed to `plot_phenotypes_glyphs()`.
 #'
 #' @return A `ggplot` object.
@@ -119,6 +124,7 @@ plot_phenotypes_from_impact <- function(cell_state_graph,
                                         power_tbl = NULL,
                                         presence_tbl = NULL,
                                         powered_thresh = 0.8,
+                                        abundance_q_cut = 0.05,
                                         filter_by_group = FALSE,
                                         cell_types = NULL,
                                         show_node_labels = FALSE,
@@ -142,7 +148,8 @@ plot_phenotypes_from_impact <- function(cell_state_graph,
         phenos <- .augment_phenos_with_presence(phenos, eff_presence_tbl)
     }
     if (!is.null(power_tbl) && is.data.frame(power_tbl) && nrow(power_tbl) > 0) {
-        phenos <- .augment_phenos_with_abundance_summary(phenos, power_tbl, impact_table, powered_thresh)
+        phenos <- .augment_phenos_with_abundance_summary(phenos, power_tbl, impact_table, powered_thresh,
+                                                         abundance_q_cut)
     }
 
     # Add minimal rows for graph nodes that are absent but missing from phenos entirely
@@ -153,6 +160,9 @@ plot_phenotypes_from_impact <- function(cell_state_graph,
     plot_phenotypes_glyphs(
         cell_state_graph,
         phenos_df = phenos,
+        # Forwarded explicitly: this function has its own `abundance_q_cut`, so
+        # it is consumed here and would never reach the glyphs through `...`.
+        abundance_q_cut = abundance_q_cut,
         filter_by_group = filter_by_group,
         cell_types = cell_types,
         show_node_labels = show_node_labels,
@@ -262,7 +272,8 @@ plot_phenotypes_from_impact <- function(cell_state_graph,
     dplyr::bind_rows(phenos_df, absent_rows)
 }
 
-.augment_phenos_with_abundance_summary <- function(phenos_df, power_tbl, impact_table, powered_thresh) {
+.augment_phenos_with_abundance_summary <- function(phenos_df, power_tbl, impact_table, powered_thresh,
+                                                   abundance_q_cut = 0.05) {
     first_non_missing <- function(x, default = NA) {
         x <- x[!is.na(x)]
         if (length(x) == 0) default else x[[1]]
@@ -338,9 +349,14 @@ plot_phenotypes_from_impact <- function(cell_state_graph,
         dplyr::left_join(power_join_tbl, by = "cell_group") %>%
         dplyr::mutate(
             abundance_q = dplyr::if_else(has_real_abundance_change, dplyr::coalesce(abundance_q, 1), 1),
-            abundance_log2fc = dplyr::if_else(has_real_abundance_change & abundance_q < 0.05, abundance_log2fc, 0),
+            # MUST be the q_cut assign_abundance_code() used. Hardcoding a
+            # different one silently demotes a called row: a cascade
+            # `A1 Expansion` whose q sits between the two fails this test and is
+            # rewritten to "A0 No change" below, so the impact table says
+            # Expansion while every figure drawn from it says no change.
+            abundance_log2fc = dplyr::if_else(has_real_abundance_change & abundance_q < abundance_q_cut, abundance_log2fc, 0),
             abundance_code = dplyr::if_else(
-                has_real_abundance_change & abundance_q < 0.05,
+                has_real_abundance_change & abundance_q < abundance_q_cut,
                 as.character(abundance_code),
                 # Do NOT collapse AU/AN into A0 here. That would undo the whole
                 # point of the split: A0 asserts a resolved null, while AU and
@@ -684,13 +700,15 @@ phenotype_tooltip_builder <- function(g, render_mode = c("tissue", "global")) {
                 is.na(abundance_power_status) ~ abundance_text,
                 TRUE ~ paste0(abundance_text, " (", abundance_power_status, ")")
             ),
+            # Same cutoff as the code cascade, or a called row renders in the
+            # neutral colour while its label still says Expansion.
             abundance_display_color = ifelse(
                 abundance_text == "",
                 NA_character_,
                 ifelse(
-                    !is.na(q) & q < 0.05 & abundance_text != "0%" & substr(abundance_text, 1, 1) == "-",
+                    !is.na(q) & q < abundance_q_cut & abundance_text != "0%" & substr(abundance_text, 1, 1) == "-",
                     "#377eb8",
-                    ifelse(!is.na(q) & q < 0.05 & abundance_text != "0%" & substr(abundance_text, 1, 1) == "+", "#e41a1c", NA_character_)
+                    ifelse(!is.na(q) & q < abundance_q_cut & abundance_text != "0%" & substr(abundance_text, 1, 1) == "+", "#e41a1c", NA_character_)
                 )
             ),
             identity_tooltip_label = if ("identity_tooltip_label" %in% names(g)) as.character(identity_tooltip_label) else "",
@@ -823,6 +841,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                                        f3 = "F3_stress_score",
                                        f4 = "F4_senescence"
                                    ),
+                                   abundance_q_cut = 0.05,
                                    lfc_cap = 2,
                                    arrow_unit = 3,
                                    arrow_gap = 0,

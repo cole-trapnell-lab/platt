@@ -426,9 +426,11 @@ test_that("severity and the code cascade agree for any shared cutoff", {
 })
 
 
-test_that("severity defaults are unchanged from the hardcoded version", {
+test_that("severity tiers are unchanged from the hardcoded version at q_cut = 0.1", {
 
-  # Threading the cutoffs must not move any published severity label.
+  # Threading the cutoffs must not move any severity label. `q_cut` is passed
+  # explicitly because the DEFAULT moved to 0.05; this guard is about the
+  # threading being faithful, not about which default is in force.
   set.seed(12)
   n <- 5000
   lfc <- rnorm(n, 0, 1.2)
@@ -440,7 +442,32 @@ test_that("severity defaults are unchanged from the hardcoded version", {
     abs(lfc) >= 0.5 & q < 0.1  ~ "mild",
     TRUE ~ "none"
   )
-  expect_identical(assign_abundance_severity(lfc, q), frozen)
+  expect_identical(assign_abundance_severity(lfc, q, q_cut = 0.1), frozen)
+})
+
+
+test_that("lowering q_cut to 0.05 moves only the mild band", {
+
+  # `severe_q <- min(0.01, q_cut)` and `moderate_q <- min(0.05, q_cut)` are both
+  # already at or below 0.05, so neither binds when q_cut drops to it. Only the
+  # bare `q_cut` in the mild line moves, which is why every row the tighter
+  # cutoff de-calls was graded `mild` and never `moderate` or `severe`.
+  set.seed(12)
+  n <- 5000
+  lfc <- rnorm(n, 0, 1.2)
+  q   <- runif(n)^2
+
+  loose  <- assign_abundance_severity(lfc, q, q_cut = 0.1)
+  tight  <- assign_abundance_severity(lfc, q, q_cut = 0.05)
+  moved  <- loose != tight
+
+  expect_true(any(moved))
+  expect_setequal(unique(loose[moved]), "mild")
+  expect_setequal(unique(tight[moved]), "none")
+
+  # The default IS the tight one now.
+  expect_identical(assign_abundance_severity(lfc, q), tight)
+  expect_identical(formals(assign_abundance_severity)$q_cut, 0.05)
 })
 
 
