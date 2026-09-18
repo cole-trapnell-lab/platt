@@ -1071,8 +1071,131 @@ fit_subset_genotype_ccm <- function(ccm, umap_space = NULL, ...) {
 }
 
 
+#' Predict abundances over an interval, marginalising a nuisance factor over the observed design
+#'
+#' `hooke::estimate_abundances_over_interval()` predicts every point of the interval at ONE level of
+#' each factor that is not in `newdata` (the first level). When that factor is nested in the interval
+#' variable -- e.g. `collection_batch` in the reference atlas, where each batch was collected at one or
+#' two timepoints -- the reference level was never observed at most timepoints, the batch coefficients
+#' have absorbed part of the time trend, and the curve read at the reference level is an extrapolation
+#' (portal issue #53: 90/383 cell types "peak at 6 hpf").
+#'
+#' This function instead predicts, at each SAMPLED value of `interval_col`, at every level of
+#' `marginalize_over` that has samples there, and combines the predictions on the count scale with
+#' weights equal to the number of samples (default) or cells at that (interval, level) cell. This is the
+#' model's own fitted marginal over the observed design. Between sampled values the curve is filled by
+#' linear interpolation on the count scale, so an argmax over the grid always lands on a sampled value;
+#' the `sampled` column marks those rows. The design is read from `colData(ccm@ccs)`, so the ccs must be
+#' the one the model was fit on (same window, same controls).
+#'
+#' @param ccm A `cell_count_model`.
+#' @param start,stop Interval bounds (inclusive) for the grid.
+#' @param interval_col Column of the sample-level colData holding the interval variable.
+#' @param interval_step Grid step; sampled values not on the grid are added to it with a warning.
+#' @param marginalize_over Name of the factor to marginalise over; must be a term of the full model.
+#' @param newdata Optional tibble of other covariates (e.g. `tibble(knockout = FALSE)`); it is crossed
+#'   with the design and carried through as grouping columns.
+#' @param min_log_abund Floor applied by `hooke::estimate_abundances` to each per-level prediction
+#'   before mixing.
+#' @param weight_by `"samples"` (default) or `"cells"`.
+#' @return A tibble with the columns of `estimate_abundances_over_interval()` plus `sampled`.
+#' @export
+estimate_abundances_marginal <- function(ccm,
+                                         start,
+                                         stop,
+                                         interval_col = "timepoint",
+                                         interval_step = 2,
+                                         marginalize_over = "collection_batch",
+                                         newdata = tibble(),
+                                         min_log_abund = -5,
+                                         weight_by = c("samples", "cells")) {
+  weight_by <- match.arg(weight_by)
+  assertthat::assert_that(is(ccm, "cell_count_model"))
+  xlev <- ccm@model_aux[["full_model_xlevels"]]
+  assertthat::assert_that(marginalize_over %in% names(xlev),
+    msg = paste0("'", marginalize_over, "' is not a factor term of the full model; terms with levels: ",
+      paste(names(xlev), collapse = ", ")))
+  sample_cd <- as.data.frame(colData(ccm@ccs))
+  assertthat::assert_that(ncol(ccm@ccs) > 0, msg = "ccm@ccs is empty; assign the cell_count_set the model was fit on")
+  assertthat::assert_that(all(c(interval_col, marginalize_over) %in% colnames(sample_cd)))
+
+  design <- tibble::tibble(
+    .iv = suppressWarnings(as.numeric(as.character(sample_cd[[interval_col]]))),
+    .lv = as.character(sample_cd[[marginalize_over]]),
+    .cells = Matrix::colSums(counts(ccm@ccs))
+  )
+  n_all <- nrow(design)
+  design <- design %>% filter(!is.na(.iv), .iv >= start, .iv <= stop)
+  dropped_levels <- setdiff(unique(design$.lv), xlev[[marginalize_over]])
+  if (length(dropped_levels) > 0) {
+    warning(length(dropped_levels), " level(s) of ", marginalize_over, " in the ccs are not in the fitted model and are ignored: ",
+      paste(dropped_levels, collapse = ", "))
+    design <- design %>% filter(.lv %in% xlev[[marginalize_over]])
+  }
+  assertthat::assert_that(nrow(design) > 0, msg = "no samples of the fitted design fall inside [start, stop]")
+  design <- design %>%
+    group_by(.iv, .lv) %>%
+    summarise(n_samples = dplyr::n(), n_cells = sum(.cells), .groups = "drop") %>%
+    mutate(.w = if (weight_by == "samples") n_samples else n_cells)
+
+  nd <- tibble::tibble(!!interval_col := design$.iv, !!marginalize_over := design$.lv)
+  extra_cols <- character(0)
+  if (nrow(newdata) > 0) {
+    newdata <- newdata[, setdiff(colnames(newdata), c(interval_col, marginalize_over)), drop = FALSE]
+    if (ncol(newdata) > 0) {
+      extra_cols <- colnames(newdata)
+      nd <- cross_join(nd, newdata)
+    }
+  }
+
+  pred <- hooke::estimate_abundances(ccm, newdata = nd, min_log_abund = min_log_abund)
+  pred <- pred %>%
+    mutate(.iv = as.numeric(.data[[interval_col]]), .lv = as.character(.data[[marginalize_over]])) %>%
+    left_join(design %>% select(.iv, .lv, .w), by = c(".iv", ".lv"))
+
+  sampled <- pred %>%
+    group_by(across(all_of(c("cell_group", ".iv", extra_cols)))) %>%
+    summarise(
+      log_abund = log(sum(.w * exp(log_abund)) / sum(.w)),
+      log_abund_se = sqrt(sum(.w * log_abund_se^2) / sum(.w)),
+      log_abund_sd = dplyr::first(log_abund_sd),
+      .groups = "drop"
+    )
+
+  grid <- seq(start, stop, interval_step)
+  sampled_vals <- sort(unique(sampled$.iv))
+  off_grid <- setdiff(sampled_vals, grid)
+  if (length(off_grid) > 0) {
+    warning("sampled ", interval_col, " values not on the interval grid were added to it: ",
+      paste(off_grid, collapse = ", "), ". The contiguity interval assumes a uniform grid.")
+    grid <- sort(union(grid, off_grid))
+  }
+
+  interp_one <- function(df) {
+    if (nrow(df) == 1) {
+      la <- rep(df$log_abund, length(grid))
+      se <- rep(df$log_abund_se, length(grid))
+    } else {
+      la <- log(stats::approx(df$.iv, exp(df$log_abund), xout = grid, rule = 2)$y)
+      se <- stats::approx(df$.iv, df$log_abund_se, xout = grid, rule = 2)$y
+    }
+    tibble::tibble(!!interval_col := grid, log_abund = la, log_abund_se = se,
+      log_abund_sd = df$log_abund_sd[1], sampled = grid %in% df$.iv)
+  }
+  out <- sampled %>%
+    group_by(across(all_of(c("cell_group", extra_cols)))) %>%
+    group_modify(~ interp_one(.x)) %>%
+    ungroup() %>%
+    select(all_of(c(interval_col, extra_cols)), cell_group, log_abund, log_abund_se, log_abund_sd, sampled)
+  out
+}
+
 #' Return a dataframe that describes which cell types are present in a time interval
 #'
+#' @param marginalize_over `NULL` (default; unchanged behaviour: predict at the first level of every
+#'   factor not in `newdata`) or the name of a nuisance factor to marginalise over the observed design
+#'   with [estimate_abundances_marginal()]. Use this when the factor is nested in `interval_col`.
+#' @param weight_by Passed to [estimate_abundances_marginal()].
 #' @export
 get_extant_cell_types <- function(ccm,
                                   start,
@@ -1083,10 +1206,19 @@ get_extant_cell_types <- function(ccm,
                                   pct_dynamic_range = 0.25,
                                   pct_range_detection_thresh = pct_dynamic_range,
                                   min_cell_range = 2,
-                                  newdata = tibble()) {
-  timepoint_pred_df <- estimate_abundances_over_interval(ccm, start, stop,
-    interval_col = interval_col, interval_step = interval_step, newdata = newdata
-  )
+                                  newdata = tibble(),
+                                  marginalize_over = NULL,
+                                  weight_by = c("samples", "cells")) {
+  if (is.null(marginalize_over)) {
+    timepoint_pred_df <- estimate_abundances_over_interval(ccm, start, stop,
+      interval_col = interval_col, interval_step = interval_step, newdata = newdata
+    )
+  } else {
+    timepoint_pred_df <- estimate_abundances_marginal(ccm, start, stop,
+      interval_col = interval_col, interval_step = interval_step,
+      marginalize_over = marginalize_over, newdata = newdata, weight_by = weight_by
+    )
+  }
 
   norm_mat <- normalized_counts(ccm@ccs, "size_only")
   norm_mat[norm_mat == 0] <- NA
@@ -1167,7 +1299,8 @@ get_extant_cell_types <- function(ccm,
       percent_cell_type_range,
       longest_contig_start,
       longest_contig_end,
-      present_above_thresh
+      present_above_thresh,
+      any_of("sampled")
     )
   return(extant_cell_type_df)
 }
