@@ -1071,6 +1071,34 @@ fit_subset_genotype_ccm <- function(ccm, umap_space = NULL, ...) {
 }
 
 
+# Shape-preserving cubic interpolation (Fritsch-Carlson form, Fritsch-Butland derivatives). The
+# derivative at an interior knot is 0 wherever the two adjacent secants differ in sign or either is 0,
+# and their harmonic mean otherwise; end derivatives are the one-sided secants. Every knot derivative
+# then lies inside the Fritsch-Carlson monotonicity region, so the Hermite cubic is monotone on every
+# interval and therefore bounded by its two knots: an argmax over the interpolated grid always lands on a
+# knot. R's splinefun(method = "monoH.FC") does NOT give this for non-monotone data (it assigns a nonzero
+# slope at a local extremum and overshoots it), which is why it is not used here.
+monotone_hermite_interp <- function(x, y, xout) {
+  o <- order(x)
+  x <- x[o]
+  y <- y[o]
+  n <- length(x)
+  if (n == 1) {
+    return(rep(y, length(xout)))
+  }
+  d <- diff(y) / diff(x)
+  m <- numeric(n)
+  m[1] <- d[1]
+  m[n] <- d[n - 1]
+  if (n > 2) {
+    for (k in 2:(n - 1)) {
+      m[k] <- if (d[k - 1] * d[k] <= 0) 0 else 2 / (1 / d[k - 1] + 1 / d[k])
+    }
+  }
+  f <- stats::splinefunH(x, y, m)
+  f(pmin(pmax(xout, x[1]), x[n]))
+}
+
 #' Predict abundances over an interval, marginalising a nuisance factor over the observed design
 #'
 #' `hooke::estimate_abundances_over_interval()` predicts every point of the interval at ONE level of
@@ -1098,6 +1126,15 @@ fit_subset_genotype_ccm <- function(ccm, umap_space = NULL, ...) {
 #' @param min_log_abund Floor applied by `hooke::estimate_abundances` to each per-level prediction
 #'   before mixing.
 #' @param weight_by `"samples"` (default) or `"cells"`.
+#' @param interpolation How grid points between sampled values are filled. Both options pass exactly
+#'   through the marginal value at every sampled point and are bounded by the two bracketing sampled
+#'   values, so an argmax over the grid always lands on a sampled value. `"monotone"` (default): a
+#'   shape-preserving cubic (Fritsch-Carlson with Fritsch-Butland derivatives) through the marginal
+#'   log-abundances, continuous in slope, so the curve is smooth. `"linear"`: linear on the
+#'   count scale, kinked at every sampled point. (Using the model's own spline for the interior shape
+#'   was tried and rejected: for the cell types whose time-versus-batch split landed on the spline the
+#'   interior shape is exactly the artifact, and it moved 150-250 of 383 peaks off sampled values with
+#'   overshoots up to 2x.)
 #' @return A tibble with the columns of `estimate_abundances_over_interval()` plus `sampled`.
 #' @export
 estimate_abundances_marginal <- function(ccm,
@@ -1108,8 +1145,10 @@ estimate_abundances_marginal <- function(ccm,
                                          marginalize_over = "collection_batch",
                                          newdata = tibble(),
                                          min_log_abund = -5,
-                                         weight_by = c("samples", "cells")) {
+                                         weight_by = c("samples", "cells"),
+                                         interpolation = c("monotone", "linear")) {
   weight_by <- match.arg(weight_by)
+  interpolation <- match.arg(interpolation)
   assertthat::assert_that(is(ccm, "cell_count_model"))
   xlev <- ccm@model_aux[["full_model_xlevels"]]
   assertthat::assert_that(marginalize_over %in% names(xlev),
@@ -1172,14 +1211,16 @@ estimate_abundances_marginal <- function(ccm,
   }
 
   interp_one <- function(df) {
+    df <- df[order(df$.iv), , drop = FALSE]
     if (nrow(df) == 1) {
       la <- rep(df$log_abund, length(grid))
-      se <- rep(df$log_abund_se, length(grid))
-    } else {
+    } else if (interpolation == "linear") {
       la <- log(stats::approx(df$.iv, exp(df$log_abund), xout = grid, rule = 2)$y)
-      se <- stats::approx(df$.iv, df$log_abund_se, xout = grid, rule = 2)$y
+    } else {
+      la <- monotone_hermite_interp(df$.iv, df$log_abund, grid)
     }
-    tibble::tibble(!!interval_col := grid, log_abund = la, log_abund_se = se,
+    se <- if (nrow(df) == 1) rep(df$log_abund_se, length(grid)) else stats::approx(df$.iv, df$log_abund_se, xout = grid, rule = 2)$y
+    tibble::tibble(!!interval_col := grid, log_abund = pmax(la, min_log_abund), log_abund_se = se,
       log_abund_sd = df$log_abund_sd[1], sampled = grid %in% df$.iv)
   }
   out <- sampled %>%
@@ -1195,7 +1236,7 @@ estimate_abundances_marginal <- function(ccm,
 #' @param marginalize_over `NULL` (default; unchanged behaviour: predict at the first level of every
 #'   factor not in `newdata`) or the name of a nuisance factor to marginalise over the observed design
 #'   with [estimate_abundances_marginal()]. Use this when the factor is nested in `interval_col`.
-#' @param weight_by Passed to [estimate_abundances_marginal()].
+#' @param weight_by,interpolation Passed to [estimate_abundances_marginal()].
 #' @export
 get_extant_cell_types <- function(ccm,
                                   start,
@@ -1208,7 +1249,8 @@ get_extant_cell_types <- function(ccm,
                                   min_cell_range = 2,
                                   newdata = tibble(),
                                   marginalize_over = NULL,
-                                  weight_by = c("samples", "cells")) {
+                                  weight_by = c("samples", "cells"),
+                                  interpolation = c("monotone", "linear")) {
   if (is.null(marginalize_over)) {
     timepoint_pred_df <- estimate_abundances_over_interval(ccm, start, stop,
       interval_col = interval_col, interval_step = interval_step, newdata = newdata
@@ -1216,7 +1258,8 @@ get_extant_cell_types <- function(ccm,
   } else {
     timepoint_pred_df <- estimate_abundances_marginal(ccm, start, stop,
       interval_col = interval_col, interval_step = interval_step,
-      marginalize_over = marginalize_over, newdata = newdata, weight_by = weight_by
+      marginalize_over = marginalize_over, newdata = newdata, weight_by = weight_by,
+      interpolation = interpolation
     )
   }
 
