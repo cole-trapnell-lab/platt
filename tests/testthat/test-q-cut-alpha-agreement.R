@@ -90,3 +90,34 @@ test_that("resolved and hooke's power_status pick out the same rows", {
   expect_true(any(platt_powered))
   expect_true(any(!platt_powered))
 })
+
+
+test_that("A0 is never claimed for a row whose own estimate clears lfc_cut", {
+
+  # `resolved` tests the DETECTION LIMIT. On its own that certifies a null for
+  # any tightly measured row, including one whose point estimate is above the
+  # threshold we would have called. A real row from v3.1.0 (WntC59, mesenchymal
+  # cell of the meninx): a 2.06-fold expansion that misses q_cut, with an
+  # mdfc80 of 1.639 against a 1.649 margin -- resolved by 0.6%.
+  lfc <- 0.721; q <- 0.094; se <- 0.162; df <- 12
+
+  expect_lte(abundance_mdfc80(se, df, alpha = 0.05), exp(0.5))   # it IS precise
+  expect_gt(abs(lfc), 0.5)                                       # and NOT small
+
+  expect_equal(
+    assign_abundance_code(lfc, q, se = se, df = df),
+    "AU Undetermined"
+  )
+
+  # The guard must not swallow genuine resolved nulls: same precision, small
+  # estimate, still A0.
+  expect_equal(
+    assign_abundance_code(0.02, q, se = se, df = df),
+    "A0 No change"
+  )
+
+  # Both directions, and right at the boundary.
+  expect_equal(assign_abundance_code(-0.721, q, se = se, df = df), "AU Undetermined")
+  expect_equal(assign_abundance_code(0.5, q, se = se, df = df), "AU Undetermined")
+  expect_equal(assign_abundance_code(0.4999, q, se = se, df = df), "A0 No change")
+})

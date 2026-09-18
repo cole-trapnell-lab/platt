@@ -894,7 +894,16 @@ assign_abundance_code <- function(change_when_present, change_when_present_q_val
     se <- fill(se)
     df <- fill(df)
     mdfc80 <- abundance_mdfc80(se, df, alpha = q_cut, power = power)
-    resolved <- !is.na(mdfc80) & mdfc80 <= margin_fold_change
+    # A null can only be certified for a row whose ESTIMATE is also small. The
+    # detection limit alone is not enough: `mdfc80 <= margin` says the contrast
+    # was precise, not that nothing happened. A row that misses `q_cut` but
+    # happens to be tightly measured would otherwise be certified as a null
+    # while its own point estimate sits above the calling threshold -- e.g.
+    # lfc 0.721 (2.06-fold), q 0.094, se 0.162, df 12, whose mdfc80 of 1.639
+    # clears a 1.649 margin by 0.6%. "A0 No change" is an affirmative claim, and
+    # for that row it is false; the honest answer is AU, which this sends it to.
+    resolved <- !is.na(mdfc80) & mdfc80 <= margin_fold_change &
+        abs(change_when_present) < lfc_cut
 
     # PRESENT BUT INVALID -> AN; ABSENT -> AU. Both inputs follow the same rule.
     #
@@ -932,7 +941,9 @@ assign_abundance_code <- function(change_when_present, change_when_present_q_val
         change_when_present <= -near_loss_cut & change_when_present_q_val < q_cut ~ "A3 Near-loss",
         change_when_present <= -lfc_cut & change_when_present_q_val < q_cut ~ "A2 Depletion",
         # Only non-calls reach here: anything significant with a real effect
-        # size exited above.
+        # size exited above. `resolved` additionally requires a SMALL estimate,
+        # so a non-call with a supra-threshold effect falls through to AU rather
+        # than being certified as a null.
         resolved ~ "A0 No change",
         TRUE ~ "AU Undetermined"
     )
