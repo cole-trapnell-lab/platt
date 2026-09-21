@@ -339,7 +339,7 @@ get_discordant_loss_pairs <- function(perturbation_ccm,
     newdata_wt <- tibble(knockout = FALSE)
   }
 
-  wt_timepoint_pred_df <- estimate_abundances_over_interval(control_timeseries_ccm, control_start_time, control_stop_time,
+  wt_timepoint_pred_df <- abundances_over_interval(control_timeseries_ccm, control_start_time, control_stop_time,
     interval_col = interval_col, interval_step = interval_step, newdata = newdata_wt
   )
   peak_wt_abundance <- wt_timepoint_pred_df %>%
@@ -797,7 +797,7 @@ build_timeseries_transition_graph <- function(ccm,
   timepoints <- seq(start_time, stop_time, interval_step)
 
   message("Estimating abundances over time interval")
-  timepoint_pred_df <- estimate_abundances_over_interval(ccm,
+  timepoint_pred_df <- abundances_over_interval(ccm,
     start_time,
     stop_time,
     interval_col = interval_col,
@@ -1200,7 +1200,7 @@ get_timeseries_paths <- function(ccm,
   }
 
   # FIXME: shouldn't use hardcoded knockout here
-  wt_timepoint_pred_df <- estimate_abundances_over_interval(ccm,
+  wt_timepoint_pred_df <- abundances_over_interval(ccm,
     start_time,
     stop_time,
     interval_col = interval_col,
@@ -1468,14 +1468,14 @@ estimate_loss_timing <- function(perturbation_ccm,
     newdata_mt <- tibble(knockout = TRUE)
   }
 
-  wt_timepoint_pred_df <- hooke:::estimate_abundances_over_interval(perturbation_ccm,
+  wt_timepoint_pred_df <- abundances_over_interval(perturbation_ccm,
     start_time,
     stop_time,
     interval_col = interval_col,
     interval_step = interval_step,
     newdata = newdata_wt
   )
-  ko_timepoint_pred_df <- hooke:::estimate_abundances_over_interval(perturbation_ccm,
+  ko_timepoint_pred_df <- abundances_over_interval(perturbation_ccm,
     start_time,
     stop_time,
     interval_col = interval_col,
@@ -1572,7 +1572,7 @@ estimate_loss_timing <- function(perturbation_ccm,
       is_gained_when_present = gain_when_present_q_val < q_val
     )
 
-  peak_wt_abundance <- estimate_abundances_over_interval(control_ccm,
+  peak_wt_abundance <- abundances_over_interval(control_ccm,
     control_start_time,
     control_stop_time,
     interval_col = interval_col,

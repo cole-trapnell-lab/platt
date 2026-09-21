@@ -1099,6 +1099,76 @@ monotone_hermite_interp <- function(x, y, xout) {
   f(pmin(pmax(xout, x[1]), x[n]))
 }
 
+#' Resolve which factor a marginal read-out should average over
+#'
+#' `"auto"` resolves to the fitted full model's own nuisance factor: the single term with recorded
+#' factor levels that is not `interval_col` (in practice the collection/batch column). It returns
+#' `NULL` when the model has no such term, so a caller that dispatches on the result falls back to a
+#' plain prediction -- a model without a nuisance factor has nothing to marginalise and is not affected
+#' by portal issue #53. Anything else, including `NULL`, is passed through unchanged, so an explicit
+#' column name still forces that factor and an explicit `NULL` still selects the pre-2026-09 read-out.
+#'
+#' @param ccm A `cell_count_model`.
+#' @param interval_col The interval variable, excluded from the candidates.
+#' @param arg The user's `marginalize_over` argument.
+#' @return A column name, or `NULL`.
+#' @export
+resolve_marginalize_over <- function(ccm, interval_col, arg = "auto") {
+  if (!identical(arg, "auto")) {
+    return(arg)
+  }
+  xlev <- ccm@model_aux[["full_model_xlevels"]]
+  candidates <- setdiff(names(xlev), interval_col)
+  if (length(candidates) == 0) {
+    return(NULL)
+  }
+  if (length(candidates) > 1) {
+    stop(
+      "marginalize_over = \"auto\" is ambiguous: the full model has more than one factor term (",
+      paste(candidates, collapse = ", "), "). Name the one to marginalise over, or pass NULL to ",
+      "predict at one level.",
+      call. = FALSE
+    )
+  }
+  candidates
+}
+
+#' Predict abundances over an interval, marginal by default
+#'
+#' Thin dispatcher used everywhere platt reads a kinetic curve off a fitted model. It resolves
+#' `marginalize_over` with [resolve_marginalize_over()] and then calls either
+#' [estimate_abundances_marginal()] (a nuisance factor exists; the default since portal issue #53) or
+#' `hooke::estimate_abundances_over_interval()` (no such factor, or an explicit `NULL`). Having one
+#' entry point is the point: a drawn curve and the table exported beside it cannot end up on different
+#' read-outs.
+#'
+#' @param ccm,start,stop,interval_col,interval_step,newdata As in
+#'   `hooke::estimate_abundances_over_interval()`.
+#' @param marginalize_over `"auto"` (default), a column name, or `NULL`. See
+#'   [resolve_marginalize_over()].
+#' @param ... Passed through to whichever estimator is used (e.g. `min_log_abund`).
+#' @export
+abundances_over_interval <- function(ccm,
+                                     start,
+                                     stop,
+                                     interval_col = "timepoint",
+                                     interval_step = 2,
+                                     newdata = tibble(),
+                                     marginalize_over = "auto",
+                                     ...) {
+  marginalize_over <- resolve_marginalize_over(ccm, interval_col, marginalize_over)
+  if (is.null(marginalize_over)) {
+    hooke:::estimate_abundances_over_interval(ccm, start, stop,
+      interval_col = interval_col, interval_step = interval_step, newdata = newdata, ...
+    )
+  } else {
+    estimate_abundances_marginal(ccm, start, stop,
+      interval_col = interval_col, interval_step = interval_step,
+      marginalize_over = marginalize_over, newdata = newdata, ...
+    )
+  }
+}
+
 #' Predict abundances over an interval, marginalising a nuisance factor over the observed design
 #'
 #' `hooke::estimate_abundances_over_interval()` predicts every point of the interval at ONE level of
@@ -1120,7 +1190,8 @@ monotone_hermite_interp <- function(x, y, xout) {
 #' @param start,stop Interval bounds (inclusive) for the grid.
 #' @param interval_col Column of the sample-level colData holding the interval variable.
 #' @param interval_step Grid step; sampled values not on the grid are added to it with a warning.
-#' @param marginalize_over Name of the factor to marginalise over; must be a term of the full model.
+#' @param marginalize_over Name of the factor to marginalise over (must be a term of the full model),
+#'   or `"auto"` (default) to use the model's own nuisance factor; see [resolve_marginalize_over()].
 #' @param newdata Optional tibble of other covariates (e.g. `tibble(knockout = FALSE)`); it is crossed
 #'   with the design and carried through as grouping columns.
 #' @param min_log_abund Floor applied by `hooke::estimate_abundances` to each per-level prediction
@@ -1142,7 +1213,7 @@ estimate_abundances_marginal <- function(ccm,
                                          stop,
                                          interval_col = "timepoint",
                                          interval_step = 2,
-                                         marginalize_over = "collection_batch",
+                                         marginalize_over = "auto",
                                          newdata = tibble(),
                                          min_log_abund = -5,
                                          weight_by = c("samples", "cells"),
@@ -1150,6 +1221,9 @@ estimate_abundances_marginal <- function(ccm,
   weight_by <- match.arg(weight_by)
   interpolation <- match.arg(interpolation)
   assertthat::assert_that(is(ccm, "cell_count_model"))
+  marginalize_over <- resolve_marginalize_over(ccm, interval_col, marginalize_over)
+  assertthat::assert_that(!is.null(marginalize_over),
+    msg = "the full model has no factor term to marginalise over; call estimate_abundances_over_interval() instead")
   xlev <- ccm@model_aux[["full_model_xlevels"]]
   assertthat::assert_that(marginalize_over %in% names(xlev),
     msg = paste0("'", marginalize_over, "' is not a factor term of the full model; terms with levels: ",
@@ -1233,9 +1307,11 @@ estimate_abundances_marginal <- function(ccm,
 
 #' Return a dataframe that describes which cell types are present in a time interval
 #'
-#' @param marginalize_over `NULL` (default; unchanged behaviour: predict at the first level of every
-#'   factor not in `newdata`) or the name of a nuisance factor to marginalise over the observed design
-#'   with [estimate_abundances_marginal()]. Use this when the factor is nested in `interval_col`.
+#' @param marginalize_over `"auto"` (default): marginalise over the full model's own nuisance factor
+#'   with [estimate_abundances_marginal()], falling back to a plain prediction when the model has no
+#'   such term; see [resolve_marginalize_over()]. A column name forces that factor. `NULL` restores the
+#'   pre-2026-09 behaviour, predicting at the first level of every factor not in `newdata`, which for a
+#'   factor nested in `interval_col` is an extrapolation (portal issue #53).
 #' @param weight_by,interpolation Passed to [estimate_abundances_marginal()].
 #' @export
 get_extant_cell_types <- function(ccm,
@@ -1248,18 +1324,18 @@ get_extant_cell_types <- function(ccm,
                                   pct_range_detection_thresh = pct_dynamic_range,
                                   min_cell_range = 2,
                                   newdata = tibble(),
-                                  marginalize_over = NULL,
+                                  marginalize_over = "auto",
                                   weight_by = c("samples", "cells"),
                                   interpolation = c("monotone", "linear")) {
-  if (is.null(marginalize_over)) {
-    timepoint_pred_df <- estimate_abundances_over_interval(ccm, start, stop,
-      interval_col = interval_col, interval_step = interval_step, newdata = newdata
+  timepoint_pred_df <- if (is.null(resolve_marginalize_over(ccm, interval_col, marginalize_over))) {
+    abundances_over_interval(ccm, start, stop,
+      interval_col = interval_col, interval_step = interval_step, newdata = newdata,
+      marginalize_over = marginalize_over
     )
   } else {
-    timepoint_pred_df <- estimate_abundances_marginal(ccm, start, stop,
-      interval_col = interval_col, interval_step = interval_step,
-      marginalize_over = marginalize_over, newdata = newdata, weight_by = weight_by,
-      interpolation = interpolation
+    abundances_over_interval(ccm, start, stop,
+      interval_col = interval_col, interval_step = interval_step, newdata = newdata,
+      marginalize_over = marginalize_over, weight_by = weight_by, interpolation = interpolation
     )
   }
 

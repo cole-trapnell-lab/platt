@@ -20,9 +20,10 @@
 #' @param size The size of the points in the plot. Default is 0.5.
 #' @param alpha The alpha transparency of the points in the plot. Default is 0.5.
 #' @param raw_counts A boolean indicating whether to use raw counts. Default is FALSE.
-#' @param marginalize_over `NULL` (default) or the name of a nuisance factor nested in `interval_col`
-#'   (e.g. `"collection_batch"`); the drawn curve and the cell-type ordering then use
-#'   [estimate_abundances_marginal()] instead of a prediction at the factor's first level.
+#' @param marginalize_over `"auto"` (default): the drawn curve and the cell-type ordering are the
+#'   model's marginal over its own nuisance factor ([estimate_abundances_marginal()]), or a plain
+#'   prediction when the model has no such factor. A column name forces that factor; `NULL` restores
+#'   the pre-2026-09 prediction at the factor's first level (portal issue #53).
 #'
 #' @return A ggplot object representing the kinetic plot.
 #'
@@ -62,7 +63,7 @@ plot_cell_type_control_kinetics <- function(control_ccm,
                                             alpha = 0.5,
                                             linewidth= 1,
                                             raw_counts = FALSE,
-                                            marginalize_over = NULL) {
+                                            marginalize_over = "auto") {
   # assertthat::assert_that(nrow(newdata) == 1)
 
   colData(control_ccm@ccs)[, interval_col] <- as.numeric(colData(control_ccm@ccs)[, interval_col])
@@ -85,24 +86,14 @@ plot_cell_type_control_kinetics <- function(control_ccm,
   # curve is the model's marginal over the observed nuisance design (see estimate_abundances_marginal);
   # otherwise it is predicted at the first level of every factor not in `newdata`, which for a factor
   # nested in time is an extrapolation (portal issue #53).
-  if (is.null(marginalize_over)) {
-    wt_timepoint_pred_df <- estimate_abundances_over_interval(control_ccm,
-      start_time,
-      stop_time,
-      interval_col = interval_col,
-      interval_step = interval_step,
-      newdata = newdata
-    )
-  } else {
-    wt_timepoint_pred_df <- estimate_abundances_marginal(control_ccm,
-      start_time,
-      stop_time,
-      interval_col = interval_col,
-      interval_step = interval_step,
-      marginalize_over = marginalize_over,
-      newdata = newdata
-    )
-  }
+  wt_timepoint_pred_df <- abundances_over_interval(control_ccm,
+    start_time,
+    stop_time,
+    interval_col = interval_col,
+    interval_step = interval_step,
+    newdata = newdata,
+    marginalize_over = marginalize_over
+  )
 
 
   # if (is.null(batch_col)){
@@ -406,14 +397,14 @@ plot_cell_type_perturb_kinetics <- function(perturbation_ccm,
 
   # maybe this is actually handled by new data always
 
-  wt_timepoint_pred_df <- hooke:::estimate_abundances_over_interval(perturbation_ccm,
+  wt_timepoint_pred_df <- abundances_over_interval(perturbation_ccm,
     start_time,
     stop_time,
     interval_col = interval_col,
     interval_step = interval_step,
     newdata = newdata_wt
   )
-  ko_timepoint_pred_df <- hooke:::estimate_abundances_over_interval(perturbation_ccm,
+  ko_timepoint_pred_df <- abundances_over_interval(perturbation_ccm,
     start_time,
     stop_time,
     interval_col = interval_col,
@@ -640,14 +631,14 @@ get_cell_type_perturb_kinetics_data <- function(perturbation_ccm,
 
   # maybe this is actually handled by new data always
 
-  wt_timepoint_pred_df <- hooke:::estimate_abundances_over_interval(perturbation_ccm,
+  wt_timepoint_pred_df <- abundances_over_interval(perturbation_ccm,
     start_time,
     stop_time,
     interval_col = interval_col,
     interval_step = interval_step,
     newdata = newdata_wt
   )
-  ko_timepoint_pred_df <- hooke:::estimate_abundances_over_interval(perturbation_ccm,
+  ko_timepoint_pred_df <- abundances_over_interval(perturbation_ccm,
     start_time,
     stop_time,
     interval_col = interval_col,
