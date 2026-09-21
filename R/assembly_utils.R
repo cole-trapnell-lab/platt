@@ -1476,6 +1476,8 @@ get_extant_cell_types <- function(ccm,
       longest_contig_start,
       longest_contig_end,
       present_above_thresh,
+      peak_hpf,
+      peak_hpf_sampled,
       any_of("sampled")
     )
   return(extant_cell_type_df)
