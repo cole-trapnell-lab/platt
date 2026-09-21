@@ -1305,6 +1305,41 @@ estimate_abundances_marginal <- function(ccm,
   out
 }
 
+#' Peak time of a kinetic curve, interpolated off the sampled grid
+#'
+#' The exported curve is shape-preserving, so it cannot rise above its knots and its argmax is always
+#' AT a sampled timepoint. That is a poor estimate of *when* a cell type peaks once samples are 12-24 h
+#' apart: held out one knot at a time across the atlas, snapping to the nearest sampled value misses the
+#' true peak by a median of 12 h, against 4 h for the interpolated estimate, and the interpolated value
+#' is closer for about two thirds of cell types (a wash where sampling is dense, a large win where it is
+#' sparse). This fits a natural cubic through the marginal values and returns the location of its
+#' maximum. Only the LOCATION is taken from it: the curve may overshoot its knots, which would inflate
+#' `max_abundance` and move the presence gate, so abundances stay on the shape-preserving curve.
+#'
+#' The search is confined to one sampling interval either side of the sampled maximum. Unconstrained, a
+#' natural cubic occasionally rings and puts the maximum far from any peak in the data -- across the atlas
+#' it moved 11 cell types by more than 12 h and one by 83 h, from a 96 hpf knot to 12.8 hpf. Confining it
+#' costs almost nothing: in the hold-out test the median error is 4.5 h confined against 4.0 h free, both
+#' against 12.0 h for snapping, and the worst case drops from 83 h to 13 h.
+#'
+#' @param tp,la Sampled timepoints and their marginal log abundances (one cell group).
+#' @param by Grid step for locating the maximum.
+#' @return The interpolated peak time; the knot argmax when there are fewer than three sampled values.
+#' @export
+refine_peak_time <- function(tp, la, by = 0.25) {
+  o <- order(tp); tp <- tp[o]; la <- la[o]
+  keep <- !is.na(tp) & !is.na(la); tp <- tp[keep]; la <- la[keep]
+  n <- length(tp)
+  if (n < 3) {
+    return(if (n) tp[which.max(la)] else NA_real_)
+  }
+  i <- which.max(la)
+  lo <- tp[max(1L, i - 1L)]
+  hi <- tp[min(n, i + 1L)]
+  g <- seq(lo, hi, by = by)
+  g[which.max(stats::splinefun(tp, la, method = "natural")(g))]
+}
+
 #' Return a dataframe that describes which cell types are present in a time interval
 #'
 #' @param marginalize_over `"auto"` (default): marginalise over the full model's own nuisance factor
@@ -1358,11 +1393,24 @@ get_extant_cell_types <- function(ccm,
     log_abund_detection_thresh <- abund_range[1] + pct_dynamic_range * dynamic_range
   }
 
+  # Interpolate the peak from the marginal knots where we have them (the marginal read-out marks them with
+  # `sampled`); otherwise from the exported grid.
+  .has_sampled <- "sampled" %in% colnames(timepoint_pred_df)
+  # peak_hpf is the interpolated location of the maximum (see refine_peak_time); peak_hpf_sampled is the
+  # argmax over the exported grid, which for the marginal read-out is always a sampled timepoint. The
+  # abundances below -- and therefore percent_max_abund and every presence gate built on it -- come from
+  # the shape-preserving curve, not from the interpolant.
   timepoint_pred_df <- timepoint_pred_df %>%
     group_by(cell_group) %>%
     mutate(
       max_abundance = max(exp(log_abund)),
       percent_max_abund = exp(log_abund) / max_abundance,
+      peak_hpf_sampled = .data[[interval_col]][which.max(log_abund)],
+      peak_hpf = if (.has_sampled) {
+        refine_peak_time(.data[[interval_col]][sampled], log_abund[sampled])
+      } else {
+        refine_peak_time(.data[[interval_col]], log_abund)
+      },
       cell_type_prediction_range = max(log_abund) - (min(log_abund)),
       percent_cell_type_range = (log_abund - min(log_abund)) / cell_type_prediction_range,
       # above_log_abund_thresh = (log_abund - 2*log_abund_se > log_abund_detection_thresh & log_abund - 2*log_abund_se > log(cell_group_pct_range_detection_thresh)) | cell_type_prediction_range < min_cell_range,
