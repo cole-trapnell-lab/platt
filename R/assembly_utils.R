@@ -1071,8 +1071,283 @@ fit_subset_genotype_ccm <- function(ccm, umap_space = NULL, ...) {
 }
 
 
+# Shape-preserving cubic interpolation (Fritsch-Carlson form, Fritsch-Butland derivatives). The
+# derivative at an interior knot is 0 wherever the two adjacent secants differ in sign or either is 0,
+# and their harmonic mean otherwise; end derivatives are the one-sided secants. Every knot derivative
+# then lies inside the Fritsch-Carlson monotonicity region, so the Hermite cubic is monotone on every
+# interval and therefore bounded by its two knots: an argmax over the interpolated grid always lands on a
+# knot. R's splinefun(method = "monoH.FC") does NOT give this for non-monotone data (it assigns a nonzero
+# slope at a local extremum and overshoots it), which is why it is not used here.
+monotone_hermite_interp <- function(x, y, xout) {
+  o <- order(x)
+  x <- x[o]
+  y <- y[o]
+  n <- length(x)
+  if (n == 1) {
+    return(rep(y, length(xout)))
+  }
+  d <- diff(y) / diff(x)
+  m <- numeric(n)
+  m[1] <- d[1]
+  m[n] <- d[n - 1]
+  if (n > 2) {
+    for (k in 2:(n - 1)) {
+      m[k] <- if (d[k - 1] * d[k] <= 0) 0 else 2 / (1 / d[k - 1] + 1 / d[k])
+    }
+  }
+  f <- stats::splinefunH(x, y, m)
+  f(pmin(pmax(xout, x[1]), x[n]))
+}
+
+#' Resolve which factor a marginal read-out should average over
+#'
+#' `"auto"` resolves to the fitted full model's own nuisance factor: the single term with recorded
+#' factor levels that is not `interval_col` (in practice the collection/batch column). It returns
+#' `NULL` when the model has no such term, so a caller that dispatches on the result falls back to a
+#' plain prediction -- a model without a nuisance factor has nothing to marginalise and is not affected
+#' by portal issue #53. Anything else, including `NULL`, is passed through unchanged, so an explicit
+#' column name still forces that factor and an explicit `NULL` still selects the pre-2026-09 read-out.
+#'
+#' @param ccm A `cell_count_model`.
+#' @param interval_col The interval variable, excluded from the candidates.
+#' @param arg The user's `marginalize_over` argument.
+#' @return A column name, or `NULL`.
+#' @export
+resolve_marginalize_over <- function(ccm, interval_col, arg = "auto") {
+  if (!identical(arg, "auto")) {
+    return(arg)
+  }
+  xlev <- ccm@model_aux[["full_model_xlevels"]]
+  candidates <- setdiff(names(xlev), interval_col)
+  if (length(candidates) == 0) {
+    return(NULL)
+  }
+  if (length(candidates) > 1) {
+    stop(
+      "marginalize_over = \"auto\" is ambiguous: the full model has more than one factor term (",
+      paste(candidates, collapse = ", "), "). Name the one to marginalise over, or pass NULL to ",
+      "predict at one level.",
+      call. = FALSE
+    )
+  }
+  candidates
+}
+
+#' Predict abundances over an interval, marginal by default
+#'
+#' Thin dispatcher used everywhere platt reads a kinetic curve off a fitted model. It resolves
+#' `marginalize_over` with [resolve_marginalize_over()] and then calls either
+#' [estimate_abundances_marginal()] (a nuisance factor exists; the default since portal issue #53) or
+#' `hooke::estimate_abundances_over_interval()` (no such factor, or an explicit `NULL`). Having one
+#' entry point is the point: a drawn curve and the table exported beside it cannot end up on different
+#' read-outs.
+#'
+#' @param ccm,start,stop,interval_col,interval_step,newdata As in
+#'   `hooke::estimate_abundances_over_interval()`.
+#' @param marginalize_over `"auto"` (default), a column name, or `NULL`. See
+#'   [resolve_marginalize_over()].
+#' @param ... Passed through to whichever estimator is used (e.g. `min_log_abund`).
+#' @export
+abundances_over_interval <- function(ccm,
+                                     start,
+                                     stop,
+                                     interval_col = "timepoint",
+                                     interval_step = 2,
+                                     newdata = tibble(),
+                                     marginalize_over = "auto",
+                                     ...) {
+  marginalize_over <- resolve_marginalize_over(ccm, interval_col, marginalize_over)
+  if (is.null(marginalize_over)) {
+    hooke:::estimate_abundances_over_interval(ccm, start, stop,
+      interval_col = interval_col, interval_step = interval_step, newdata = newdata, ...
+    )
+  } else {
+    estimate_abundances_marginal(ccm, start, stop,
+      interval_col = interval_col, interval_step = interval_step,
+      marginalize_over = marginalize_over, newdata = newdata, ...
+    )
+  }
+}
+
+#' Predict abundances over an interval, marginalising a nuisance factor over the observed design
+#'
+#' `hooke::estimate_abundances_over_interval()` predicts every point of the interval at ONE level of
+#' each factor that is not in `newdata` (the first level). When that factor is nested in the interval
+#' variable -- e.g. `collection_batch` in the reference atlas, where each batch was collected at one or
+#' two timepoints -- the reference level was never observed at most timepoints, the batch coefficients
+#' have absorbed part of the time trend, and the curve read at the reference level is an extrapolation
+#' (portal issue #53: 90/383 cell types "peak at 6 hpf").
+#'
+#' This function instead predicts, at each SAMPLED value of `interval_col`, at every level of
+#' `marginalize_over` that has samples there, and combines the predictions on the count scale with
+#' weights equal to the number of samples (default) or cells at that (interval, level) cell. This is the
+#' model's own fitted marginal over the observed design. Between sampled values the curve is filled by
+#' linear interpolation on the count scale, so an argmax over the grid always lands on a sampled value;
+#' the `sampled` column marks those rows. The design is read from `colData(ccm@ccs)`, so the ccs must be
+#' the one the model was fit on (same window, same controls).
+#'
+#' @param ccm A `cell_count_model`.
+#' @param start,stop Interval bounds (inclusive) for the grid.
+#' @param interval_col Column of the sample-level colData holding the interval variable.
+#' @param interval_step Grid step; sampled values not on the grid are added to it with a warning.
+#' @param marginalize_over Name of the factor to marginalise over (must be a term of the full model),
+#'   or `"auto"` (default) to use the model's own nuisance factor; see [resolve_marginalize_over()].
+#' @param newdata Optional tibble of other covariates (e.g. `tibble(knockout = FALSE)`); it is crossed
+#'   with the design and carried through as grouping columns.
+#' @param min_log_abund Floor applied by `hooke::estimate_abundances` to each per-level prediction
+#'   before mixing.
+#' @param weight_by `"samples"` (default) or `"cells"`.
+#' @param interpolation How grid points between sampled values are filled. Both options pass exactly
+#'   through the marginal value at every sampled point and are bounded by the two bracketing sampled
+#'   values, so an argmax over the grid always lands on a sampled value. `"monotone"` (default): a
+#'   shape-preserving cubic (Fritsch-Carlson with Fritsch-Butland derivatives) through the marginal
+#'   log-abundances, continuous in slope, so the curve is smooth. `"linear"`: linear on the
+#'   count scale, kinked at every sampled point. (Using the model's own spline for the interior shape
+#'   was tried and rejected: for the cell types whose time-versus-batch split landed on the spline the
+#'   interior shape is exactly the artifact, and it moved 150-250 of 383 peaks off sampled values with
+#'   overshoots up to 2x.)
+#' @return A tibble with the columns of `estimate_abundances_over_interval()` plus `sampled`.
+#' @export
+estimate_abundances_marginal <- function(ccm,
+                                         start,
+                                         stop,
+                                         interval_col = "timepoint",
+                                         interval_step = 2,
+                                         marginalize_over = "auto",
+                                         newdata = tibble(),
+                                         min_log_abund = -5,
+                                         weight_by = c("samples", "cells"),
+                                         interpolation = c("monotone", "linear")) {
+  weight_by <- match.arg(weight_by)
+  interpolation <- match.arg(interpolation)
+  assertthat::assert_that(is(ccm, "cell_count_model"))
+  marginalize_over <- resolve_marginalize_over(ccm, interval_col, marginalize_over)
+  assertthat::assert_that(!is.null(marginalize_over),
+    msg = "the full model has no factor term to marginalise over; call estimate_abundances_over_interval() instead")
+  xlev <- ccm@model_aux[["full_model_xlevels"]]
+  assertthat::assert_that(marginalize_over %in% names(xlev),
+    msg = paste0("'", marginalize_over, "' is not a factor term of the full model; terms with levels: ",
+      paste(names(xlev), collapse = ", ")))
+  sample_cd <- as.data.frame(colData(ccm@ccs))
+  assertthat::assert_that(ncol(ccm@ccs) > 0, msg = "ccm@ccs is empty; assign the cell_count_set the model was fit on")
+  assertthat::assert_that(all(c(interval_col, marginalize_over) %in% colnames(sample_cd)))
+
+  design <- tibble::tibble(
+    .iv = suppressWarnings(as.numeric(as.character(sample_cd[[interval_col]]))),
+    .lv = as.character(sample_cd[[marginalize_over]]),
+    .cells = Matrix::colSums(counts(ccm@ccs))
+  )
+  n_all <- nrow(design)
+  design <- design %>% filter(!is.na(.iv), .iv >= start, .iv <= stop)
+  dropped_levels <- setdiff(unique(design$.lv), xlev[[marginalize_over]])
+  if (length(dropped_levels) > 0) {
+    warning(length(dropped_levels), " level(s) of ", marginalize_over, " in the ccs are not in the fitted model and are ignored: ",
+      paste(dropped_levels, collapse = ", "))
+    design <- design %>% filter(.lv %in% xlev[[marginalize_over]])
+  }
+  assertthat::assert_that(nrow(design) > 0, msg = "no samples of the fitted design fall inside [start, stop]")
+  design <- design %>%
+    group_by(.iv, .lv) %>%
+    summarise(n_samples = dplyr::n(), n_cells = sum(.cells), .groups = "drop") %>%
+    mutate(.w = if (weight_by == "samples") n_samples else n_cells)
+
+  nd <- tibble::tibble(!!interval_col := design$.iv, !!marginalize_over := design$.lv)
+  extra_cols <- character(0)
+  if (nrow(newdata) > 0) {
+    newdata <- newdata[, setdiff(colnames(newdata), c(interval_col, marginalize_over)), drop = FALSE]
+    if (ncol(newdata) > 0) {
+      extra_cols <- colnames(newdata)
+      nd <- cross_join(nd, newdata)
+    }
+  }
+
+  pred <- hooke::estimate_abundances(ccm, newdata = nd, min_log_abund = min_log_abund)
+  pred <- pred %>%
+    mutate(.iv = as.numeric(.data[[interval_col]]), .lv = as.character(.data[[marginalize_over]])) %>%
+    left_join(design %>% select(.iv, .lv, .w), by = c(".iv", ".lv"))
+
+  sampled <- pred %>%
+    group_by(across(all_of(c("cell_group", ".iv", extra_cols)))) %>%
+    summarise(
+      log_abund = log(sum(.w * exp(log_abund)) / sum(.w)),
+      log_abund_se = sqrt(sum(.w * log_abund_se^2) / sum(.w)),
+      log_abund_sd = dplyr::first(log_abund_sd),
+      .groups = "drop"
+    )
+
+  grid <- seq(start, stop, interval_step)
+  sampled_vals <- sort(unique(sampled$.iv))
+  off_grid <- setdiff(sampled_vals, grid)
+  if (length(off_grid) > 0) {
+    message("sampled ", interval_col, " values not on the interval grid were added to it: ",
+      paste(off_grid, collapse = ", "))
+    grid <- sort(union(grid, off_grid))
+  }
+
+  interp_one <- function(df) {
+    df <- df[order(df$.iv), , drop = FALSE]
+    if (nrow(df) == 1) {
+      la <- rep(df$log_abund, length(grid))
+    } else if (interpolation == "linear") {
+      la <- log(stats::approx(df$.iv, exp(df$log_abund), xout = grid, rule = 2)$y)
+    } else {
+      la <- monotone_hermite_interp(df$.iv, df$log_abund, grid)
+    }
+    se <- if (nrow(df) == 1) rep(df$log_abund_se, length(grid)) else stats::approx(df$.iv, df$log_abund_se, xout = grid, rule = 2)$y
+    tibble::tibble(!!interval_col := grid, log_abund = pmax(la, min_log_abund), log_abund_se = se,
+      log_abund_sd = df$log_abund_sd[1], sampled = grid %in% df$.iv)
+  }
+  out <- sampled %>%
+    group_by(across(all_of(c("cell_group", extra_cols)))) %>%
+    group_modify(~ interp_one(.x)) %>%
+    ungroup() %>%
+    select(all_of(c(interval_col, extra_cols)), cell_group, log_abund, log_abund_se, log_abund_sd, sampled)
+  out
+}
+
+#' Peak time of a kinetic curve, interpolated off the sampled grid
+#'
+#' The exported curve is shape-preserving, so it cannot rise above its knots and its argmax is always
+#' AT a sampled timepoint. That is a poor estimate of *when* a cell type peaks once samples are 12-24 h
+#' apart: held out one knot at a time across the atlas, snapping to the nearest sampled value misses the
+#' true peak by a median of 12 h, against 4 h for the interpolated estimate, and the interpolated value
+#' is closer for about two thirds of cell types (a wash where sampling is dense, a large win where it is
+#' sparse). This fits a natural cubic through the marginal values and returns the location of its
+#' maximum. Only the LOCATION is taken from it: the curve may overshoot its knots, which would inflate
+#' `max_abundance` and move the presence gate, so abundances stay on the shape-preserving curve.
+#'
+#' The search is confined to one sampling interval either side of the sampled maximum. Unconstrained, a
+#' natural cubic occasionally rings and puts the maximum far from any peak in the data -- across the atlas
+#' it moved 11 cell types by more than 12 h and one by 83 h, from a 96 hpf knot to 12.8 hpf. Confining it
+#' costs almost nothing: in the hold-out test the median error is 4.5 h confined against 4.0 h free, both
+#' against 12.0 h for snapping, and the worst case drops from 83 h to 13 h.
+#'
+#' @param tp,la Sampled timepoints and their marginal log abundances (one cell group).
+#' @param by Grid step for locating the maximum.
+#' @return The interpolated peak time; the knot argmax when there are fewer than three sampled values.
+#' @export
+refine_peak_time <- function(tp, la, by = 0.25) {
+  o <- order(tp); tp <- tp[o]; la <- la[o]
+  keep <- !is.na(tp) & !is.na(la); tp <- tp[keep]; la <- la[keep]
+  n <- length(tp)
+  if (n < 3) {
+    return(if (n) tp[which.max(la)] else NA_real_)
+  }
+  i <- which.max(la)
+  lo <- tp[max(1L, i - 1L)]
+  hi <- tp[min(n, i + 1L)]
+  g <- seq(lo, hi, by = by)
+  g[which.max(stats::splinefun(tp, la, method = "natural")(g))]
+}
+
 #' Return a dataframe that describes which cell types are present in a time interval
 #'
+#' @param marginalize_over `"auto"` (default): marginalise over the full model's own nuisance factor
+#'   with [estimate_abundances_marginal()], falling back to a plain prediction when the model has no
+#'   such term; see [resolve_marginalize_over()]. A column name forces that factor. `NULL` restores the
+#'   pre-2026-09 behaviour, predicting at the first level of every factor not in `newdata`, which for a
+#'   factor nested in `interval_col` is an extrapolation (portal issue #53).
+#' @param weight_by,interpolation Passed to [estimate_abundances_marginal()].
 #' @export
 get_extant_cell_types <- function(ccm,
                                   start,
@@ -1083,10 +1358,21 @@ get_extant_cell_types <- function(ccm,
                                   pct_dynamic_range = 0.25,
                                   pct_range_detection_thresh = pct_dynamic_range,
                                   min_cell_range = 2,
-                                  newdata = tibble()) {
-  timepoint_pred_df <- estimate_abundances_over_interval(ccm, start, stop,
-    interval_col = interval_col, interval_step = interval_step, newdata = newdata
-  )
+                                  newdata = tibble(),
+                                  marginalize_over = "auto",
+                                  weight_by = c("samples", "cells"),
+                                  interpolation = c("monotone", "linear")) {
+  timepoint_pred_df <- if (is.null(resolve_marginalize_over(ccm, interval_col, marginalize_over))) {
+    abundances_over_interval(ccm, start, stop,
+      interval_col = interval_col, interval_step = interval_step, newdata = newdata,
+      marginalize_over = marginalize_over
+    )
+  } else {
+    abundances_over_interval(ccm, start, stop,
+      interval_col = interval_col, interval_step = interval_step, newdata = newdata,
+      marginalize_over = marginalize_over, weight_by = weight_by, interpolation = interpolation
+    )
+  }
 
   norm_mat <- normalized_counts(ccm@ccs, "size_only")
   norm_mat[norm_mat == 0] <- NA
@@ -1107,11 +1393,24 @@ get_extant_cell_types <- function(ccm,
     log_abund_detection_thresh <- abund_range[1] + pct_dynamic_range * dynamic_range
   }
 
+  # Interpolate the peak from the marginal knots where we have them (the marginal read-out marks them with
+  # `sampled`); otherwise from the exported grid.
+  .has_sampled <- "sampled" %in% colnames(timepoint_pred_df)
+  # peak_hpf is the interpolated location of the maximum (see refine_peak_time); peak_hpf_sampled is the
+  # argmax over the exported grid, which for the marginal read-out is always a sampled timepoint. The
+  # abundances below -- and therefore percent_max_abund and every presence gate built on it -- come from
+  # the shape-preserving curve, not from the interpolant.
   timepoint_pred_df <- timepoint_pred_df %>%
     group_by(cell_group) %>%
     mutate(
       max_abundance = max(exp(log_abund)),
       percent_max_abund = exp(log_abund) / max_abundance,
+      peak_hpf_sampled = .data[[interval_col]][which.max(log_abund)],
+      peak_hpf = if (.has_sampled) {
+        refine_peak_time(.data[[interval_col]][sampled], log_abund[sampled])
+      } else {
+        refine_peak_time(.data[[interval_col]], log_abund)
+      },
       cell_type_prediction_range = max(log_abund) - (min(log_abund)),
       percent_cell_type_range = (log_abund - min(log_abund)) / cell_type_prediction_range,
       # above_log_abund_thresh = (log_abund - 2*log_abund_se > log_abund_detection_thresh & log_abund - 2*log_abund_se > log(cell_group_pct_range_detection_thresh)) | cell_type_prediction_range < min_cell_range,
@@ -1120,17 +1419,26 @@ get_extant_cell_types <- function(ccm,
     ) %>%
     ungroup()
 
+  # Longest run of consecutive grid points with present_flag == TRUE, reported as the interval values
+  # at its ends. Same answer as the previous ts()/na.contiguous() implementation on a uniform grid
+  # (first run wins a tie), but it does not assume uniform spacing, so a grid that includes off-step
+  # sampled values (e.g. 5.5 hpf added by estimate_abundances_marginal) is handled correctly.
   longest_present_interval <- function(tps_df) {
     tryCatch(
       {
-        delta_t <- as.numeric(tps_df[2, 1] - tps_df[1, 1])
-        ts_la <- ts(tps_df$present_flag,
-          start = min(tps_df[, 1]),
-          # end=max(tps_df[,1]),
-          deltat = delta_t
-        )
-        longest_contig <- na.contiguous(ts_la)
-        return(tibble(longest_contig_start = start(longest_contig)[1], longest_contig_end = end(longest_contig)[1]))
+        tps_df <- tps_df[order(tps_df[[1]]), , drop = FALSE]
+        present <- !is.na(tps_df$present_flag) & tps_df$present_flag
+        if (!any(present)) {
+          return(tibble(longest_contig_start = NA, longest_contig_end = NA))
+        }
+        r <- rle(present)
+        ends <- cumsum(r$lengths)
+        starts <- ends - r$lengths + 1
+        i <- which(r$values)[which.max(r$lengths[r$values])]
+        return(tibble(
+          longest_contig_start = as.numeric(tps_df[[1]][starts[i]]),
+          longest_contig_end = as.numeric(tps_df[[1]][ends[i]])
+        ))
       },
       error = function(e) {
         return(tibble(longest_contig_start = NA, longest_contig_end = NA))
@@ -1167,7 +1475,10 @@ get_extant_cell_types <- function(ccm,
       percent_cell_type_range,
       longest_contig_start,
       longest_contig_end,
-      present_above_thresh
+      present_above_thresh,
+      peak_hpf,
+      peak_hpf_sampled,
+      any_of("sampled")
     )
   return(extant_cell_type_df)
 }
