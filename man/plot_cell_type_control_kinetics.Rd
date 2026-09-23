@@ -23,7 +23,8 @@ plot_cell_type_control_kinetics(
   size = 0.5,
   alpha = 0.5,
   linewidth = 1,
-  raw_counts = FALSE
+  raw_counts = FALSE,
+  marginalize_over = "auto"
 )
 }
 \arguments{
@@ -62,6 +63,11 @@ plot_cell_type_control_kinetics(
 \item{alpha}{The alpha transparency of the points in the plot. Default is 0.5.}
 
 \item{raw_counts}{A boolean indicating whether to use raw counts. Default is FALSE.}
+
+\item{marginalize_over}{\code{"auto"} (default): the drawn curve and the cell-type ordering are the
+model's marginal over its own nuisance factor (\code{\link[=estimate_abundances_marginal]{estimate_abundances_marginal()}}), or a plain
+prediction when the model has no such factor. A column name forces that factor; \code{NULL} restores
+the pre-2026-09 prediction at the factor's first level (portal issue #53).}
 }
 \value{
 A ggplot object representing the kinetic plot.

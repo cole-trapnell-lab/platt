@@ -14,8 +14,20 @@ get_extant_cell_types(
   pct_dynamic_range = 0.25,
   pct_range_detection_thresh = pct_dynamic_range,
   min_cell_range = 2,
-  newdata = tibble()
+  newdata = tibble(),
+  marginalize_over = "auto",
+  weight_by = c("samples", "cells"),
+  interpolation = c("monotone", "linear")
 )
+}
+\arguments{
+\item{marginalize_over}{\code{"auto"} (default): marginalise over the full model's own nuisance factor
+with \code{\link[=estimate_abundances_marginal]{estimate_abundances_marginal()}}, falling back to a plain prediction when the model has no
+such term; see \code{\link[=resolve_marginalize_over]{resolve_marginalize_over()}}. A column name forces that factor. \code{NULL} restores the
+pre-2026-09 behaviour, predicting at the first level of every factor not in \code{newdata}, which for a
+factor nested in \code{interval_col} is an extrapolation (portal issue #53).}
+
+\item{weight_by, interpolation}{Passed to \code{\link[=estimate_abundances_marginal]{estimate_abundances_marginal()}}.}
 }
 \description{
 Return a dataframe that describes which cell types are present in a time interval

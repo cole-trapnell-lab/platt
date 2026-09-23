@@ -75,11 +75,18 @@ abundance_power_status_label <- function(mdfc80, margin_fold_change = exp(0.5)) 
 #'   phenotype annotation columns (see `impact_to_phenos()`).
 #' @param power_tbl Optional data frame with per-cell-type abundance statistics.
 #'   Must contain a cell identity column (`cell_type` or `cell_group`),
-#'   `delta_log_abund`, `delta_q_value`, and optionally `power` and
+#'   `delta_log_abund`, `delta_q_value`, and optionally `power_at_margin` and
 #'   `present_above_thresh`. When provided, node sizes reflect statistical
 #'   power and absent cell types are grayed out.
-#' @param powered_thresh Numeric threshold for the `power` column above which a
-#'   cell type is considered powered. Default `0.8`.
+#' @param powered_thresh Numeric threshold for the `power_at_margin` column
+#'   above which a NON-CALLED cell type is considered powered. Default `0.8`.
+#'   Cell types the abundance cascade called (A1/A2/A3) are labelled `"Called"`
+#'   and never tested against it -- power asks whether a null is meaningful, and
+#'   says nothing about a change that was found. Tables
+#'   written before Hooke 0.0.3 carry no `power_at_margin`; every cell type is
+#'   then drawn as underpowered, which is the honest reading -- without a
+#'   standard error no null can be certified. Backfill such tables with
+#'   `hooke::decorate_contrast_detectability()`.
 #' @param filter_by_group Logical. If `TRUE` and `cell_types` is provided, only
 #'   keep nodes in the same `group_nodes_by` group as `cell_types`.
 #' @param cell_types Optional character vector of cell types to retain.
@@ -91,6 +98,11 @@ abundance_power_status_label <- function(mdfc80, margin_fold_change = exp(0.5)) 
 #' @param show_group_labels Logical. If `TRUE`, draw text labels for grouping
 #'   boxes.
 #' @param group_label_font_size Numeric size for grouping-box labels.
+#' @param abundance_q_cut Numeric q-value cutoff used to decide whether an
+#'   abundance call survives into the glyph. MUST match the `abundance_q_cut`
+#'   that produced `impact_table`'s codes (see [assign_abundance_code()]) --
+#'   a looser value here re-admits rows the cascade rejected, a stricter one
+#'   silently rewrites called rows to `"A0 No change"`. Defaults to `0.05`.
 #' @param ... Additional arguments passed to `plot_phenotypes_glyphs()`.
 #'
 #' @return A `ggplot` object.
@@ -112,6 +124,7 @@ plot_phenotypes_from_impact <- function(cell_state_graph,
                                         power_tbl = NULL,
                                         presence_tbl = NULL,
                                         powered_thresh = 0.8,
+                                        abundance_q_cut = 0.05,
                                         filter_by_group = FALSE,
                                         cell_types = NULL,
                                         show_node_labels = FALSE,
@@ -135,7 +148,8 @@ plot_phenotypes_from_impact <- function(cell_state_graph,
         phenos <- .augment_phenos_with_presence(phenos, eff_presence_tbl)
     }
     if (!is.null(power_tbl) && is.data.frame(power_tbl) && nrow(power_tbl) > 0) {
-        phenos <- .augment_phenos_with_abundance_summary(phenos, power_tbl, impact_table, powered_thresh)
+        phenos <- .augment_phenos_with_abundance_summary(phenos, power_tbl, impact_table, powered_thresh,
+                                                         abundance_q_cut)
     }
 
     # Add minimal rows for graph nodes that are absent but missing from phenos entirely
@@ -146,6 +160,9 @@ plot_phenotypes_from_impact <- function(cell_state_graph,
     plot_phenotypes_glyphs(
         cell_state_graph,
         phenos_df = phenos,
+        # Forwarded explicitly: this function has its own `abundance_q_cut`, so
+        # it is consumed here and would never reach the glyphs through `...`.
+        abundance_q_cut = abundance_q_cut,
         filter_by_group = filter_by_group,
         cell_types = cell_types,
         show_node_labels = show_node_labels,
@@ -255,7 +272,8 @@ plot_phenotypes_from_impact <- function(cell_state_graph,
     dplyr::bind_rows(phenos_df, absent_rows)
 }
 
-.augment_phenos_with_abundance_summary <- function(phenos_df, power_tbl, impact_table, powered_thresh) {
+.augment_phenos_with_abundance_summary <- function(phenos_df, power_tbl, impact_table, powered_thresh,
+                                                   abundance_q_cut = 0.05) {
     first_non_missing <- function(x, default = NA) {
         x <- x[!is.na(x)]
         if (length(x) == 0) default else x[[1]]
@@ -297,12 +315,22 @@ plot_phenotypes_from_impact <- function(cell_state_graph,
         dplyr::transmute(
             cell_group = as.character(.data[[power_cell_col]]),
             power = if ("power" %in% names(power_tbl)) as.numeric(power) else NA_real_,
+            # plot_phenotypes_glyphs() keys `power_status` on this column, so it
+            # has to survive the join. Without it every cell type silently fell
+            # through to "Underpowered", because the impact table carries no
+            # detectability columns and nothing else supplied one.
+            power_at_margin = if ("power_at_margin" %in% names(power_tbl)) as.numeric(power_at_margin) else NA_real_,
+            margin_fold_change = if ("margin_fold_change" %in% names(power_tbl)) as.numeric(margin_fold_change) else NA_real_,
+            power_status = if ("power_status" %in% names(power_tbl)) as.character(power_status) else NA_character_,
             abundance_log2fc = as.numeric(delta_log_abund),
             abundance_q = as.numeric(delta_q_value)
         ) %>%
         dplyr::group_by(cell_group) %>%
         dplyr::summarise(
             power = first_non_missing(power, NA_real_),
+            power_at_margin = first_non_missing(power_at_margin, NA_real_),
+            margin_fold_change = first_non_missing(margin_fold_change, NA_real_),
+            power_status = first_non_missing(power_status, NA_character_),
             abundance_log2fc = first_non_missing(abundance_log2fc, NA_real_),
             abundance_q = first_non_missing(abundance_q, NA_real_),
             .groups = "drop"
@@ -317,13 +345,18 @@ plot_phenotypes_from_impact <- function(cell_state_graph,
     }
 
     phenos_df %>%
-        dplyr::select(-dplyr::any_of(c("power", "abundance_log2fc", "abundance_q"))) %>%
+        dplyr::select(-dplyr::any_of(c("power", "power_at_margin", "margin_fold_change", "power_status", "abundance_log2fc", "abundance_q"))) %>%
         dplyr::left_join(power_join_tbl, by = "cell_group") %>%
         dplyr::mutate(
             abundance_q = dplyr::if_else(has_real_abundance_change, dplyr::coalesce(abundance_q, 1), 1),
-            abundance_log2fc = dplyr::if_else(has_real_abundance_change & abundance_q < 0.05, abundance_log2fc, 0),
+            # MUST be the q_cut assign_abundance_code() used. Hardcoding a
+            # different one silently demotes a called row: a cascade
+            # `A1 Expansion` whose q sits between the two fails this test and is
+            # rewritten to "A0 No change" below, so the impact table says
+            # Expansion while every figure drawn from it says no change.
+            abundance_log2fc = dplyr::if_else(has_real_abundance_change & abundance_q < abundance_q_cut, abundance_log2fc, 0),
             abundance_code = dplyr::if_else(
-                has_real_abundance_change & abundance_q < 0.05,
+                has_real_abundance_change & abundance_q < abundance_q_cut,
                 as.character(abundance_code),
                 # Do NOT collapse AU/AN into A0 here. That would undo the whole
                 # point of the split: A0 asserts a resolved null, while AU and
@@ -682,13 +715,15 @@ phenotype_tooltip_builder <- function(g, render_mode = c("tissue", "global")) {
                 is.na(abundance_power_status) ~ abundance_text,
                 TRUE ~ paste0(abundance_text, " (", abundance_power_status, ")")
             ),
+            # Same cutoff as the code cascade, or a called row renders in the
+            # neutral colour while its label still says Expansion.
             abundance_display_color = ifelse(
                 abundance_text == "",
                 NA_character_,
                 ifelse(
-                    !is.na(q) & q < 0.05 & abundance_text != "0%" & substr(abundance_text, 1, 1) == "-",
+                    !is.na(q) & q < abundance_q_cut & abundance_text != "0%" & substr(abundance_text, 1, 1) == "-",
                     "#377eb8",
-                    ifelse(!is.na(q) & q < 0.05 & abundance_text != "0%" & substr(abundance_text, 1, 1) == "+", "#e41a1c", NA_character_)
+                    ifelse(!is.na(q) & q < abundance_q_cut & abundance_text != "0%" & substr(abundance_text, 1, 1) == "+", "#e41a1c", NA_character_)
                 )
             ),
             identity_tooltip_label = if ("identity_tooltip_label" %in% names(g)) as.character(identity_tooltip_label) else "",
@@ -821,6 +856,7 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                                        f3 = "F3_stress_score",
                                        f4 = "F4_senescence"
                                    ),
+                                   abundance_q_cut = 0.05,
                                    lfc_cap = 2,
                                    arrow_unit = 3,
                                    arrow_gap = 0,
@@ -909,8 +945,15 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
             name = .data[[map$id]],
             lfc = as.numeric(.data[[map$lfc]]),
             q = if (map$q %in% names(phenos_df)) as.numeric(.data[[map$q]]) else NA_real_,
-            power = if ("power" %in% names(phenos_df)) as.numeric(.data[["power"]]) else NA_real_,
+            # Hooke's `power` is observed_power: a restatement of delta_p_value,
+            # so it reports effect size, not precision. `power_at_margin` is the
+            # effect-independent quantity that actually answers "could we have
+            # seen a change worth calling here?".
+            power_at_margin = if ("power_at_margin" %in% names(phenos_df)) as.numeric(.data[["power_at_margin"]]) else NA_real_,
             powered_thresh = if ("powered_thresh" %in% names(phenos_df)) as.numeric(.data[["powered_thresh"]]) else 0.8,
+            # Hooke >= 0.0.5 writes this column; prefer it so the figure shows
+            # what the table asserts instead of a second opinion computed here.
+            power_status_col = if ("power_status" %in% names(phenos_df)) as.character(.data[["power_status"]]) else NA_character_,
             present_above_thresh = if ("present_above_thresh" %in% names(phenos_df)) as.logical(.data[["present_above_thresh"]]) else NA,
             abundance_code = if ("abundance_code" %in% names(phenos_df)) as.character(.data[["abundance_code"]]) else NA_character_,
             ident = if (map$ident %in% names(phenos_df)) as.character(.data[[map$ident]]) else "I0",
@@ -999,14 +1042,46 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 is.na(f3) ~ 0,
                 TRUE ~ scales::rescale(pmin(abs(f3), stress_cap), to = c(0.25, 1))
             ),
+            # Power is only a question about a NULL. It asks "could we have seen
+            # a change worth calling?" -- which means something when nothing was
+            # found, and nothing at all once something was. A called cell type
+            # has already cleared the bar the question is about.
+            #
+            # Applying the test to every node mislabels the strongest findings.
+            # `late notochord sheath` in noto-mut is depleted 412-fold at
+            # q = 0.027, but its SE is 1.75, so it could only have detected
+            # changes above ~156-fold: power_at_margin = 0.06. True, and
+            # irrelevant -- the change WAS detected. Drawn as "Underpowered" it
+            # reads as a weak result, and because power_status also scales node
+            # size it renders SMALLER than a quiet, well-measured neighbour.
+            # On GAP16 that is 72% of significant cell types.
+            #
+            # So the states follow the abundance cascade rather than overriding
+            # it: a call is a call, and only non-calls get sorted by
+            # detectability into resolved-null and undetermined. NA (column
+            # absent, degenerate fit, insufficient df) is not powered -- a
+            # contrast we cannot certify must not be drawn as one.
+            # ORDER IS LOAD-BEARING. "Called" must stay first: `power_status_col`
+            # is hooke's own column, which knows nothing about the abundance
+            # cascade and can only say "powered"/"underpowered". Let it match
+            # first and a called cell type is graded on power again, which is
+            # precisely what the paragraph above describes. It fills in for
+            # NON-calls only, where it is the more authoritative answer --
+            # computed from the contrast's own SE and df rather than whatever
+            # the impact table happened to carry.
             power_status = dplyr::case_when(
-                !is.na(power) & power >= powered_thresh ~ "Powered",
+                !is.na(abundance_code) & !(abundance_code %in% NON_CALLED_ABUNDANCE_CODES) ~ "Called",
+                !is.na(power_status_col) ~ power_status_col,
+                !is.na(power_at_margin) & power_at_margin >= powered_thresh ~ "Powered",
                 TRUE ~ "Underpowered"
             ),
+            # "Called" and "Powered" are both things the reader should see: one
+            # is a finding, the other a null we can stand behind. Only
+            # "Underpowered" -- a null we cannot certify -- is de-emphasised.
             node_size_plot = dplyr::case_when(
-                identical(render_mode, "global") & power_status == "Powered" ~ node_size * 3.8,
+                identical(render_mode, "global") & power_status != "Underpowered" ~ node_size * 3.8,
                 identical(render_mode, "global") ~ node_size * 1.9,
-                power_status == "Powered" ~ node_size * 3.2,
+                power_status != "Underpowered" ~ node_size * 3.2,
                 TRUE ~ node_size * 2.0
             )
         )
@@ -1030,9 +1105,9 @@ plot_phenotypes_glyphs <- function(cell_state_graph,
                 (!is.na(f3) & f3 != 0) |
                 dplyr::coalesce(f4, FALSE),
             primary_phenotype = dplyr::case_when(
-                !is.na(abundance_code) & grepl("^A2|^A3", abundance_code) ~ "abundance_loss",
+                !is.na(abundance_code) & abundance_code %in% LOSS_ABUNDANCE_CODES ~ "abundance_loss",
                 !is.na(ident) & !(ident %in% c("I0", "I0 Identity intact", "Identity intact", "", NA)) ~ "identity",
-                !is.na(abundance_code) & grepl("^A1|^A4", abundance_code) ~ "abundance_gain",
+                !is.na(abundance_code) & abundance_code %in% GAIN_ABUNDANCE_CODES ~ "abundance_gain",
                 has_fitness_change ~ "fitness",
                 TRUE ~ "none"
             ),
@@ -1542,8 +1617,12 @@ plot_phenotype_counts <- function(impact_table, facet_by = NULL) {
 
     phenotype_counts <- impact_table %>%
         mutate(
-            abundance_gain = !is.na(abundance_code) & abundance_code %in% c("A1 Expansion", "A4 Ectopic/extra state"),
-            abundance_loss = !is.na(abundance_code) & abundance_code %in% c("A2 Depletion", "A3 Ablation/Loss"),
+            # Membership comes from the exported constants, not a list written
+            # out here: this copy asked for "A3 Ablation/Loss", which the
+            # assigner has never emitted, so every A3 Near-loss cell type --
+            # the most severe depletion there is -- failed the loss test.
+            abundance_gain = !is.na(abundance_code) & abundance_code %in% GAIN_ABUNDANCE_CODES,
+            abundance_loss = !is.na(abundance_code) & abundance_code %in% LOSS_ABUNDANCE_CODES,
             fitness_phenotype = !is.na(fitness_label) & !(fitness_label %in% c("F0 No significant phenotype", "F0 Normal")),
             identity_phenotype = !is.na(identity_label) & identity_label != "I0 Identity intact"
         ) %>%

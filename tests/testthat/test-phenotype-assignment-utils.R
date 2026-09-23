@@ -426,9 +426,11 @@ test_that("severity and the code cascade agree for any shared cutoff", {
 })
 
 
-test_that("severity defaults are unchanged from the hardcoded version", {
+test_that("severity tiers are unchanged from the hardcoded version at q_cut = 0.1", {
 
-  # Threading the cutoffs must not move any published severity label.
+  # Threading the cutoffs must not move any severity label. `q_cut` is passed
+  # explicitly because the DEFAULT moved to 0.05; this guard is about the
+  # threading being faithful, not about which default is in force.
   set.seed(12)
   n <- 5000
   lfc <- rnorm(n, 0, 1.2)
@@ -440,7 +442,32 @@ test_that("severity defaults are unchanged from the hardcoded version", {
     abs(lfc) >= 0.5 & q < 0.1  ~ "mild",
     TRUE ~ "none"
   )
-  expect_identical(assign_abundance_severity(lfc, q), frozen)
+  expect_identical(assign_abundance_severity(lfc, q, q_cut = 0.1), frozen)
+})
+
+
+test_that("lowering q_cut to 0.05 moves only the mild band", {
+
+  # `severe_q <- min(0.01, q_cut)` and `moderate_q <- min(0.05, q_cut)` are both
+  # already at or below 0.05, so neither binds when q_cut drops to it. Only the
+  # bare `q_cut` in the mild line moves, which is why every row the tighter
+  # cutoff de-calls was graded `mild` and never `moderate` or `severe`.
+  set.seed(12)
+  n <- 5000
+  lfc <- rnorm(n, 0, 1.2)
+  q   <- runif(n)^2
+
+  loose  <- assign_abundance_severity(lfc, q, q_cut = 0.1)
+  tight  <- assign_abundance_severity(lfc, q, q_cut = 0.05)
+  moved  <- loose != tight
+
+  expect_true(any(moved))
+  expect_setequal(unique(loose[moved]), "mild")
+  expect_setequal(unique(tight[moved]), "none")
+
+  # The default IS the tight one now.
+  expect_identical(assign_abundance_severity(lfc, q), tight)
+  expect_identical(formals(assign_abundance_severity)$q_cut, 0.05)
 })
 
 
@@ -511,4 +538,263 @@ test_that("all_cell_types widens the universe without changing assessed calls", 
 
   expect_equal(unname(codes[c("a", "b")]), assessed)   # unchanged
   expect_equal(unname(codes[["never_assessed"]]), "AN Not assessed")
+})
+
+# ---------------------------------------------------------------------------
+# Ranking-regime provenance.
+#
+# make_rank() has two regimes and the fallback between them is silent: an absent
+# empirical_p column -- the empirical-FDR stage disabled, or crashed and left the DEG
+# tables raw -- ranks on the bare shrunken lfc and yields fitness/identity labels
+# structurally indistinguishable from artifact-filtered ones. These tests pin the
+# metadata that carries the distinction out of the log and into the written artifact.
+# ---------------------------------------------------------------------------
+
+test_helper_deg_tbl <- function(empirical_p = NULL) {
+    tbl <- tibble::tibble(
+        gene_short_name = paste0("g", 1:6),
+        perturb_to_ctrl_shrunken_lfc = c(2, 1, 0.5, -0.5, -1, -2)
+    )
+    if (!is.null(empirical_p)) tbl$empirical_p <- empirical_p
+    tbl
+}
+
+test_that("make_rank records the weighted regime and its gated/unweighted counts", {
+    r <- platt:::make_rank(test_helper_deg_tbl(empirical_p = c(0, 0.5, 1, NA, 0.25, 1)))
+
+    expect_true(attr(r, "efdr_weighted"))
+    expect_equal(attr(r, "n_gated"), 2L)        # g3 and g6 pinned uncallable at empirical_p == 1
+    expect_equal(attr(r, "n_unweighted"), 1L)   # g4 carries no empirical_p, so is left un-demoted
+    expect_equal(length(r), 4L)
+    expect_false(any(c("g3", "g6") %in% names(r)))
+})
+
+test_that("make_rank records the unweighted fallback when empirical_p is absent", {
+    r <- platt:::make_rank(test_helper_deg_tbl())
+
+    expect_false(attr(r, "efdr_weighted"))
+    # NA, not 0: nothing was gated because nothing COULD be, which is a different
+    # statement from "the gates ran and demoted nothing".
+    expect_true(is.na(attr(r, "n_gated")))
+    expect_true(is.na(attr(r, "n_unweighted")))
+    expect_equal(length(r), 6L)
+})
+
+test_that("the regime attributes survive make_rank's sort", {
+    # sort() indexes through order(), which carries names but drops every other
+    # attribute -- so the stamp has to be applied after the sort, not before.
+    r <- platt:::make_rank(test_helper_deg_tbl(empirical_p = rep(0.1, 6)))
+    expect_equal(as.numeric(r), sort(as.numeric(r), decreasing = TRUE))
+    expect_true(attr(r, "efdr_weighted"))
+})
+
+test_that(".rank_provenance separates 'nothing ranked' from 'ranked without weights'", {
+    not_ranked <- platt:::.rank_provenance(NULL)
+    expect_true(is.na(not_ranked$deg_ranking))
+    expect_equal(not_ranked$deg_n_ranked, 0L)
+
+    unweighted <- platt:::.rank_provenance(platt:::make_rank(test_helper_deg_tbl()))
+    expect_equal(unweighted$deg_ranking, "unweighted_lfc")
+    expect_equal(unweighted$deg_n_ranked, 6L)
+
+    weighted <- platt:::.rank_provenance(
+        platt:::make_rank(test_helper_deg_tbl(empirical_p = c(0, 0.5, 1, NA, 0.25, 1)))
+    )
+    expect_equal(weighted$deg_ranking, "efdr_weighted")
+    expect_equal(weighted$deg_n_ranked, 4L)
+    expect_equal(weighted$deg_n_gated, 2L)
+})
+
+test_that(".phenotype_provenance_row summarises the regime over one perturbation", {
+    keys <- tibble::tibble(perturb_group = "G", run = 2, perturb_name = "p53")
+    stamped <- tibble::tibble(
+        deg_ranking = c("efdr_weighted", "efdr_weighted", NA_character_),
+        deg_n_ranked = c(10L, 12L, 0L),
+        deg_n_gated = c(3L, 4L, NA_integer_),
+        deg_n_unweighted = c(1L, 0L, NA_integer_)
+    )
+    row <- platt:::.phenotype_provenance_row(keys, stamped)
+    expect_equal(row$deg_ranking, "efdr_weighted")
+    expect_equal(row$n_efdr_weighted, 2L)
+    expect_equal(row$n_not_ranked, 1L)      # the cell type with no DEG rows
+    expect_equal(row$n_genes_gated, 7L)
+    expect_equal(row$perturb_name, "p53")
+
+    mixed <- stamped
+    mixed$deg_ranking[2] <- "unweighted_lfc"
+    expect_equal(platt:::.phenotype_provenance_row(keys, mixed)$deg_ranking, "mixed")
+
+    # A table built before the stamp existed reports "unknown" -- never "efdr_weighted",
+    # which would assert artifact filtering that may never have run.
+    expect_equal(
+        platt:::.phenotype_provenance_row(keys, tibble::tibble(cell_group = "a"))$deg_ranking,
+        "unknown"
+    )
+})
+
+test_that("write_phenotype_outputs makes a gated and an ungated run differ on disk", {
+    make_tbl <- function(ranking) {
+        tibble::tibble(
+            perturb_group = "G", run = 1, perturb_name = "p53",
+            cell_group = c("a", "b"),
+            abundance_code = c("A1 Expansion", "A0 No change"),
+            abundance_severity = c("mild", "none"),
+            deg_ranking = ranking,
+            deg_n_ranked = c(10L, 10L),
+            deg_n_gated = if (identical(ranking[1], "efdr_weighted")) c(3L, 2L) else c(NA_integer_, NA_integer_),
+            deg_n_unweighted = c(0L, 0L),
+            fitness_labels = list(
+                tibble::tibble(fitness_label = "F1", severity = "mild", evidence = "e"),
+                tibble::tibble(fitness_label = "F1", severity = "mild", evidence = "e")
+            )
+        )
+    }
+    gated_dir <- withr::local_tempdir()
+    raw_dir <- withr::local_tempdir()
+    platt:::write_phenotype_outputs(make_tbl(rep("efdr_weighted", 2)), gated_dir)
+    platt:::write_phenotype_outputs(make_tbl(rep("unweighted_lfc", 2)), raw_dir)
+
+    gated <- readr::read_tsv(file.path(gated_dir, "phenotypes", "fitness_phenotypes.tsv"),
+                             show_col_types = FALSE)
+    raw <- readr::read_tsv(file.path(raw_dir, "phenotypes", "fitness_phenotypes.tsv"),
+                           show_col_types = FALSE)
+
+    # Identical labels, identical severities -- and now distinguishable files.
+    expect_equal(gated$fitness_label, raw$fitness_label)
+    expect_equal(gated$deg_ranking, rep("efdr_weighted", 2))
+    expect_equal(raw$deg_ranking, rep("unweighted_lfc", 2))
+    expect_equal(gated$deg_n_gated, c(3L, 2L))
+
+    prov <- readr::read_tsv(file.path(gated_dir, "phenotypes", "phenotype_provenance.tsv"),
+                            show_col_types = FALSE)
+    expect_equal(nrow(prov), 1L)
+    expect_equal(prov$deg_ranking, "efdr_weighted")
+    expect_equal(prov$perturb_name, "p53")
+    expect_true(all(c("platt_version", "generated_at") %in% names(prov)))
+
+    expect_equal(
+        readr::read_tsv(file.path(raw_dir, "phenotypes", "phenotype_provenance.tsv"),
+                        show_col_types = FALSE)$deg_ranking,
+        "unweighted_lfc"
+    )
+})
+
+test_that("write_phenotype_outputs refuses a phenotype table carrying no ranking stamp", {
+    # all_of(), not any_of(): silently dropping the stamp would reproduce exactly the
+    # ambiguity these columns exist to remove.
+    unstamped <- tibble::tibble(
+        perturb_group = "G", run = 1, perturb_name = "p53", cell_group = "a",
+        abundance_code = "A1 Expansion", abundance_severity = "mild",
+        fitness_labels = list(tibble::tibble(fitness_label = "F1", severity = "mild", evidence = "e"))
+    )
+    expect_error(platt:::write_phenotype_outputs(unstamped, withr::local_tempdir()),
+                 "deg_ranking")
+})
+
+test_that("every code assign_abundance_code() emits is classified by the code constants", {
+  # The bug these constants replace: a hand-written list asked for
+  # "A3 Ablation/Loss" while the assigner emits "A3 Near-loss", so the most
+  # severe depletion failed every loss test. Drive the check off the assigner's
+  # real output rather than a list written out here, or the test can drift the
+  # same way the lists did.
+  emitted <- c("A1 Expansion", "A2 Depletion", "A3 Near-loss",
+               "A0 No change", "AU Undetermined", "AN Not assessed")
+
+  classified <- emitted %in% c(LOSS_ABUNDANCE_CODES, GAIN_ABUNDANCE_CODES,
+                               NON_CALLED_ABUNDANCE_CODES)
+  expect_true(all(classified),
+              info = paste("unclassified:", paste(emitted[!classified], collapse = ", ")))
+
+  expect_true("A3 Near-loss" %in% LOSS_ABUNDANCE_CODES)
+  expect_true("A2 Depletion" %in% LOSS_ABUNDANCE_CODES)
+  expect_true("A1 Expansion" %in% GAIN_ABUNDANCE_CODES)
+
+  # A call is never also a non-call, in either direction.
+  expect_length(intersect(LOSS_ABUNDANCE_CODES, NON_CALLED_ABUNDANCE_CODES), 0)
+  expect_length(intersect(GAIN_ABUNDANCE_CODES, NON_CALLED_ABUNDANCE_CODES), 0)
+  expect_length(intersect(LOSS_ABUNDANCE_CODES, GAIN_ABUNDANCE_CODES), 0)
+
+  # The legacy spelling still matches, so older impact tables keep working.
+  expect_true("A3 Ablation/Loss" %in% LOSS_ABUNDANCE_CODES)
+})
+
+
+# A decorated unsummarised abundance table, shaped like hooke 0.0.3 output:
+# one timepoint per cell type, a resolved null and an underpowered one.
+.decorated_dact <- function() {
+  tibble::tibble(
+    cell_group           = c("resolved", "underpowered", "expanded"),
+    timepoint_x          = 24,
+    present_above_thresh = TRUE,
+    percent_max_abund    = 1,
+    delta_log_abund      = c(0.02, 0.05, 1.20),
+    delta_log_abund_se   = c(0.10, 1.20, 0.20),
+    delta_q_value        = c(0.90, 0.95, 0.01),
+    df_resid             = 40
+  )
+}
+
+
+test_that("the unsummarised branch carries se and df, so A0 can fire", {
+
+  # The regression this guards: mapping only the estimate and the q-value left
+  # assign_abundance_code() with no SE, making "A0 No change" unreachable
+  # whenever use_summarized_tbl = FALSE. See platt#56.
+  aliased <- alias_change_when_present(.decorated_dact())
+
+  expect_true(all(c("change_when_present", "change_when_present_q_val",
+                    "change_when_present_se", "change_when_present_tvalue_df")
+                  %in% names(aliased)))
+
+  # Paired per row, from the same contrast the code is assigned from.
+  expect_equal(aliased$change_when_present, aliased$delta_log_abund)
+  expect_equal(aliased$change_when_present_se, aliased$delta_log_abund_se)
+  expect_equal(aliased$change_when_present_tvalue_df, aliased$df_resid)
+
+  code <- assign_abundance_code(aliased$change_when_present,
+                                aliased$change_when_present_q_val,
+                                q_cut = 0.1,
+                                se = aliased$change_when_present_se,
+                                df = aliased$change_when_present_tvalue_df)
+
+  # The whole point: a resolved null is reachable on this branch.
+  expect_true(any(code == "A0 No change"))
+  expect_equal(code, c("A0 No change", "AU Undetermined", "A1 Expansion"))
+})
+
+
+test_that("dacts_when_abundant keeps the columns the alias needs", {
+
+  # The mapping gap was never a missing-data problem: dacts_when_abundant() is a
+  # filter()/slice_min() with no select(), so the SE and df survive it. If that
+  # ever stops being true the alias silently reverts to two-state.
+  kept <- dacts_when_abundant(.decorated_dact(), percent_max_thresh = 0)
+
+  expect_true(all(c("delta_log_abund_se", "df_resid") %in% names(kept)))
+  expect_true(any(assign_abundance_code(
+    kept$delta_log_abund, kept$delta_q_value, q_cut = 0.1,
+    se = kept$delta_log_abund_se, df = kept$df_resid) == "A0 No change"))
+})
+
+
+test_that("the alias degrades to AU on tables predating df_resid", {
+
+  # Legacy tables carry no df_resid. Aliasing unconditionally would stop() with
+  # "object 'df_resid' not found"; the honest outcome is AU, not a claimed null.
+  legacy <- .decorated_dact() %>% dplyr::select(-df_resid)
+
+  expect_no_error(aliased <- alias_change_when_present(legacy))
+  expect_false("change_when_present_se" %in% names(aliased))
+  expect_false("change_when_present_tvalue_df" %in% names(aliased))
+
+  # What the worker then reads. `[[` rather than `$` only to keep tibble's
+  # "unknown column" warning out of the test output -- both yield NULL, which is
+  # the degradation being asserted.
+  code <- assign_abundance_code(aliased$change_when_present,
+                                aliased$change_when_present_q_val,
+                                q_cut = 0.1,
+                                se = aliased[["change_when_present_se"]],
+                                df = aliased[["change_when_present_tvalue_df"]])
+  expect_false(any(code == "A0 No change"))
+  expect_equal(code, c("AU Undetermined", "AU Undetermined", "A1 Expansion"))
 })

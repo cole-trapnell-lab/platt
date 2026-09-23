@@ -20,7 +20,7 @@ assign_phenotypes_to_cell_types(
   minSize = 10,
   maxSize = 5000,
   nperm = 1000,
-  abundance_q_cut = 0.1
+  abundance_q_cut = 0.05
 )
 }
 \arguments{
@@ -54,9 +54,9 @@ serially.}
 
 \item{nperm}{Permutation count passed to fgsea.}
 
-\item{abundance_q_cut}{q-value cutoff for the abundance codes, passed to
-\code{\link[=assign_abundance_code]{assign_abundance_code()}}. Defaults to \code{0.1}. Does not affect
-\code{\link[=assign_abundance_severity]{assign_abundance_severity()}}, which keeps its own graded thresholds.}
+\item{abundance_q_cut}{q-value cutoff for the abundance codes, passed to both
+\code{\link[=assign_abundance_code]{assign_abundance_code()}} and \code{\link[=assign_abundance_severity]{assign_abundance_severity()}} so the two stay
+consistent. Defaults to \code{0.05}.}
 }
 \value{
 A tibble with one row per cell type; see \code{\link[=assign_phenotypes]{assign_phenotypes()}} for
