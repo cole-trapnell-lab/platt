@@ -7,14 +7,16 @@ load_ai_precompute_for_cell_types <- function(cell_types, ai_notes_path = "../..
     }
   }
 
+  # bg_type may list several names; the first that exists is read.
   read_cell_type_background <- function(ct, ai_notes_path, bg_type = "genetic_req.md") {
-    ai_bg_path <- paste(ai_notes_path, blogdown:::dash_filename(ct), bg_type, sep = "/")
-    if (fs::file_exists(ai_bg_path)) {
+    candidates <- paste(ai_notes_path, blogdown:::dash_filename(ct), bg_type, sep = "/")
+    ai_bg_path <- candidates[fs::file_exists(candidates)][1]
+    if (!is.na(ai_bg_path)) {
       storeLines <- readLines(ai_bg_path, warn = FALSE)
       bg_content <- paste0(storeLines, collapse = "\n")
       return(bg_content)
     } else {
-      message(paste("No", bg_type, "file found for cell type", ct))
+      message(paste("No", paste(bg_type, collapse = " or "), "file found for cell type", ct))
       return(NA_character_)
     }
   }
@@ -36,7 +38,9 @@ load_ai_precompute_for_cell_types <- function(cell_types, ai_notes_path = "../..
     }
   }
 
-  ai_gen_req_bg <- lapply(cell_types, read_cell_type_background, ai_notes_path = ai_notes_path, bg_type = "genetic_req.md")
+  # Sulston replaced genetic_req.md with genetic_req_narrative.md (sulston 8c78f81); read either.
+  ai_gen_req_bg <- lapply(cell_types, read_cell_type_background, ai_notes_path = ai_notes_path,
+                          bg_type = c("genetic_req_narrative.md", "genetic_req.md"))
   names(ai_gen_req_bg) <- cell_types
 
   ai_kinetic_bg <- lapply(cell_types, read_cell_type_background, ai_notes_path = ai_notes_path, bg_type = "kinetic_summary.md")
