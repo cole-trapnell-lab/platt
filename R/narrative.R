@@ -427,10 +427,14 @@ summarize_cell_type_impact <- function(
   # experiment (longest-contiguous window above the abundance threshold; see
   # assembly_utils.R). Captured from the full cell DEGs BEFORE the empirical_p
   # filter so it survives even when the significant set is empty. Cells that are
-  # not present-above-threshold cannot be captured by this perturbation and are
-  # dropped from the impact table downstream.
+  # not present-above-threshold cannot be captured by this perturbation; they get
+  # no LLM interpretation and are kept in the impact table as not-assessed rows
+  # (mark_not_assessed_cell_types()).
   cell_present_above_thresh <- "present_above_thresh" %in% names(cell_type_degs) &&
     isTRUE(any(cell_type_degs$present_above_thresh, na.rm = TRUE))
+  # No DEG rows at all (e.g. no perturbed pseudobulks for an ablated cell type) also reads as not present above;
+  # mark_not_assessed_cell_types() tells the two apart for the impact table.
+  cell_has_deg_rows <- nrow(cell_type_degs) > 0
   if (!is.null(empirical_p_thresh) && empirical_p_thresh < 1 &&
       "empirical_p" %in% colnames(cell_type_degs)) {
     cell_type_degs <- cell_type_degs %>%
@@ -623,6 +627,7 @@ summarize_cell_type_impact <- function(
     identity_label = identity_label, # <-- NEW FIELD
     identity_evidence = identity_evidence, # <-- NEW FIELD
     present_above_thresh = cell_present_above_thresh,
+    has_deg_rows = cell_has_deg_rows,
     degs = cell_type_degs,
     goi_line = goi$goi_line,
     # Compact cited literature-expectation grounding for this cell type (from the
@@ -1297,21 +1302,6 @@ summarize_impact_in_lineage_context <- function(
     }
   }
 
-  # Drop cell types the abundance analysis judged not reliably present
-  # (present_above_thresh = FALSE): this perturbation experiment cannot capture
-  # them, so they get NO impact-table entry -- their large DEG sets are noise/
-  # indirect on few cells, not attributable biology. They were still available as
-  # context during processing, so any present descendants inherited the distilled
-  # ancestral narrative through them.
-  if ("present_above_thresh" %in% names(results)) {
-    n_before <- nrow(results)
-    results <- results %>% filter(present_above_thresh %in% TRUE)
-    if (verbose && n_before > nrow(results)) {
-      message(sprintf("[DEBUG] Dropped %d not-present-above-threshold cell types from the impact table.", n_before - nrow(results)))
-    }
-    results <- results %>% select(-present_above_thresh)
-  }
-
   # Ensure llm_disrupted_pathways column exists before mutate
   if (!"llm_disrupted_pathways" %in% names(results)) {
     results$llm_disrupted_pathways <- vector("list", nrow(results))
@@ -1328,6 +1318,15 @@ summarize_impact_in_lineage_context <- function(
   # 2026-07-31, Bug 2). Split it back into one tibble per row first.
   if (is.data.frame(results$llm_disrupted_pathways)) {
     results$llm_disrupted_pathways <- lapply(seq_len(nrow(results)), function(i) results$llm_disrupted_pathways[i, ])
+  }
+
+  # Cell types this perturbation could not assess transcriptionally (not present above threshold at the sampled
+  # stages, or no DEG rows at all) keep a marked row rather than vanishing. Done after the lineage loop, so the
+  # context they passed to present descendants is unchanged.
+  n_not_assessed <- if ("present_above_thresh" %in% names(results)) sum(!(results$present_above_thresh %in% TRUE)) else 0
+  results <- mark_not_assessed_cell_types(results)
+  if (verbose && n_not_assessed > 0) {
+    message(sprintf("[DEBUG] Marked %d cell types as not assessed in the impact table.", n_not_assessed))
   }
 
   results <- tryCatch({
@@ -1367,6 +1366,60 @@ summarize_impact_in_lineage_context <- function(
   attr(results, "llm_failed_cell_types") <- unique(still_failed_cell_types)
 
   results
+}
+
+# Mark the impact-table rows of cell types the perturbation could not assess transcriptionally.
+#
+# These used to be dropped: no row, no code, no reason, so "could not assess here" was indistinguishable from "not
+# in the experiment", and an ablated cell type with no DEG rows lost its abundance phenotype from the table. They are
+# kept with `not_assessed_reason`:
+#   - "below_presence_threshold": DEG rows exist, but the cell type is not present above threshold at the sampled
+#     stages, so its expression changes are not interpreted;
+#   - "no_deg_rows": the DEG step returned nothing for it (e.g. no perturbed pseudobulks).
+# Assessed rows get NA. A not-assessed row keeps its abundance / fitness / identity codes and gets a one-line factual
+# `summary`; its LLM fields, DEGs, pathways, genes-of-interest line and literature grounding are blanked, so the
+# tissue and overall summaries, which read llm_summary and dact_grounding, are unchanged. `present_above_thresh`
+# and `has_deg_rows` are dropped: readers use `not_assessed_reason` (a FALSE flag on a "no_deg_rows" row would grey
+# out an ablated cell type).
+mark_not_assessed_cell_types <- function(results) {
+  if (!"present_above_thresh" %in% names(results)) {
+    return(results)
+  }
+  has_rows <- if ("has_deg_rows" %in% names(results)) results$has_deg_rows %in% TRUE else rep(TRUE, nrow(results))
+  not_assessed <- !(results$present_above_thresh %in% TRUE)
+  results$not_assessed_reason <- dplyr::case_when(
+    !not_assessed ~ NA_character_,
+    !has_rows ~ "no_deg_rows",
+    TRUE ~ "below_presence_threshold"
+  )
+  idx <- which(not_assessed)
+  if (length(idx) > 0) {
+    # list columns get `empty(element)`; atomic columns get `atomic`; a packed data-frame column is left alone
+    blank <- function(col, empty, atomic = NA) {
+      if (!col %in% names(results)) return(invisible(NULL))
+      x <- results[[col]]
+      if (is.list(x) && !is.data.frame(x)) {
+        x[idx] <- lapply(x[idx], empty)
+      } else if (!is.data.frame(x)) {
+        x[idx] <- atomic
+      }
+      results[[col]] <<- x
+    }
+    results$summary[idx] <- ifelse(
+      results$not_assessed_reason[idx] == "no_deg_rows",
+      "Not assessed transcriptionally: the expression analysis returned no results for this cell type (for example, no perturbed cells were captured). Its abundance phenotype, if any, is still reported.",
+      "Not assessed transcriptionally: this cell type is not present above the abundance threshold at this experiment's sampled stages, so its expression changes are not interpreted."
+    )
+    blank("llm_summary", function(v) NA_character_, NA_character_)
+    blank("llm_disrupted_pathways", function(v) NULL)
+    blank("llm_other_dysregulated_genes", function(v) NULL)
+    blank("degs", function(d) if (is.data.frame(d)) d[0, , drop = FALSE] else d)
+    blank("pathways", function(p) if (is.data.frame(p)) p[0, ] else p)
+    blank("goi_line", function(v) NA_character_, NA_character_)
+    blank("dact_grounding", function(v) "", "")
+    blank("has_regulator_goi", function(v) FALSE, FALSE)
+  }
+  dplyr::select(results, -dplyr::any_of(c("present_above_thresh", "has_deg_rows")))
 }
 
 collect_cell_loss_explanations <- function(explanations_df) {
