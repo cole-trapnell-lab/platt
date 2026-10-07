@@ -53,7 +53,7 @@ add_cross_component_pathfinding_links <- function(ccm,
   start_time <- min(extant_cell_type_df[, 1])
   clusters_by_partition <- clusters_by_partition %>% left_join(extant_cell_type_df, by = "cell_group")
   partitions_present_at_start <- clusters_by_partition %>%
-    filter(timepoint == start_time & present_above_thresh) %>%
+    filter(timepoint == start_time & present_in_log_abund_window) %>%   # graph assembly keeps the log-abundance window
     pull(partition) %>%
     unique()
   partitions_absent_at_start <- setdiff(clusters_by_partition$partition, partitions_present_at_start)
@@ -80,8 +80,8 @@ add_cross_component_pathfinding_links <- function(ccm,
   # only add cross-partition links between cell groups that are present
   # at the same time
   cross_partition_map <- cross_partition_map %>% filter(from_timepoint == to_timepoint &
-    from_present_above_thresh &
-    to_present_above_thresh)
+    from_present_in_log_abund_window &
+    to_present_in_log_abund_window)
 
   # pcor_graph = pcor_graph %>% tidyr::replace_na(list(pcor = 0))
 
@@ -1519,8 +1519,8 @@ estimate_loss_timing <- function(perturbation_ccm,
       delta_q_value = ifelse(is.na(delta_q_value), 1, delta_q_value),
       delta_log_abund_when_present = ifelse(is.na(delta_log_abund_when_present), 0, delta_log_abund_when_present)
     ) %>%
-    mutate(is_lost_when_present = present_above_thresh & delta_log_abund_when_present < -abs(delta_log_abund_loss_thresh)) %>%
-    mutate(is_gained_when_present = present_above_thresh & delta_log_abund_when_present > -abs(delta_log_abund_loss_thresh))
+    mutate(is_lost_when_present = present_in_log_abund_window & delta_log_abund_when_present < -abs(delta_log_abund_loss_thresh)) %>%
+    mutate(is_gained_when_present = present_in_log_abund_window & delta_log_abund_when_present > -abs(delta_log_abund_loss_thresh))
   # loss_when_present_in_wt = loss_when_present_in_wt %>% group_by(cell_group) %>% slice_min(peak_wt_time, n=1, with_ties=with_ties)
 
 

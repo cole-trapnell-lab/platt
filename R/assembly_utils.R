@@ -1340,6 +1340,20 @@ refine_peak_time <- function(tp, la, by = 0.25) {
   g[which.max(stats::splinefun(tp, la, method = "natural")(g))]
 }
 
+#' The stack's single definition of "present above threshold"
+#'
+#' A cell type is present at a timepoint when it is at `pct_max_thresh` (default 10%) of its own peak
+#' abundance there. [get_extant_cell_types()] writes `present_above_thresh` with this, and readers of an
+#' abundance table written before that (McClintock, Lewis, the portal) call it on `percent_max_abund`
+#' rather than trusting the column, so one rule holds whatever table they are given.
+#' @param percent_max_abund Abundance as a fraction of the cell type's own peak (0-1).
+#' @param pct_max_thresh The fraction of the peak that counts as present.
+#' @return A logical vector; `NA` input gives `FALSE`.
+#' @export
+presence_from_percent_max <- function(percent_max_abund, pct_max_thresh = 0.1) {
+  !is.na(percent_max_abund) & percent_max_abund >= pct_max_thresh
+}
+
 #' Return a dataframe that describes which cell types are present in a time interval
 #'
 #' @param marginalize_over `"auto"` (default): marginalise over the full model's own nuisance factor
@@ -1348,6 +1362,10 @@ refine_peak_time <- function(tp, la, by = 0.25) {
 #'   pre-2026-09 behaviour, predicting at the first level of every factor not in `newdata`, which for a
 #'   factor nested in `interval_col` is an extrapolation (portal issue #53).
 #' @param weight_by,interpolation Passed to [estimate_abundances_marginal()].
+#' @param pct_max_thresh `present_above_thresh` is `percent_max_abund >= pct_max_thresh`: the cell type is at
+#'   this fraction (default 10%) of its own peak at the timepoint. This is the stack's single presence
+#'   definition. `present_in_log_abund_window` keeps the older call (the longest run of
+#'   `log_abund > log_abund_detection_thresh`), which graph assembly still uses.
 #' @export
 get_extant_cell_types <- function(ccm,
                                   start,
@@ -1358,6 +1376,7 @@ get_extant_cell_types <- function(ccm,
                                   pct_dynamic_range = 0.25,
                                   pct_range_detection_thresh = pct_dynamic_range,
                                   min_cell_range = 2,
+                                  pct_max_thresh = 0.1,
                                   newdata = tibble(),
                                   marginalize_over = "auto",
                                   weight_by = c("samples", "cells"),
@@ -1459,10 +1478,19 @@ get_extant_cell_types <- function(ccm,
 
   timepoint_pred_df <- left_join(timepoint_pred_df, nested_timepoints_df)
 
+  # Two presence calls. present_above_thresh is THE stack-wide definition (Sulston writes it, McClintock, Lewis and
+  # the portal read it): the cell type is at >= pct_max_thresh (10%) of its own peak at this timepoint. A relative
+  # rule describes each cell type's own lifespan whatever its absolute size; the fixed log-abundance floor below it
+  # dropped late, rare cell types (28 of 395 in v3.1.1 were never present at all) and flickered on cell types near
+  # the line (portal issue #53 follow-up). Whether a present cell type is TESTABLE is a separate question, answered by
+  # power_at_margin / AU and the DEG step's cell floor.
+  # present_in_log_abund_window keeps the older call -- the longest run of log_abund > log_abund_detection_thresh --
+  # for graph assembly, which still uses it (see the platt issue on switching it).
   timepoint_pred_df <- timepoint_pred_df %>%
     mutate(
-      present_above_thresh = !!sym(interval_col) >= longest_contig_start & !!sym(interval_col) <= longest_contig_end,
-      present_above_thresh = ifelse(is.na(present_above_thresh), FALSE, present_above_thresh)
+      present_in_log_abund_window = !!sym(interval_col) >= longest_contig_start & !!sym(interval_col) <= longest_contig_end,
+      present_in_log_abund_window = ifelse(is.na(present_in_log_abund_window), FALSE, present_in_log_abund_window),
+      present_above_thresh = presence_from_percent_max(percent_max_abund, pct_max_thresh)
     )
 
   extant_cell_type_df <- timepoint_pred_df %>%
@@ -1475,6 +1503,7 @@ get_extant_cell_types <- function(ccm,
       percent_cell_type_range,
       longest_contig_start,
       longest_contig_end,
+      present_in_log_abund_window,
       present_above_thresh,
       peak_hpf,
       peak_hpf_sampled,
