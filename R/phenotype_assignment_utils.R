@@ -327,6 +327,70 @@ load_deg_file <- function(deg_out_filename, deg_q_val_thresh = 1.0, cell_type_de
     )
 }
 
+#' The stages at which a perturbation was sampled
+#'
+#' The stages the DEG step tests for a perturbation: every `interval_col` value of its embryos after
+#' embryo filtering. Read from the small per-embryo table McClintock writes beside the cell coldata
+#' (`<prefix>_n_cells_per_embryo.tsv` next to `<prefix>_coldata.tsv`), or from the coldata itself when
+#' that table is missing.
+#'
+#' These are not always the stages of the perturbation's abundance contrasts: Hooke drops conditions it
+#' cannot model (a missing control batch, too few embryos) and can add stages inside its time window, while
+#' the DEG step uses every stage the perturbed embryos were collected at.
+#'
+#' @param coldata_filename The cell coldata TSV (a contrast record's `coldata_filename`).
+#' @param perturb_name The perturbation, as it appears in `perturbation_col`.
+#' @param perturbation_col,interval_col Column names in the coldata.
+#' @return Sorted numeric stages; empty when the perturbation is not found.
+#' @export
+perturbation_timepoints <- function(coldata_filename, perturb_name,
+                                    perturbation_col = "perturbation", interval_col = "timepoint") {
+    per_embryo <- file.path(dirname(coldata_filename),
+                            sub("_coldata\\.tsv$", "_n_cells_per_embryo.tsv", basename(coldata_filename)))
+    src <- if (per_embryo != coldata_filename && file.exists(per_embryo)) per_embryo else coldata_filename
+    x <- data.table::fread(src, select = c(perturbation_col, interval_col))
+    sort(unique(as.numeric(x[[interval_col]][x[[perturbation_col]] %in% perturb_name])))
+}
+
+#' Recompute a DEG table's `present_above_thresh` with the single presence definition
+#'
+#' A DEG table's `present_above_thresh` is written once, when the DEG step runs, from whatever
+#' reference-abundance table it was given. Tables written before the single presence definition
+#' ([presence_from_percent_max()]) carry an older call -- v3.1.1's carry Sulston's log-abundance window,
+#' which dropped e.g. the oprd1a+ cholinergic neuron from neurog1's impact table -- and `-resume` never
+#' rewrites them. Readers call this instead of trusting the column.
+#'
+#' It applies the DEG step's own rule (mcclintock `platt_deg_pipeline.R`): a cell type is present when it
+#' is at `pct_max_thresh` of its own peak at any of the perturbation's sampled stages
+#' ([perturbation_timepoints()]). On a table written with that rule it changes nothing.
+#'
+#' @param deg_tbl A DEG table with `cell_group` (as from `load_deg_file()`). `NULL` is returned as is.
+#' @param ref_abundances The wild-type reference abundances (`cell_group`, `timepoint`, `percent_max_abund`).
+#' @param timepoints The perturbation's sampled stages.
+#' @param pct_max_thresh Passed to [presence_from_percent_max()].
+#' @return `deg_tbl` with `present_above_thresh` recomputed. With no stages, or a reference without
+#'   `percent_max_abund`, the column is left as written, with a warning.
+#' @export
+refresh_deg_presence <- function(deg_tbl, ref_abundances, timepoints, pct_max_thresh = 0.1) {
+    if (is.null(deg_tbl)) {
+        return(deg_tbl)
+    }
+    if (length(timepoints) == 0 || is.null(ref_abundances) ||
+        !all(c("cell_group", "timepoint", "percent_max_abund") %in% names(ref_abundances))) {
+        warning("refresh_deg_presence: no sampled stages, or no percent_max_abund in the reference; ",
+                "keeping the DEG table's present_above_thresh as written.", call. = FALSE)
+        return(deg_tbl)
+    }
+    present <- ref_abundances %>%
+        filter(as.numeric(timepoint) %in% as.numeric(timepoints),
+               presence_from_percent_max(percent_max_abund, pct_max_thresh)) %>%
+        pull(cell_group) %>%
+        stringr::str_trim() %>%
+        unique()
+    deg_tbl$present_above_thresh <- stringr::str_trim(deg_tbl$cell_group) %in% present
+    deg_tbl
+}
+
 log_ts <- function(...) {
     msg <- paste(..., collapse = " ")
     message(sprintf("[%s] %s", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), msg))
@@ -370,6 +434,10 @@ get_phenotype_threads <- function(num_threads = NULL) {
 #'   so the contrast table and the codes agree about which rows were
 #'   adequately powered. Also passed to [assign_abundance_severity()], so that
 #'   a cell type cannot come back as a non-call with a graded severity.
+#' @param ref_abundances Optional wild-type reference abundances (`cell_group`, `timepoint`,
+#'   `percent_max_abund`). When given, each DEG table's `present_above_thresh` is recomputed with
+#'   [refresh_deg_presence()] at the perturbation's sampled stages instead of trusting the column
+#'   written when the DEG step ran. `NULL` (the default) keeps the column as written.
 #'
 #' @return A tibble with one row per perturbation and cell type, containing
 #'   `cell_group`, the perturbation identifiers, the time window bounds,
@@ -391,7 +459,8 @@ assign_phenotypes <- function(
   minSize = 10,
   maxSize = 5000,
   nperm = 1000,
-  abundance_q_cut = 0.05
+  abundance_q_cut = 0.05,
+  ref_abundances = NULL
 ) {
     # Get all cell types across all perturbations
     all_cell_types <- unique(unlist(
@@ -428,6 +497,14 @@ assign_phenotypes <- function(
 
         # Load DEGs for this perturbation
         deg_tbl <- load_deg_file(deg_filename)
+        # The DEG file's present_above_thresh may predate the single presence definition; recompute it (see
+        # refresh_deg_presence()) when the caller supplies the reference.
+        if (!is.null(ref_abundances)) {
+            deg_tbl <- refresh_deg_presence(
+                deg_tbl, ref_abundances,
+                perturbation_timepoints(perturb_record$coldata_filename[[1]], perturb_name)
+            )
+        }
         deg_tbl <- deg_tbl %>% filter(present_above_thresh)
 
         # Use summarized differential cell abundance table

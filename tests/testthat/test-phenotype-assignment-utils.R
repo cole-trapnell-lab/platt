@@ -798,3 +798,44 @@ test_that("the alias degrades to AU on tables predating df_resid", {
   expect_false(any(code == "A0 No change"))
   expect_equal(code, c("AU Undetermined", "AU Undetermined", "A1 Expansion"))
 })
+
+testthat::test_that("refresh_deg_presence applies the >= 10%-of-peak rule at the sampled stages only", {
+  # The DEG file carries the old log-abundance-window call: ct_window absent, ct_early present.
+  degs <- tibble::tibble(
+    id = c("g1", "g2", "g3", "g4"),
+    cell_group = c("ct_window", "ct_window", " ct_early", "ct_unsampled"),
+    present_above_thresh = c(FALSE, FALSE, TRUE, TRUE)
+  )
+  ref <- tibble::tibble(
+    cell_group = c("ct_window", "ct_window", "ct_early", "ct_early", "ct_unsampled", "ct_unsampled"),
+    timepoint = c(24, 48, 24, 48, 24, 36),
+    percent_max_abund = c(0.66, 0.74, 0.0999, NA, 0.02, 1)
+  )
+  out <- refresh_deg_presence(degs, ref, c(24, 48))
+  expect_equal(out$present_above_thresh, c(TRUE, TRUE, FALSE, FALSE))  # ct_unsampled peaks at 36, not sampled
+  expect_equal(out$id, degs$id)                                        # rows kept, only the flag changes
+  expect_equal(refresh_deg_presence(degs, ref, c(24, 48), pct_max_thresh = 0.05)$present_above_thresh,
+               c(TRUE, TRUE, TRUE, FALSE))
+  expect_equal(refresh_deg_presence(degs, ref, c(24, 36))$present_above_thresh, c(TRUE, TRUE, FALSE, TRUE))
+})
+
+testthat::test_that("refresh_deg_presence keeps the column, with a warning, without stages or percent_max_abund", {
+  degs <- tibble::tibble(cell_group = c("a", "b"), present_above_thresh = c(TRUE, FALSE))
+  ref <- tibble::tibble(cell_group = "a", timepoint = 24, percent_max_abund = 1)
+  expect_warning(out <- refresh_deg_presence(degs, ref, numeric()), "sampled stages")
+  expect_equal(out, degs)
+  expect_warning(refresh_deg_presence(degs, dplyr::select(ref, -percent_max_abund), 24), "percent_max_abund")
+  expect_null(refresh_deg_presence(NULL, ref, 24))
+})
+
+testthat::test_that("perturbation_timepoints reads the per-embryo table beside the coldata, else the coldata", {
+  d <- withr::local_tempdir()
+  coldata <- file.path(d, "embryo_filtered_cds_coldata.tsv")
+  readr::write_tsv(tibble::tibble(cell = 1:4, perturbation = c("tbx16", "tbx16", "ctrl-inj", "tbx16"),
+                                  timepoint = c(48, 15, 24, 15)), coldata)
+  expect_equal(perturbation_timepoints(coldata, "tbx16"), c(15, 48))
+  readr::write_tsv(tibble::tibble(embryo_ID = c("e1", "e2"), perturbation = "tbx16", timepoint = c(18, 24)),
+                   file.path(d, "embryo_filtered_cds_n_cells_per_embryo.tsv"))
+  expect_equal(perturbation_timepoints(coldata, "tbx16"), c(18, 24))
+  expect_equal(perturbation_timepoints(coldata, "absent"), numeric())
+})
