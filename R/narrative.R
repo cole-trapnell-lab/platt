@@ -1320,6 +1320,13 @@ summarize_impact_in_lineage_context <- function(
     results$llm_disrupted_pathways <- lapply(seq_len(nrow(results)), function(i) results$llm_disrupted_pathways[i, ])
   }
 
+  # And for llm_other_dysregulated_genes: when every row holds at most one gene (or none), unnest_wider makes it a
+  # plain character column, and the caller's bind_rows(primary, secondary) then fails with "Can't combine <list> and
+  # <character>" (GENE5 pax8,sox3, 2026-10-07: a 2-row secondary table). Keep it a list, NA -> NULL as elsewhere.
+  if ("llm_other_dysregulated_genes" %in% names(results) && !is.list(results$llm_other_dysregulated_genes)) {
+    results$llm_other_dysregulated_genes <- lapply(results$llm_other_dysregulated_genes, function(g) if (is.na(g)) NULL else g)
+  }
+
   # Cell types this perturbation could not assess transcriptionally (not present above threshold at the sampled
   # stages, or no DEG rows at all) keep a marked row rather than vanishing. Done after the lineage loop, so the
   # context they passed to present descendants is unchanged.
