@@ -14,7 +14,8 @@ new_cell_state_graph(
   max_edge_size = 2,
   hide_unlinked_nodes = FALSE,
   genetic_requirements = data.frame(),
-  num_layers = 1
+  num_layers = 1,
+  order_clusters_by_depth = FALSE
 )
 ```
 
@@ -64,6 +65,9 @@ new_cell_state_graph(
   *integer*  
   Number of layers for the graph layout. Default is `1`.
 
+- **order_clusters_by_depth**  
+  *logical*  
+  If `TRUE`, order clusters left-to-right by median depth during layout. Default is `FALSE`.
 ## Value
 
 A new `cell_state_graph` object.

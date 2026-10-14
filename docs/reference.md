@@ -56,11 +56,11 @@ Retrieves the children of a given cell state in a state graph.
 
 Retrieves the sibling states — those sharing the same parent — of a given cell state in a state graph.
 
-[`get_descendants()`](get_descendants)
+[`get_descendants()`](get_descendants) _(develop_refactor branch only)_
 
 Recursively retrieves every downstream descendant of a given cell state in a state graph.
 
-[`get_roots()`](get_roots)
+[`get_roots()`](get_roots) _(develop_refactor branch only)_
 
 Finds the root node(s) — origins with no incoming edges — of a cell state's connected component in a state graph.
 
@@ -122,7 +122,7 @@ Runs over-representation analysis (ORA) on the up/down-regulated genes at every 
 
 Classifies lost cell states as directly or indirectly required for a genotype, based on state graph topology.
 
-[`summarize_impact_in_lineage_context()`](summarize_impact_in_lineage_context)
+[`summarize_impact_in_lineage_context()`](summarize_impact_in_lineage_context) _(develop_refactor branch only)_
 
 Builds a lineage-wide impact table from your abundance/fitness/identity calls, DEGs, and pathway enrichment — pass `llm_fun = NULL` to build it without an LLM.
 

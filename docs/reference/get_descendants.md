@@ -1,5 +1,7 @@
 # `get_descendants`
 
+> **Branch note:** this function is exported from platt's `develop_refactor` branch only; it is not in `develop` (or `main`) yet.
+
 Retrieves every downstream descendant of a given cell state in a state graph.
 
 ```r

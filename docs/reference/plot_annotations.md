@@ -9,14 +9,15 @@ plot_annotations(
   label_nodes_by = NULL,
   arrow_unit = 7,
   node_size = 2,
-  con_colour = "darkgrey",
+  arrow_color = "darkgrey",
+  box_color = "lightgrey",
   legend_position = "none",
   min_edge_size = 0.1,
   max_edge_size = 2,
   edge_weights = NULL,
   plot_labels = TRUE,
-  group_label_font_size = 1,
-  node_label_width = 50
+  label_size = 3,
+  group_label_size = 1
 )
 ```
 
@@ -42,9 +43,13 @@ plot_annotations(
   *numeric*  
   Size of the nodes. Default is `2`.
 
-- **con_colour**  
+- **arrow_color**  
   *character*  
   Color of the connections. Default is `"darkgrey"`.
+
+- **box_color**  
+  *character*  
+  Color of the boxes drawn around each `group_nodes_by` group. Default is `"lightgrey"`.
 
 - **legend_position**  
   *character*  
@@ -66,13 +71,13 @@ plot_annotations(
   *logical*  
   Whether to show labels. Default is `TRUE`.
 
-- **group_label_font_size**  
+- **label_size**  
+  *numeric*  
+  Font size of node labels. Default is `3`.
+
+- **group_label_size**  
   *numeric*  
   Font size for group labels. Default is `1`.
-
-- **node_label_width**  
-  *numeric*  
-  Width of node labels. Default is `50`.
 
 ## Value
 

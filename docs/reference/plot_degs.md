@@ -10,14 +10,14 @@ plot_degs(
   facet_group = "term",
   arrow_unit = 7,
   node_size = 1,
-  con_colour = "darkgrey",
+  arrow_color = "darkgrey",
   fract_expr = 0.0,
   mean_expr = 0.0,
   legend_position = "none",
   fc_limits = c(-3, 3),
   plot_labels = TRUE,
-  node_label_width = 50,
-  group_label_font_size = 1
+  label_size = 3,
+  group_label_size = 1
 )
 ```
 
@@ -47,7 +47,7 @@ plot_degs(
   *numeric*  
   Node size. Default is `1`.
 
-- **con_colour**  
+- **arrow_color**  
   *string*  
   Connection color. Default is `"darkgrey"`.
 
@@ -71,11 +71,11 @@ plot_degs(
   *logical*  
   Whether to display labels. Default is `TRUE`.
 
-- **node_label_width**  
+- **label_size**  
   *numeric*  
-  Width of node labels. Default is `50`.
+  Font size of node labels. Default is `3`.
 
-- **group_label_font_size**  
+- **group_label_size**  
   *numeric*  
   Font size for group labels. Default is `1`.
 

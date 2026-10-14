@@ -7,16 +7,16 @@ plot_abundance_changes(
   cell_state_graph,
   comp_abund_table,
   facet_group = NULL,
-  scale_node,
-  plot_labels,
-  arrow_unit,
-  node_size,
-  node_scale,
-  con_colour,
-  legend_position,
-  node_label_width,
-  group_label_font_size,
-  fc_limits
+  scale_node = FALSE,
+  plot_labels = TRUE,
+  label_size = 3,
+  node_size = 2,
+  node_scale = 1,
+  arrow_unit = 7,
+  arrow_color = "darkgrey",
+  legend_position = "right",
+  group_label_size = 1,
+  fc_limits = c(-3, 3)
 )
 ```
 
@@ -42,9 +42,9 @@ plot_abundance_changes(
   *logical*  
   Whether to label nodes in the plot.
 
-- **arrow_unit**  
+- **label_size**  
   *numeric*  
-  Size of arrows in the plot.
+  Font size of node labels. Default is `3`.
 
 - **node_size**  
   *numeric*  
@@ -54,21 +54,21 @@ plot_abundance_changes(
   *numeric*  
   Scaling factor for node sizes.
 
-- **con_colour**  
+- **arrow_unit**  
+  *numeric*  
+  Size of arrows in the plot.
+
+- **arrow_color**  
   *character*  
-  Color for node connections.
+  Color of the connections between nodes. Default is `"darkgrey"`.
 
 - **legend_position**  
   *character*  
   Position of the legend.
 
-- **node_label_width**  
+- **group_label_size**  
   *numeric*  
-  Width of node labels.
-
-- **group_label_font_size**  
-  *numeric*  
-  Font size for group labels.
+  Font size for group labels. Default is `1`.
 
 - **fc_limits**  
   *numeric vector*  

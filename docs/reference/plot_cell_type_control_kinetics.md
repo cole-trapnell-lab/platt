@@ -21,7 +21,9 @@ plot_cell_type_control_kinetics(
   color_points_by = NULL,
   size = 0.5,
   alpha = 0.5,
-  raw_counts = FALSE
+  linewidth = 1,
+  raw_counts = FALSE,
+  marginalize_over = "auto"
 )
 ```
 
@@ -95,9 +97,17 @@ plot_cell_type_control_kinetics(
   *numeric*  
   Alpha transparency of points. Default is `0.5`.
 
+- **linewidth**  
+  *numeric*  
+  Line width of the fitted abundance curves. Default is `1`.
+
 - **raw_counts**  
   *logical*  
   Whether to use raw counts. Default is `FALSE`.
+
+- **marginalize_over**  
+  *character or NULL*  
+  `"auto"` (default): the drawn curve and the cell-type ordering are the model's marginal over its own nuisance factor (`estimate_abundances_marginal()`), or a plain prediction when the model has no such factor. A column name forces that factor; `NULL` restores the pre-2026-09 prediction at the factor's first level.
 
 ## Value
 

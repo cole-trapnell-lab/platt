@@ -9,9 +9,10 @@ fit_genotype_ccm(
   ccs,
   prior_state_transition_graph = NULL,
   interval_col = "timepoint",
-  perturbation_col = "gene_target",
-  batch_col = "expt",
-  ctrl_ids = default_ctrl_ids,
+  perturbation_col = "perturbation",
+  batch_col = NULL,
+  ctrl_ids = c("ctrl-uninj", "ctrl-inj", "ctrl-noto", "ctrl-mafba",
+               "ctrl-hgfa", "ctrl-tbx16", "ctrl-met"),
   contrast_time_start = NULL,
   contrast_time_stop = NULL,
   num_time_breaks = NULL,
@@ -49,15 +50,15 @@ fit_genotype_ccm(
 
 - **perturbation_col**  
   *character*  
-  Column name in `ccs` representing perturbations (e.g., gene target). Default is `"gene_target"`.
+  Column name in `ccs` representing perturbations (e.g., gene target). Default is `"perturbation"`.
 
 - **batch_col**  
   *character*  
-  Column name in `ccs` representing batch info. Default is `"expt"`.
+  Column name in `ccs` representing batch info. Default is `NULL` (no batch term).
 
 - **ctrl_ids**  
   *character vector*  
-  Control IDs to include in the model.
+  Control IDs to include in the model. Defaults to the ZSCAPE control labels `c("ctrl-uninj", "ctrl-inj", "ctrl-noto", "ctrl-mafba", "ctrl-hgfa", "ctrl-tbx16", "ctrl-met")`.
 
 - **contrast_time_start**  
   *numeric*  

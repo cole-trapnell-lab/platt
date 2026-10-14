@@ -13,6 +13,10 @@ The function `compare_genes_within_state_graph()`:
 
 Within each cell type, this fits a perturbation-vs-control contrast per gene and calls it using the same three thresholds as the [Reference DEGs](https://cole-trapnell-lab.github.io/platt/wt_degs/) side: `log_fc_thresh` (default `1`), `abs_expr_thresh` (default `1e-3`), and `sig_thresh` (default `0.05`) — but there, they classify a gene's pattern *across the graph*; here, they decide whether a single perturbation-vs-control contrast counts as a call.
 
+![](assets/efdr_within_state_test.png)
+
+_**Figure: the within-state DEG test.** (A) Within each cell type, cells are aggregated into one pseudobulk profile per embryo, giving a genes × embryos count matrix with the control and perturbed embryos as the samples. (B) A quasi-Poisson GLM is fit independently per gene with the perturbation as the covariate. (C) The effect size is the perturbation-vs-control log fold change; its precision grows with mean expression, so lowly-expressed genes carry wide error bars. (D) Adaptive shrinkage pulls each log fold change toward zero in proportion to its standard error — open circles are the raw estimates, filled circles the shrunken values reported as `perturb_to_ctrl_shrunken_lfc`._
+
 For this example we will be using a subset of the skeletal muscle, for which we have 510,093 reference cells: 
 
 ```
@@ -103,6 +107,10 @@ _For the reference (wild-type) side of DEG calling — pattern classification ov
 
 Most of our perturbation screens are **control-heavy**: many more control embryos than knockout embryos per gene target. That asymmetry has a side effect on `perturb_to_ctrl_p_value` — for a lowly-expressed gene, the deep control arm can detect a transcript that the thin perturbation arm simply misses by chance, which the model reads as a significant "down" call. It looks exactly like a real loss of expression, but it's a sampling artifact of how much data each arm has, not biology.
 
+![](assets/efdr_thin_arm_problem.png){width=55%}
+
+_**Figure: the thin-arm problem.** As a perturbation depletes a cell type, two things thin the perturbed arm of the contrast at once: (1) control embryos outnumber perturbed embryos in the design, and (2) each perturbed embryo contributes fewer cells of that type. A thinner arm means a wider null distribution for every gene in that cell type, which an ordinary test does not know about; in the limit (3), the cell type is ablated and no DEGs are testable at all._
+
 Diagnosing this under the null (no real perturbation effect) shows the artifact tracks **contrast imbalance**, not low expression on its own — it's specifically low-expression genes *combined with* a control-heavy design that inflate the false "down" call rate:
 
 ![](assets/efdr_mechanism.png){width=90%}
@@ -148,6 +156,10 @@ _**Figure: `empirical_p` restores nominal calibration; the naive test doesn't.**
 ### Training the full empirical-FDR model
 
 `empirical_p` comes from a fuller model than `annotate_empirical_fdr()` runs — one that's trained from your own experiment's control cells rather than assumed. It's a four-step pipeline:
+
+![](assets/efdr_null_protocol.png)
+
+_**Figure: building and applying the empirical null.** (F) Subsets of the control embryos are repeatedly relabeled as a pseudo-perturbation at several split sizes (3%, 8%, 40% …) and run through the same within-state contrast — step 2 below. Since nothing is actually perturbed, the resulting `|z|` scores are the null. (G) That null is fit as a surface over mean expression and thin-arm cell count — step 3 — so the tail a gene is scored against is the one matching its own expression level and arm size: tight where data are plentiful, heavy where the arm is thin and the gene is lowly expressed. (H) Each gene's `empirical_p` is the less significant of the shrinkage p-value and the empirical tail probability, followed by BH correction within each cell type — step 4. The procedure is demote-only: significance can go down, never up._
 
 **1. Arm support** — how many replicate embryos and cells each cell type actually has on the perturbation side, which sets the honest degrees-of-freedom for the contrast:
 

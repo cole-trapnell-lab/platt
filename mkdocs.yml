@@ -1,6 +1,6 @@
 site_name: Platt
 site_author: Maddy Duran
-site_url: https://cole-trapnell-lab.github.io/platt/v2/
+site_url: https://cole-trapnell-lab.github.io/platt/
 nav:
   - Overview: index.md
   - Installation: install.md
@@ -8,6 +8,7 @@ nav:
   - Graphs: graphs.md
   - Reference DEGs: wt_degs.md
   - Perturbation DEGs: perturbation_degs.md
+  - Functional Enrichment: enrichment.md
   - Phenotyping: phenotyping.md
   - Plotting: plotting.md
   - Background: background.md

@@ -1,6 +1,8 @@
 # `summarize_impact_in_lineage_context`
 
-Builds a lineage-wide impact table — one row per cell type — from your abundance/fitness/identity calls, DEGs, and pathway enrichment, ready for `impact_to_phenos()`. Optionally has an LLM write a per-cell-type mechanistic summary; passing `llm_fun = NULL` (the default) skips that step and returns the same tabular impact calls with no LLM involved.
+> **Branch note:** this function is exported from platt's `develop_refactor` branch only; it is not in `develop` (or `main`) yet.
+
+Builds a lineage-wide impact table — one row per cell type — from your pipeline's abundance/fitness/identity phenotype calls, DEGs, and pathway enrichment, ready for `impact_to_phenos()`. Optionally has an LLM write a per-cell-type mechanistic summary; passing `llm_fun = NULL` (the default) skips that step and returns the same tabular impact calls with no LLM involved.
 
 ```r
 summarize_impact_in_lineage_context(
@@ -85,7 +87,7 @@ summarize_impact_in_lineage_context(
   Optional cell types to exclude from the result.
 
 - **abundance_phenotypes**  
-  Optional precomputed abundance phenotype table (`cell_group`, `abundance_code`, `abundance_severity`) — the same fields you'd otherwise type by hand into an impact table, see [Phenotyping](https://cole-trapnell-lab.github.io/platt/phenotyping/).
+  Optional precomputed abundance phenotype table (`cell_group`, `abundance_code`, `abundance_severity`) — the same fields an impact table needs, but produced by an earlier phenotype-assignment step in your pipeline rather than written by hand; see [Phenotyping](https://cole-trapnell-lab.github.io/platt/phenotyping/).
 
 - **fitness_phenotypes**  
   Optional precomputed fitness phenotype table (`cell_group`, `fitness_label`, ...).
@@ -112,18 +114,18 @@ summarize_impact_in_lineage_context(
   Optional directory of precomputed `sig_pathways.rds` files, one per cell type.
 
 - **drop_llm_columns**  
-  If `TRUE`, drop the LLM-derived columns (`llm_summary`, `lineage_context_summary`, `llm_disrupted_pathways`, `llm_other_dysregulated_genes`) from the result — they are always empty when `llm_fun` is `NULL`.
+  If `TRUE`, drop the LLM-derived columns (`llm_summary`, `lineage_context_summary`, `llm_disrupted_pathways`, `llm_other_dysregulated_genes`) from the result. Forced to `TRUE` whenever `llm_fun` is `NULL`, regardless of what's passed here, since those columns are always empty in that case — only needs to be set explicitly to drop them while still supplying an `llm_fun`.
 
 - **...**  
   Additional arguments forwarded to `llm_fun`.
 
 ## Value
 
-A tibble with one row per cell type, including `abundance_code`, `abundance_severity`, `identity_label`, `fitness_label`, per-cell-type DEGs, and pathway enrichment — and, unless `drop_llm_columns = TRUE`, the LLM narrative columns (always `NA`/empty when `llm_fun` is `NULL`).
+A tibble with one row per cell type, including `abundance_code`, `abundance_severity`, `identity_label`, `fitness_label`, per-cell-type DEGs, and pathway enrichment — and, when `llm_fun` is supplied and `drop_llm_columns` is left `FALSE`, the LLM narrative columns.
 
 ## Details
 
-An optional `llm_fun` can be supplied to additionally have an LLM write a short mechanistic summary for each cell type with a phenotype, genes of interest, or pathway enrichment of its own. Leaving `llm_fun` at its default of `NULL` skips that step entirely — no LLM server, Python, or `reticulate` setup required — and returns the same tabular impact calls (abundance/identity/fitness plus deterministic pathway enrichment) without any generated prose. Set `drop_llm_columns = TRUE` in that case to omit the always-empty LLM columns.
+An optional `llm_fun` can be supplied to additionally have an LLM write a short mechanistic summary for each cell type with a phenotype, genes of interest, or pathway enrichment of its own. Leaving `llm_fun` at its default of `NULL` skips that step entirely — no LLM server, Python, or `reticulate` setup required — and returns the same tabular impact calls (abundance/identity/fitness plus deterministic pathway enrichment) without any generated prose. In that case the always-empty LLM columns are dropped from the result automatically (`drop_llm_columns` is forced to `TRUE`); it only needs to be set explicitly to drop those columns while still supplying an `llm_fun`.
 
 ## Examples
 
@@ -138,8 +140,6 @@ tbx16_impact_table <- summarize_impact_in_lineage_context(
   genes_of_interest      = regulators$gene_short_name,
   abundance_phenotypes   = tbx16_abundance_phenotypes,
   fitness_phenotypes     = tbx16_fitness_phenotypes,
-  identity_phenotypes    = tbx16_identity_phenotypes,
-  llm_fun                = NULL,
-  drop_llm_columns       = TRUE
+  identity_phenotypes    = tbx16_identity_phenotypes
 )
 ```

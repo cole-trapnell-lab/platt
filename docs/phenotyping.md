@@ -68,20 +68,31 @@ You won't usually call `impact_to_phenos()` directly, though — `plot_phenotype
 
 ## Building the impact table automatically, without an LLM
 
-Typing out an impact table by hand only scales to a handful of cell types. For a whole lineage, `summarize_impact_in_lineage_context()` builds the same table for you: hand it your usual DEGs, abundance results, and pathway gene sets, plus the `abundance_phenotypes` / `fitness_phenotypes` / `identity_phenotypes` calls you'd otherwise type into the table above — now covering the whole graph instead of three rows — and it walks the lineage, joins everything in per cell type, pulls out each cell type's significant DEGs and genes-of-interest, and runs pathway enrichment (`fgsea::fora()`, the same over-representation test used on the [Functional Enrichment](https://cole-trapnell-lab.github.io/platt/enrichment/) page) to fill in a `disrupted_pathways` column:
+_`summarize_impact_in_lineage_context()` is currently exported from platt's `develop_refactor` branch only; install that branch (`ref = "develop_refactor"`) to follow this section._
 
-* `target_gene_expression` - target-gene expression calls by cell group, used to seed which cell types get analyzed
-* `dact_results` - a differential-abundance-over-time table for the perturbation (one row per cell type)
+Typing out an impact table by hand only scales to a handful of cell types. For a whole lineage, `summarize_impact_in_lineage_context()` builds the same table for you — this is the actual function platt's phenotyping pipeline calls, just with `llm_fun` left at its default of `NULL`, so no LLM server, Python, or `reticulate` setup is required. It walks the lineage, joins in your abundance/fitness/identity phenotype calls, pulls out each cell type's significant DEGs and genes-of-interest, and runs pathway enrichment (`fgsea::fora()`, the same over-representation test used on the [Functional Enrichment](https://cole-trapnell-lab.github.io/platt/enrichment/) page) to fill in a `disrupted_pathways` column.
+
+None of its inputs are typed by hand — each comes from an earlier point in the pipeline:
+
+* `target_gene_expression` - where the perturbation's target gene(s) are actually expressed, filtered down from the reference expression table (expressed in at least 1% of cells, at least 25% as strongly as that gene's own peak expression)
+* `dact_results` - a differential-abundance-over-time table for the perturbation, reduced to one row per cell type (its peak-effect timepoint)
 * `degs` - the perturbation's DEG table, e.g. `tbx16_degs` from the [Perturbation DEGs](https://cole-trapnell-lab.github.io/platt/perturbation_degs/) page
 * `ref_expression` - the reference expression table
 * `ontologies` - a named list of `msigdbr`-style gene set tables, as on the [Functional Enrichment](https://cole-trapnell-lab.github.io/platt/enrichment/) page
 * `combined_psg` - the `cell_state_graph` to traverse
-* `genes_of_interest` - a regulator/TF panel to highlight in each cell type's genes-of-interest line
-* `abundance_phenotypes`, `fitness_phenotypes`, `identity_phenotypes` - your per-cell-type calls, in the same shape described above
-* `llm_fun` - a function that asks an LLM to write a short mechanistic summary for each cell type; left at its default of `NULL`, this whole step is skipped
-* `drop_llm_columns` - drop the LLM-narrative columns from the result; they're always empty when `llm_fun` is `NULL`, so set this `TRUE` for a clean table
+* `genes_of_interest` - a regulator/TF panel, e.g. read from a curated regulators table
+* `abundance_phenotypes`, `fitness_phenotypes`, `identity_phenotypes` - per-cell-type abundance/fitness/identity calls, in the same shape described above but covering the whole graph — produced by an earlier phenotype-assignment step in your pipeline, not written by hand
+* `llm_fun` - a function that asks an LLM to write a short mechanistic summary for each cell type; left at its default of `NULL` here, so this whole step is skipped
 
 ```
+tbx16_target_gene_expression = ref_expression %>%
+  filter(gene_short_name %in% c("tbx16", "msgn1"), fraction_expressing >= 0.01) %>%
+  group_by(gene_short_name) %>%
+  mutate(max_expr = max(mean_expression, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(expr_ratio = mean_expression / max_expr) %>%
+  filter(expr_ratio >= 0.25)
+
 tbx16_impact_table_auto = summarize_impact_in_lineage_context(
   target_gene_expression = tbx16_target_gene_expression,
   dact_results           = tbx16_dact_summary_tbl,
@@ -92,13 +103,11 @@ tbx16_impact_table_auto = summarize_impact_in_lineage_context(
   genes_of_interest      = regulators$gene_short_name,
   abundance_phenotypes   = tbx16_abundance_phenotypes,
   fitness_phenotypes     = tbx16_fitness_phenotypes,
-  identity_phenotypes    = tbx16_identity_phenotypes,
-  llm_fun                = NULL,
-  drop_llm_columns       = TRUE
+  identity_phenotypes    = tbx16_identity_phenotypes
 )
 ```
 
-`summarize_impact_in_lineage_context()` is the same function the full narrative pipeline uses to generate per-cell-type prose (via `llm_fun`) — passing `llm_fun = NULL` is the "null model": no LLM server, Python, or `reticulate` setup required, just the deterministic abundance/identity/fitness calls and pathway enrichment. `tbx16_impact_table_auto` has the same required columns as the hand-typed `tbx16_impact_table` above (plus DEG/pathway columns `impact_to_phenos()` ignores), so it drops into `impact_to_phenos()` / `plot_phenotypes_from_impact()` the same way — just built from real data across the whole graph instead of three rows typed by hand.
+`summarize_impact_in_lineage_context()` is the same function the full narrative pipeline uses to generate per-cell-type prose (via `llm_fun`) — passing `llm_fun = NULL` is the "null model": no LLM server, Python, or `reticulate` setup required, just the deterministic abundance/identity/fitness calls and pathway enrichment. `tbx16_impact_table_auto` has the same required columns as the hand-typed `tbx16_impact_table` above (plus DEG/pathway columns `impact_to_phenos()` ignores), so it drops into `impact_to_phenos()` / `plot_phenotypes_from_impact()` the same way — just built from real pipeline data across the whole graph instead of three rows typed by hand.
 
 ## Plotting phenotype calls on the graph
 

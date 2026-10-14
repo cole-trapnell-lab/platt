@@ -8,21 +8,21 @@ plot_cell_type_perturb_kinetics(
   cell_groups = NULL,
   start_time = NULL,
   stop_time = NULL,
-  interval_step,
-  log_abund_detection_thresh,
-  delta_log_abund_loss_thresh,
-  interval_col,
-  q_val,
-  log_scale,
+  interval_step = 1,
+  log_abund_detection_thresh = -3,
+  delta_log_abund_loss_thresh = 0,
+  interval_col = "timepoint",
+  q_val = 0.01,
+  log_scale = TRUE,
   control_ccm = perturbation_ccm,
   control_start_time = start_time,
   control_stop_time = stop_time,
-  group_nodes_by,
+  group_nodes_by = "cell_type",
   newdata = tibble::tibble(),
-  nrow,
-  size,
-  alpha,
-  raw_counts
+  nrow = 1,
+  size = 0.75,
+  alpha = 0.5,
+  raw_counts = FALSE
 )
 ```
 

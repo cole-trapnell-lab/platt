@@ -1,5 +1,7 @@
 # `get_roots`
 
+> **Branch note:** this function is exported from platt's `develop_refactor` branch only; it is not in `develop` (or `main`) yet.
+
 Finds the root node(s) of a cell state's connected component in a state graph.
 
 ```r

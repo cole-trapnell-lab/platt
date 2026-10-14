@@ -36,6 +36,9 @@ If you wish to install the develop branch of Platt, execute:
 ```r
 devtools::install_github("cole-trapnell-lab/platt", ref="develop")
 ```
+
+The [function reference](https://cole-trapnell-lab.github.io/platt/reference/) on this site documents the `develop` branch; the few functions that exist only on `develop_refactor` are marked as such on their pages.
+
 See our [Github repository](https://github.com/cole-trapnell-lab/platt) for more details.
 
 _Next: see [Kinetics](https://cole-trapnell-lab.github.io/platt/kinetics/) to fit your first wild-type and perturbation kinetic models._

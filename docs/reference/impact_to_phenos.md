@@ -8,8 +8,11 @@ impact_to_phenos(
   sev_map = c(none = 0.25, mild = 0.6, moderate = 1.2, severe = 2),
   abundance_code_map = c(
     "A0 No change" = 0,
+    "AU Undetermined" = 0,
+    "AN Not assessed" = 0,
     "A1 Expansion" = 1,
     "A2 Depletion" = -1,
+    "A3 Near-loss" = -1.5,
     "A3 Ablation/Loss" = -1.5,
     "A4 Ectopic/extra state" = 1.2
   ),
@@ -18,7 +21,7 @@ impact_to_phenos(
     "I1 Maturation delay" = "<<",
     "I2 Precocious maturation" = ">>",
     "I3 Program failure within identity" = "!!",
-    "I4 Fate switch / misspecification" = "!!",
+    "I4 Fate switch / misspecification" = "<>",
     "I5 Identity fragmentation" = ""
   )
 )
@@ -36,11 +39,11 @@ impact_to_phenos(
 
 - **abundance_code_map**  
   *named numeric vector*  
-  Maps abundance class labels to a signed direction/magnitude.
+  Maps abundance class labels to a signed direction/magnitude. The default also maps the non-call codes `AU Undetermined` and `AN Not assessed` to `0` and `A3 Near-loss` to `-1.5`.
 
 - **identity_glyph_map**  
   *named character vector*  
-  Maps identity labels to the glyph string drawn on the plot.
+  Maps identity labels to the glyph string drawn on the plot: `<<` maturation delay, `>>` precocious maturation, `!!` program failure, `<>` fate switch / misspecification.
 
 ## Value
 

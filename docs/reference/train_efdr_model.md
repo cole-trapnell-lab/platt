@@ -37,6 +37,10 @@ train_efdr_model(
 - **min_n**  
   Minimum null draws required in a window before its quantiles are used.
 
+- **max_we**  
+  *numeric*  
+  Upper bound on the expression half-width: the window is widened by 1.5x until it holds `min_n` draws or `we` reaches `max_we`, after which the quantiles are taken from whatever is in the window. Default `2.5`.
+
 ## Value
 
 An `efdr_model`: per-direction 2-D tail surfaces on `(egrid x lcgrid)`.
@@ -46,6 +50,7 @@ An `efdr_model`: per-direction 2-D tail surfaces on `(egrid x lcgrid)`.
 Models the null upper tail of `|z|` as a local-empirical surface over **expression and the thin-arm cell count**, per direction:
 
 - **expression**: the dispersion mis-pricing that inflates `|z|` worsens as expression → 0, so the tail stays heavy in the sparse extreme-low region rather than drooping back toward zero.
+
 - **thin-arm cell count**: a thin arm hits exact/near-zero counts which, combined with the trend-dispersion-shrunk SE, manufactures large `|z|` under no real effect — this is the axis that separates a real depletion (huge `|z|`, deep arm) from a thin-arm sampling artifact.
 
 Draws are pooled across the sampling grid: the grid exists only to span the arm-size axis, read directly off `n_pert_cells`. Direction is kept separate (`dn` = the gene is lower in the thin arm, `z < 0`; `up` = higher).

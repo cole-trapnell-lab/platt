@@ -19,10 +19,8 @@ fit_wt_model(
   batch_col = "expt",
   start_time = NULL,
   stop_time = NULL,
-  interval_step = 2,
   log_abund_detection_thresh = -5,
   keep_ccs = TRUE,
-  q_val = 0.1,
   edge_allowlist = NULL,
   edge_denylist = NULL,
   base_penalty = 1,
@@ -33,6 +31,10 @@ fit_wt_model(
   penalize_by_distance = TRUE,
   embryo_size_factors = NULL,
   batches_excluded_from_assembly = c(),
+  include_time_in_nuisance = FALSE,
+  min_penalty = 0.01,
+  max_penalty = 1e+06,
+  num_bootstraps = 10,
   ...
 )
 ```
@@ -95,10 +97,6 @@ fit_wt_model(
   *numeric*  
   Stop time for model. If `NULL`, inferred from data.
 
-- **interval_step**  
-  *numeric*  
-  Step size for time intervals. Default is `2`.
-
 - **log_abund_detection_thresh**  
   *numeric*  
   Threshold for log abundance detection. Default is `-5`.
@@ -106,10 +104,6 @@ fit_wt_model(
 - **keep_ccs**  
   *logical*  
   Whether to retain the CCS. Default is `TRUE`.
-
-- **q_val**  
-  *numeric*  
-  Q-value threshold for significance. Default is `0.1`.
 
 - **edge_allowlist**  
   *vector*  
@@ -150,6 +144,22 @@ fit_wt_model(
 - **batches_excluded_from_assembly**  
   *vector*  
   Batch IDs to exclude from assembly. Default is an empty vector.
+
+- **include_time_in_nuisance**  
+  *logical*  
+  If `TRUE`, the nuisance model formula is replaced by the full model formula (nuisance terms plus the time spline), so time is also fit as a nuisance effect. Default is `FALSE`.
+
+- **min_penalty**  
+  *numeric*  
+  Lower bound of the sparsity penalty searched during model selection. Default is `0.01`.
+
+- **max_penalty**  
+  *numeric*  
+  Upper bound of the sparsity penalty searched during model selection. Default is `1e+06`.
+
+- **num_bootstraps**  
+  *integer*  
+  Number of bootstraps used for variance estimation when `vhat_method = "bootstrap"`. Default is `10`.
 
 - **...**  
   Additional arguments passed to the underlying model fitting functions.
