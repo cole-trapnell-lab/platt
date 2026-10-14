@@ -1,0 +1,770 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+        <meta name="author" content="Maddy Duran">
+      
+      
+        <link rel="canonical" href="https://cole-trapnell-lab.github.io/platt/reference/summarize_impact_in_lineage_context/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>summarize_impact_in_lineage_context - Platt</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="trapnell" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#summarize_impact_in_lineage_context" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Platt" class="md-header__button md-logo" aria-label="Platt" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Platt
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              summarize_impact_in_lineage_context
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/cole-trapnell-lab/platt" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Platt" class="md-nav__button md-logo" aria-label="Platt" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Platt
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/cole-trapnell-lab/platt" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../kinetics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kinetics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../graphs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Graphs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../wt_degs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference DEGs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../perturbation_degs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Perturbation DEGs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../enrichment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Functional Enrichment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../phenotyping/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Phenotyping
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../plotting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plotting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../background/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Background
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="summarize_impact_in_lineage_context"><code>summarize_impact_in_lineage_context</code></h1>
+<blockquote>
+<p><strong>Branch note:</strong> this function is exported from platt's <code>develop_refactor</code> branch only; it is not in <code>develop</code> (or <code>main</code>) yet.</p>
+</blockquote>
+<p>Builds a lineage-wide impact table — one row per cell type — from your pipeline's abundance/fitness/identity phenotype calls, DEGs, and pathway enrichment, ready for <code>impact_to_phenos()</code>. Optionally has an LLM write a per-cell-type mechanistic summary; passing <code>llm_fun = NULL</code> (the default) skips that step and returns the same tabular impact calls with no LLM involved.</p>
+<pre><code class="language-r">summarize_impact_in_lineage_context(
+  perturbation_description = NULL,
+  target_gene_expression,
+  dact_results,
+  degs,
+  ref_expression,
+  ontologies,
+  combined_psg,
+  ai_notes_path = NULL,
+  sig_p_val_thresh = 0.05,
+  genes_of_interest = NULL,
+  empirical_p_thresh = 1,
+  llm_fun = NULL,
+  max_lineage_depth = Inf,
+  cell_types = NULL,
+  primary_impact_summary = &quot;&quot;,
+  excluded_cell_types = NULL,
+  abundance_phenotypes = NULL,
+  fitness_phenotypes = NULL,
+  identity_phenotypes = NULL,
+  dact_expectations = NULL,
+  effect_type = NULL,
+  pre_cited_gene_claims = NULL,
+  verbose = FALSE,
+  sig_pathways_by_cell_type = NULL,
+  sig_pathways_path = NULL,
+  drop_llm_columns = FALSE,
+  ...
+)
+</code></pre>
+<h2 id="arguments">Arguments</h2>
+<ul>
+<li>
+<p><strong>perturbation_description</strong><br />
+  Optional free-text description of the perturbation, used only to build context text for <code>llm_fun</code>.</p>
+</li>
+<li>
+<p><strong>target_gene_expression</strong><br />
+  Data frame of target-gene expression calls by cell group; used to seed which cell types are analyzed when <code>cell_types</code> is not supplied.</p>
+</li>
+<li>
+<p><strong>dact_results</strong><br />
+  Differential abundance result table (one row per cell type, e.g. from <code>dacts_when_abundant()</code>).</p>
+</li>
+<li>
+<p><strong>degs</strong><br />
+  Differential expression table for the perturbation.</p>
+</li>
+<li>
+<p><strong>ref_expression</strong><br />
+  Reference expression table.</p>
+</li>
+<li>
+<p><strong>ontologies</strong><br />
+  Named list of ontology gene-set tables (<code>gs_name</code>/<code>gene_short_name</code> columns) used for per-cell-type pathway enrichment — the same shape <code>msigdbr</code> tables take on the <a href="https://cole-trapnell-lab.github.io/platt/enrichment/">Functional Enrichment</a> page.</p>
+</li>
+<li>
+<p><strong>combined_psg</strong><br />
+  A <code>cell_state_graph</code> object (or <code>igraph</code>) used for lineage traversal.</p>
+</li>
+<li>
+<p><strong>ai_notes_path</strong><br />
+  Optional directory of precomputed per-cell-type markdown background files, forwarded to <code>llm_fun</code>'s context; ignored when <code>llm_fun</code> is <code>NULL</code>.</p>
+</li>
+<li>
+<p><strong>sig_p_val_thresh</strong><br />
+  Significance cutoff used for DEG/pathway calls.</p>
+</li>
+<li>
+<p><strong>genes_of_interest</strong><br />
+  Optional character vector used to highlight DEGs (e.g. a regulator/TF panel) when building the genes-of-interest line.</p>
+</li>
+<li>
+<p><strong>empirical_p_thresh</strong><br />
+  Optional artifact-aware significance cutoff (<code>empirical_p</code>) applied to the genes-of-interest foreground; <code>1</code> disables it and falls back to nominal <code>sig_p_val_thresh</code>.</p>
+</li>
+<li>
+<p><strong>llm_fun</strong><br />
+  Optional function used to generate a per-cell-type narrative summary. Defaults to <code>NULL</code>, which builds the impact table without calling an LLM — see Details.</p>
+</li>
+<li>
+<p><strong>max_lineage_depth</strong><br />
+  Optional maximum graph depth from roots for included cell types.</p>
+</li>
+<li>
+<p><strong>cell_types</strong><br />
+  Optional explicit cell types to seed lineage traversal, instead of inferring them from <code>target_gene_expression</code>.</p>
+</li>
+<li>
+<p><strong>primary_impact_summary</strong><br />
+  Optional text summary of a prior (e.g. cell-autonomous) pass, forwarded to <code>llm_fun</code> as context.</p>
+</li>
+<li>
+<p><strong>excluded_cell_types</strong><br />
+  Optional cell types to exclude from the result.</p>
+</li>
+<li>
+<p><strong>abundance_phenotypes</strong><br />
+  Optional precomputed abundance phenotype table (<code>cell_group</code>, <code>abundance_code</code>, <code>abundance_severity</code>) — the same fields an impact table needs, but produced by an earlier phenotype-assignment step in your pipeline rather than written by hand; see <a href="https://cole-trapnell-lab.github.io/platt/phenotyping/">Phenotyping</a>.</p>
+</li>
+<li>
+<p><strong>fitness_phenotypes</strong><br />
+  Optional precomputed fitness phenotype table (<code>cell_group</code>, <code>fitness_label</code>, ...).</p>
+</li>
+<li>
+<p><strong>identity_phenotypes</strong><br />
+  Optional precomputed identity phenotype table (<code>cell_group</code>, <code>identity_label</code>, ...).</p>
+</li>
+<li>
+<p><strong>dact_expectations</strong><br />
+  Optional per-cell-type literature-expectation table, forwarded to <code>llm_fun</code> as context; ignored when <code>llm_fun</code> is <code>NULL</code>.</p>
+</li>
+<li>
+<p><strong>effect_type</strong><br />
+  Optional label (e.g. <code>"Cell-autonomous"</code>) recorded for this pass and forwarded to <code>llm_fun</code> as context.</p>
+</li>
+<li>
+<p><strong>pre_cited_gene_claims</strong><br />
+  Optional pre-cited gene-background text forwarded to <code>llm_fun</code>; ignored when <code>llm_fun</code> is <code>NULL</code>.</p>
+</li>
+<li>
+<p><strong>verbose</strong><br />
+  Logical; if <code>TRUE</code>, prints debug messages instead of a progress bar.</p>
+</li>
+<li>
+<p><strong>sig_pathways_by_cell_type</strong><br />
+  Optional named list of precomputed marker-specificity GSEA results, keyed by cell type.</p>
+</li>
+<li>
+<p><strong>sig_pathways_path</strong><br />
+  Optional directory of precomputed <code>sig_pathways.rds</code> files, one per cell type.</p>
+</li>
+<li>
+<p><strong>drop_llm_columns</strong><br />
+  If <code>TRUE</code>, drop the LLM-derived columns (<code>llm_summary</code>, <code>lineage_context_summary</code>, <code>llm_disrupted_pathways</code>, <code>llm_other_dysregulated_genes</code>) from the result. Forced to <code>TRUE</code> whenever <code>llm_fun</code> is <code>NULL</code>, regardless of what's passed here, since those columns are always empty in that case — only needs to be set explicitly to drop them while still supplying an <code>llm_fun</code>.</p>
+</li>
+<li>
+<p><strong>...</strong><br />
+  Additional arguments forwarded to <code>llm_fun</code>.</p>
+</li>
+</ul>
+<h2 id="value">Value</h2>
+<p>A tibble with one row per cell type, including <code>abundance_code</code>, <code>abundance_severity</code>, <code>identity_label</code>, <code>fitness_label</code>, per-cell-type DEGs, and pathway enrichment — and, when <code>llm_fun</code> is supplied and <code>drop_llm_columns</code> is left <code>FALSE</code>, the LLM narrative columns.</p>
+<h2 id="details">Details</h2>
+<p>An optional <code>llm_fun</code> can be supplied to additionally have an LLM write a short mechanistic summary for each cell type with a phenotype, genes of interest, or pathway enrichment of its own. Leaving <code>llm_fun</code> at its default of <code>NULL</code> skips that step entirely — no LLM server, Python, or <code>reticulate</code> setup required — and returns the same tabular impact calls (abundance/identity/fitness plus deterministic pathway enrichment) without any generated prose. In that case the always-empty LLM columns are dropped from the result automatically (<code>drop_llm_columns</code> is forced to <code>TRUE</code>); it only needs to be set explicitly to drop those columns while still supplying an <code>llm_fun</code>.</p>
+<h2 id="examples">Examples</h2>
+<pre><code class="language-r">tbx16_impact_table &lt;- summarize_impact_in_lineage_context(
+  target_gene_expression = tbx16_target_gene_expression,
+  dact_results           = tbx16_dact_summary_tbl,
+  degs                   = tbx16_degs,
+  ref_expression         = ref_expression,
+  ontologies             = list(BP = gene_set_BP, MF = gene_set_MF, CC = gene_set_CC),
+  combined_psg           = muscle_state_graph,
+  genes_of_interest      = regulators$gene_short_name,
+  abundance_phenotypes   = tbx16_abundance_phenotypes,
+  fitness_phenotypes     = tbx16_fitness_phenotypes,
+  identity_phenotypes    = tbx16_identity_phenotypes
+)
+</code></pre>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      &copy 2025 <a href="https://github.com/cole-trapnell-lab"  target="_blank" rel="noopener">Cole Trapnell</a>
+
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "toc.integrate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

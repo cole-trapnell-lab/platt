@@ -1,0 +1,768 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+        <meta name="author" content="Maddy Duran">
+      
+      
+        <link rel="canonical" href="https://cole-trapnell-lab.github.io/platt/enrichment/">
+      
+      
+        <link rel="prev" href="../perturbation_degs/">
+      
+      
+        <link rel="next" href="../phenotyping/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Functional Enrichment - Platt</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="trapnell" data-md-color-primary="indigo" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#functional-enrichment-in-platt" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Platt" class="md-header__button md-logo" aria-label="Platt" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Platt
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Functional Enrichment
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+    
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/cole-trapnell-lab/platt" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Platt" class="md-nav__button md-logo" aria-label="Platt" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Platt
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/cole-trapnell-lab/platt" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../kinetics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Kinetics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../graphs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Graphs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../wt_degs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference DEGs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../perturbation_degs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Perturbation DEGs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Functional Enrichment
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Functional Enrichment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#rank-based-gsea-within-a-single-cell-state" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rank-based GSEA within a single cell state
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#over-representation-across-the-whole-graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Over-representation across the whole graph
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#visualizing-enrichment-results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Visualizing enrichment results
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../phenotyping/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Phenotyping
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../plotting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Plotting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../background/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Background
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="functional-enrichment-in-platt">Functional enrichment in Platt</h1>
+<p>Once you have per-gene pattern calls — from <a href="https://cole-trapnell-lab.github.io/platt/wt_degs/">Reference DEGs</a> or <a href="https://cole-trapnell-lab.github.io/platt/perturbation_degs/">Perturbation DEGs</a> — the next question is often at the level of programs rather than individual genes: is a cell state's differentially-expressed gene set enriched for a particular biological process, like proliferation, apoptosis, or a stress response? Platt wraps <a href="https://bioconductor.org/packages/fgsea/"><code>fgsea</code></a> for this, at two granularities: rank-based GSEA within a single cell state, or over-representation analysis (ORA) across the whole graph at once.</p>
+<h2 id="rank-based-gsea-within-a-single-cell-state">Rank-based GSEA within a single cell state</h2>
+<p>Any table with a <code>pattern_activity_score</code> column — such as <code>condensate_genes</code> from the <a href="https://cole-trapnell-lab.github.io/platt/wt_degs/#comparing-genes-in-a-single-cell-state">Reference DEGs</a> page — can be handed to <code>calc_gsea_enrichment_on_state_specific_genes()</code>, which uses that score to rank the state's genes and runs <code>fgsea::fgsea()</code> against a gene set table you supply:</p>
+<ul>
+<li><code>gene_patterns_within_state_graph</code> - a table with <code>gene_short_name</code> and <code>pattern_activity_score</code> columns, e.g. <code>condensate_genes</code></li>
+<li><code>gene_df</code> - a gene set table with <code>gene_short_name</code> and <code>gs_name</code> columns; <a href="https://cran.r-project.org/package=msigdbr"><code>msigdbr</code></a> is a convenient source for zebrafish GO/pathway gene sets, but any curated list works the same way</li>
+<li><code>sig_thresh</code> - <code>padj</code> cutoff for the returned results, default <code>0.1</code></li>
+</ul>
+<pre><code class="language-r">library(msigdbr)
+
+gene_sets = msigdbr(species = &quot;Danio rerio&quot;, subcategory = &quot;GO:BP&quot;) %&gt;%
+  dplyr::distinct(gs_name, gene_short_name = gene_symbol)
+
+condensate_gsea = calc_gsea_enrichment_on_state_specific_genes(
+  condensate_genes,
+  gene_sets,
+  sig_thresh = 0.1
+)
+</code></pre>
+<p>The result is a standard <code>fgsea</code> output tibble — <code>pathway</code>, <code>pval</code>, <code>padj</code>, <code>ES</code>, <code>NES</code>, <code>size</code>, and the leading-edge gene list — already filtered down to <code>padj &lt; sig_thresh</code>. A pathway with a large positive <code>NES</code> is enriched among the genes with the highest <code>pattern_activity_score</code> at this state (e.g. its most strongly activated/upregulated genes); a large negative <code>NES</code> is enriched among its most strongly deactivated/downregulated genes.</p>
+<p><em><code>gene_df</code> doesn't have to come from <code>msigdbr</code> — a handful of curated proliferation/apoptosis/stress/senescence gene sets, tested the same way, is what typically informs the <code>fitness_label</code> calls on the <a href="https://cole-trapnell-lab.github.io/platt/phenotyping/">Phenotyping</a> page.</em></p>
+<h2 id="over-representation-across-the-whole-graph">Over-representation across the whole graph</h2>
+<p>For a graph-wide pass, <code>calc_graph_overrep_genes()</code> takes the same kind of nested DEG table <code>compare_genes_over_graph()</code> returns (see <a href="https://cole-trapnell-lab.github.io/platt/wt_degs/#running-degs-over-a-graph">Reference DEGs</a>) and computes ORA independently at every cell state:</p>
+<ul>
+<li><code>ref_degs</code> - a DEG table with <code>cell_state</code>, <code>gene_short_name</code>, <code>gene_id</code>, and <code>interpretation</code> columns — <code>pf_graph_degs</code> from the Reference DEGs page works directly (its nested <code>gene_class_scores</code> column is unnested automatically)</li>
+<li><code>pathway_type</code> - <code>"GO:BP"</code> or <code>"GO:MF"</code>, forwarded to <code>msigdbr</code> to build the gene set table</li>
+<li><code>species</code> - forwarded to <code>msigdbr</code>, default <code>"Danio rerio"</code></li>
+</ul>
+<pre><code class="language-r">pf_graph_overrep = calc_graph_overrep_genes(pf_graph_degs, pathway_type = &quot;GO:BP&quot;)
+</code></pre>
+<p>Under the hood, this collapses each gene's finer <code>interpretation</code> call (the same category names from <a href="https://cole-trapnell-lab.github.io/platt/wt_degs/#gene-expression-patterns">Gene expression patterns</a>) down to <code>"Up"</code>, <code>"Down"</code>, or <code>"Maintained"</code>, then runs ORA (<code>fgsea::fora()</code>) separately for the up- and down-regulated gene sets at each state — <code>"Maintained"</code> genes aren't tested, since there's no direction of change to look for. The result is a nested tibble, one row per cell state:</p>
+<pre><code class="language-r">pf_graph_overrep %&gt;%
+  tidyr::unnest(overrep_pathways) %&gt;%
+  dplyr::select(cell_state, interpretation_simple, pathway, padj)
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>cell_state</th>
+<th>interpretation_simple</th>
+<th>pathway</th>
+<th>padj</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>pectoral fin condensate</td>
+<td>Up</td>
+<td>GOBP_SKELETAL_SYSTEM_DEVELOPMENT</td>
+<td>0.004</td>
+</tr>
+<tr>
+<td>pectoral fin condensate</td>
+<td>Up</td>
+<td>GOBP_COLLAGEN_FIBRIL_ORGANIZATION</td>
+<td>0.017</td>
+</tr>
+<tr>
+<td>pectoral fin bud progenitor</td>
+<td>Down</td>
+<td>GOBP_CELL_DIFFERENTIATION</td>
+<td>0.031</td>
+</tr>
+</tbody>
+</table>
+<p><code>padj</code> is already filtered to the <code>q_val_thresh</code> default (<code>0.05</code>) inside <code>calc_overrep_genes()</code>, the per-state worker <code>calc_graph_overrep_genes()</code> calls internally. If you already have a plain gene list for one state rather than a full graph-wide DEG table, <code>calc_overrep_genes()</code> and <code>calc_pathway_enrichment_on_state_specific_genes()</code> (a thinner wrapper around <code>clusterProfiler::enricher()</code>) are the lower-level building blocks — most users will only need the graph-wide wrapper above.</p>
+<h2 id="visualizing-enrichment-results">Visualizing enrichment results</h2>
+<p>There's no dedicated <code>plot_*</code> wrapper for enrichment results yet, but the unnested tibble drops straight into <code>ggplot2</code> — a dot plot with point size mapped to significance and color mapped to direction is a common way to scan results across many cell states at once:</p>
+<pre><code class="language-r">pf_graph_overrep %&gt;%
+  tidyr::unnest(overrep_pathways) %&gt;%
+  dplyr::group_by(cell_state) %&gt;%
+  dplyr::slice_min(padj, n = 5) %&gt;%
+  ggplot(aes(x = cell_state, y = pathway, size = -log10(padj), color = interpretation_simple)) +
+  geom_point() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+</code></pre>
+<p><em>For more on turning a handful of enrichment results into the fitness axes (proliferation, apoptosis, stress, senescence) used on a phenotype call, see the <a href="https://cole-trapnell-lab.github.io/platt/phenotyping/">Phenotyping</a> page — Platt doesn't yet package that specific mapping for you, so going from enrichment results to a single <code>fitness_label</code> is still a judgment call you make yourself.</em></p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      &copy 2025 <a href="https://github.com/cole-trapnell-lab"  target="_blank" rel="noopener">Cole Trapnell</a>
+
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy", "toc.integrate"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
