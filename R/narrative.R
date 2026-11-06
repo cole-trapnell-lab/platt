@@ -1,3 +1,14 @@
+# Directory name of a cell type's AI notes: dash_filename() after spelling out
+# prime marks (a prime not followed by a letter -> " prime" / " double prime"),
+# or "Kolmer-Agduhr neuron, spinal cord (KA')" and "(KA'')" share one directory.
+# "Kupffer's vesicle" is unchanged. Must match the writers: sulston's
+# sanitize_name and zscapetools::ai_note_dirname.
+ai_note_dirname <- function(x) {
+  x <- gsub("(''|\u2033)(?![A-Za-z])", " double prime", x, perl = TRUE)
+  x <- gsub("('|\u2032)(?![A-Za-z])", " prime", x, perl = TRUE)
+  blogdown:::dash_filename(x)
+}
+
 load_ai_precompute_for_cell_types <- function(cell_types, ai_notes_path = "../../../ai_notes/cell_types/") {
   breakFun <- function(x) {
     if (nchar(x) == 0) {
@@ -9,7 +20,7 @@ load_ai_precompute_for_cell_types <- function(cell_types, ai_notes_path = "../..
 
   # bg_type may list several names; the first that exists is read.
   read_cell_type_background <- function(ct, ai_notes_path, bg_type = "genetic_req.md") {
-    candidates <- paste(ai_notes_path, blogdown:::dash_filename(ct), bg_type, sep = "/")
+    candidates <- paste(ai_notes_path, ai_note_dirname(ct), bg_type, sep = "/")
     ai_bg_path <- candidates[fs::file_exists(candidates)][1]
     if (!is.na(ai_bg_path)) {
       storeLines <- readLines(ai_bg_path, warn = FALSE)
@@ -23,7 +34,7 @@ load_ai_precompute_for_cell_types <- function(cell_types, ai_notes_path = "../..
 
   # Load sig_pathways.rds for each cell type
   read_sig_pathways <- function(ct, ai_notes_path) {
-    rds_path <- file.path(ai_notes_path, blogdown:::dash_filename(ct), "sig_pathways.rds")
+    rds_path <- file.path(ai_notes_path, ai_note_dirname(ct), "sig_pathways.rds")
     if (fs::file_exists(rds_path)) {
       tryCatch(
         readRDS(rds_path),
