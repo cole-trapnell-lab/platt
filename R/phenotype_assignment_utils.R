@@ -640,6 +640,13 @@ filter_denylisted_cell_types <- function(dact_tbl, deg_tbl, cell_type_denylist) 
 #' 2. Among the remaining rows, the timepoint where the cell type is most
 #'    abundant in the wild-type reference (`percent_max_abund`), then the
 #'    earliest timepoint.
+#'
+#' @section Stages with no cells:
+#' When the table carries `n_cells_x` / `n_cells_y` (cells recovered per side,
+#' written by mcclintock's `compare_abundances.R`), a stage where neither side
+#' recovered a cell is skipped before the row is chosen: both estimates there are
+#' interpolated from other stages (mcclintock#134). Tables without the columns
+#' are unaffected.
 #' @return A tibble with at most one row per `cell_group`. Cell types with no
 #'   qualifying row are absent, not `NA` -- see the section above.
 #' @examples
@@ -677,9 +684,25 @@ filter_denylisted_cell_types <- function(dact_tbl, deg_tbl, cell_type_denylist) 
 #
 # Kept as a named helper so the mapping is testable on its own; inlined, a
 # regression here is only visible through a full assign_phenotypes() run.
+# Cells recovered at a contrast row's stage, control (x) + perturbed (y), from the
+# n_cells_x / n_cells_y columns mcclintock's compare_abundances.R writes
+# (mcclintock#134). NULL when the table predates them, so callers leave codes as
+# before.
+contrast_n_observed <- function(dact_tbl) {
+    if (all(c("n_cells_x", "n_cells_y") %in% names(dact_tbl))) {
+        as.numeric(dact_tbl$n_cells_x) + as.numeric(dact_tbl$n_cells_y)
+    } else {
+        NULL
+    }
+}
+
 alias_change_when_present <- function(dact_tbl) {
     dact_tbl <- dact_tbl %>% mutate(change_when_present = delta_log_abund,
                                     change_when_present_q_val = delta_q_value)
+    n_obs <- contrast_n_observed(dact_tbl)
+    if (!is.null(n_obs)) {
+        dact_tbl$change_when_present_n_observed <- n_obs
+    }
     if (all(c("delta_log_abund_se", "df_resid") %in% names(dact_tbl))) {
         dact_tbl <- dact_tbl %>% mutate(change_when_present_se = delta_log_abund_se,
                                         change_when_present_tvalue_df = df_resid)
@@ -691,6 +714,15 @@ alias_change_when_present <- function(dact_tbl) {
 #' @export
 dacts_when_abundant <- function(differential_cell_abundance, percent_max_thresh = 0.10, with_ties = FALSE,
                                 q_cut = 0.05, lfc_cut = 0.5) {
+    # A stage where neither side recovered a single cell has nothing to call:
+    # both estimates are interpolated from other stages, and its tiny q would
+    # otherwise win slice_min() and hand the cell type a call no cell supports
+    # (mcclintock#134). Skip it, so the code comes from an observed stage; a cell
+    # type with none left is absent, i.e. "AN Not assessed" downstream.
+    n_obs <- contrast_n_observed(differential_cell_abundance)
+    if (!is.null(n_obs)) {
+        differential_cell_abundance <- differential_cell_abundance[is.na(n_obs) | n_obs > 0, , drop = FALSE]
+    }
     tied <- differential_cell_abundance %>%
         mutate(timepoint_x = as.numeric(timepoint_x)) %>%
         filter(is.na(delta_log_abund) == FALSE &
@@ -807,11 +839,11 @@ assign_phenotypes_to_cell_types <- function(
         # No surviving abundance row: the contrast never assessed this cell type
         # here. That is exactly "AN Not assessed", not an absent value -- and it
         # is why this branch is now reachable at all.
-        abundance_code <- if (nrow(dact_row) > 0) assign_abundance_code(dact_row$change_when_present, dact_row$change_when_present_q_val, q_cut = abundance_q_cut, se = abundance_se, df = abundance_df) else "AN Not assessed"
+        abundance_code <- if (nrow(dact_row) > 0) assign_abundance_code(dact_row$change_when_present, dact_row$change_when_present_q_val, q_cut = abundance_q_cut, se = abundance_se, df = abundance_df, n_observed = dact_row$change_when_present_n_observed) else "AN Not assessed"
         abundance_mdfc80_val <- if (nrow(dact_row) > 0) abundance_mdfc80(if (is.null(abundance_se)) NA_real_ else abundance_se, if (is.null(abundance_df)) NA_real_ else abundance_df, alpha = abundance_q_cut)[1] else NA_real_
         # q_cut must match the one the code cascade used, or a non-call can come
         # back graded.
-        abundance_severity <- if (nrow(dact_row) > 0) assign_abundance_severity(dact_row$change_when_present, dact_row$change_when_present_q_val, q_cut = abundance_q_cut) else NA_character_
+        abundance_severity <- if (nrow(dact_row) > 0) assign_abundance_severity(dact_row$change_when_present, dact_row$change_when_present_q_val, q_cut = abundance_q_cut, n_observed = dact_row$change_when_present_n_observed) else NA_character_
         identity_assignment <- assign_identity_maturation_labels(deg_tbl, ct, identity_gene_sets, combined_psg, minSize = minSize, nperm = nperm, maxSize = maxSize, perturb_name = perturb_name)
         fitness_assignment <- assign_fitness_labels(deg_tbl, ct, gene_sets, minSize = minSize, nperm = nperm, maxSize = maxSize, perturb_name = perturb_name)
         if (!is.null(log_fn)) {
@@ -1009,13 +1041,19 @@ assign_abundance_code <- function(change_when_present, change_when_present_q_val
                                   lfc_cut = 0.5,
                                   near_loss_cut = 2.0,
                                   margin_fold_change = exp(lfc_cut),
-                                  power = 0.8) {
+                                  power = 0.8,
+                                  n_observed = NULL) {
     n <- length(change_when_present)
     fill <- function(x) {
         if (is.null(x) || length(x) == 0) rep(NA_real_, n) else rep_len(as.numeric(x), n)
     }
     se <- fill(se)
     df <- fill(df)
+    # Cells actually recovered at this stage, control + perturbed
+    # (contrast_n_observed()). Zero means the model's estimates on both sides are
+    # interpolated from other stages: nothing was observed to call (mcclintock#134).
+    # NULL / NA (tables written before the count columns) leaves the code as before.
+    n_observed <- fill(n_observed)
     mdfc80 <- abundance_mdfc80(se, df, alpha = q_cut, power = power)
     # A null can only be certified for a row whose ESTIMATE is also small. The
     # detection limit alone is not enough: `mdfc80 <= margin` says the contrast
@@ -1053,6 +1091,7 @@ assign_abundance_code <- function(change_when_present, change_when_present_q_val
     case_when(
         is.na(change_when_present) | is.na(change_when_present_q_val) ~ "AN Not assessed",
         degenerate ~ "AN Not assessed",
+        !is.na(n_observed) & n_observed == 0 ~ "AN Not assessed",
         change_when_present >= lfc_cut & change_when_present_q_val < q_cut ~ "A1 Expansion",
         # A3 MUST be tested before A2, and its threshold is the more extreme of
         # the two on purpose. Read in isolation the next two lines look
@@ -1098,7 +1137,8 @@ assign_abundance_severity <- function(change_when_present, change_when_present_q
                                       near_loss_cut = 2.0,
                                       moderate_lfc_cut = 1.0,
                                       severe_q_cut = 0.01,
-                                      moderate_q_cut = 0.05) {
+                                      moderate_q_cut = 0.05,
+                                      n_observed = NULL) {
     # Every tier must IMPLY the calling condition, or a tier can fire on a row
     # the cascade rejected. Threading the shared cutoffs is not enough on its
     # own: severity's private q levels are stricter than q_cut by default, but a
@@ -1109,8 +1149,15 @@ assign_abundance_severity <- function(change_when_present, change_when_present_q
     moderate_q <- min(moderate_q_cut, q_cut)
     moderate_l <- max(moderate_lfc_cut, lfc_cut)
     severe_l   <- max(near_loss_cut, moderate_l)
+    # A row with no cells observed is AN in assign_abundance_code(), so it is never graded.
+    n_observed <- if (is.null(n_observed) || length(n_observed) == 0) {
+        rep(NA_real_, length(change_when_present))
+    } else {
+        rep_len(as.numeric(n_observed), length(change_when_present))
+    }
 
     case_when(
+        !is.na(n_observed) & n_observed == 0 ~ "none",
         abs(change_when_present) >= severe_l & change_when_present_q_val < severe_q ~ "severe",
         abs(change_when_present) >= moderate_l & change_when_present_q_val < moderate_q ~ "moderate",
         # same condition as A1/A2 in assign_abundance_code()

@@ -83,6 +83,15 @@ earliest timepoint.
 }
 }
 
+\section{Stages with no cells}{
+
+When the table carries \code{n_cells_x} / \code{n_cells_y} (cells recovered per side,
+written by mcclintock's \code{compare_abundances.R}), a stage where neither side
+recovered a cell is skipped before the row is chosen: both estimates there are
+interpolated from other stages (mcclintock#134). Tables without the columns
+are unaffected.
+}
+
 \examples{
 \dontrun{
 # one row per cell type, neutralising nothing
