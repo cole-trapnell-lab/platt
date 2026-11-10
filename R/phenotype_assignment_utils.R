@@ -221,7 +221,18 @@ classify_fitness <- function(fgsea_res,
     out <- tibble(
         fitness_label = labels,
         severity = sapply(labels, function(L) {
-            nes <- sev_map[[ifelse(L == "F3 Stress/toxicity", "F3 Stress/toxicity", L)]]
+            # No fitness phenotype has no severity. Falling through to the
+            # lookup below graded every F0 row "mild" (79,406 rows in v3.1.1),
+            # which the narrative prompt then reported as a mild fitness effect.
+            if (L == "F0 No significant phenotype") {
+                return("none")
+            }
+            # The F3 label carries its module names ("F3 Stress/toxicity
+            # (p53, Hypoxia)"), so it never equals its sev_map key. Matching it
+            # exactly sent every F3 row to the "mild" fallback (all 2,614 in
+            # v3.1.1; recomputed, 2,601 are moderate and 13 severe).
+            key <- if (startsWith(L, "F3 ")) "F3 Stress/toxicity" else L
+            nes <- sev_map[[key]]
             if (is.null(nes) || is.na(nes)) {
                 return("mild")
             }
@@ -533,7 +544,7 @@ assign_phenotypes <- function(
             # They are kept in the universe so they surface as "AN Not assessed"
             # rather than as silence.
             cell_type_universe <- unique(dact_tbl$cell_group)
-            dact_tbl <- dacts_when_abundant(dact_tbl, percent_max_thresh = 0)
+            dact_tbl <- dacts_when_abundant(dact_tbl, percent_max_thresh = 0, q_cut = abundance_q_cut)
             # dact_tbl <- dact_tbl %>%
             #     mutate(timepoint_x = as.numeric(timepoint_x)) %>%
             #     group_by(cell_group) %>%
@@ -611,8 +622,24 @@ filter_denylisted_cell_types <- function(dact_tbl, deg_tbl, cell_type_denylist) 
 #'   abundance are neutralised rather than dropped: `delta_log_abund` is set to
 #'   `0` and `delta_q_value` to `1`. Defaults to `0.10`. Pass `0` to neutralise
 #'   nothing.
-#' @param with_ties Passed to [dplyr::slice_min()]. `FALSE` (the default) keeps
-#'   exactly one row per cell type even when several tie on `delta_q_value`.
+#' @param with_ties `FALSE` (the default) keeps exactly one row per cell type
+#'   even when several tie on `delta_q_value`; `TRUE` returns every tied row.
+#' @param q_cut,lfc_cut Thresholds used to break ties, passed to
+#'   [assign_abundance_code()]. They should be the ones the caller's code
+#'   assignment uses.
+#'
+#' @section Ties:
+#' Several timepoints often tie on the minimum `delta_q_value` -- whenever
+#' nothing is significant, every timepoint has q = 1 -- and the tied rows can
+#' carry different abundance codes. Keeping the first row in table order made
+#' "A0 No change" vs "AU Undetermined" depend on row order (1,303
+#' cell-type/perturbation pairs in v3.1.1, all at q = 1; platt#66). Ties are
+#' now broken on the data:
+#' 1. A row coded "A0 No change" is kept only if every tied row is A0: a null is
+#'    certified for the cell type only when every tied timepoint certifies it.
+#' 2. Among the remaining rows, the timepoint where the cell type is most
+#'    abundant in the wild-type reference (`percent_max_abund`), then the
+#'    earliest timepoint.
 #' @return A tibble with at most one row per `cell_group`. Cell types with no
 #'   qualifying row are absent, not `NA` -- see the section above.
 #' @examples
@@ -662,8 +689,9 @@ alias_change_when_present <- function(dact_tbl) {
 
 
 #' @export
-dacts_when_abundant <- function(differential_cell_abundance, percent_max_thresh = 0.10, with_ties = FALSE) {
-    perturb_table_at_when_abundant <- differential_cell_abundance %>%
+dacts_when_abundant <- function(differential_cell_abundance, percent_max_thresh = 0.10, with_ties = FALSE,
+                                q_cut = 0.05, lfc_cut = 0.5) {
+    tied <- differential_cell_abundance %>%
         mutate(timepoint_x = as.numeric(timepoint_x)) %>%
         filter(is.na(delta_log_abund) == FALSE &
             is.na(present_above_thresh) == FALSE &
@@ -672,10 +700,28 @@ dacts_when_abundant <- function(differential_cell_abundance, percent_max_thresh 
         mutate(delta_log_abund = ifelse(percent_max_abund < percent_max_thresh, 0, delta_log_abund)) %>%
         mutate(delta_q_value = ifelse(delta_log_abund == 0, 1, delta_q_value)) %>%
         group_by(cell_group) %>%
-        slice_min(delta_q_value, with_ties = with_ties) %>%
+        slice_min(delta_q_value, with_ties = TRUE) %>%
         ungroup()
+    if (with_ties) {
+        return(tied)
+    }
 
-    return(perturb_table_at_when_abundant)
+    # Break ties on the data, not on row order (see the Ties section above).
+    # The SE/df columns are absent on tables predating hooke 0.0.3; the code
+    # then degrades to AU exactly as assign_phenotypes_to_cell_types() does.
+    col_or_null <- function(nm) if (nm %in% names(tied)) tied[[nm]] else NULL
+    tie_code <- assign_abundance_code(tied$delta_log_abund, tied$delta_q_value,
+        q_cut = q_cut, lfc_cut = lfc_cut,
+        se = col_or_null("delta_log_abund_se"), df = col_or_null("df_resid")
+    )
+    wt_abund <- if ("percent_max_abund" %in% names(tied)) tied$percent_max_abund else rep(NA_real_, nrow(tied))
+    tied %>%
+        mutate(.is_a0 = tie_code == "A0 No change", .wt_abund = wt_abund) %>%
+        group_by(cell_group) %>%
+        arrange(.is_a0, desc(.wt_abund), timepoint_x, .by_group = TRUE) %>%
+        slice_head(n = 1) %>%
+        ungroup() %>%
+        select(-.is_a0, -.wt_abund)
 }
 
 #' Assign phenotype labels for every cell type within one perturbation
@@ -1026,7 +1072,13 @@ assign_abundance_code <- function(change_when_present, change_when_present_q_val
     )
 }
 
-# Graded severity for an abundance call.
+# Effect-size tier for an abundance call.
+#
+# Despite the name, this grades how BIG the change is (|change_when_present|),
+# not how harmful it is: the tiers are unsigned, so an expansion can be
+# "severe". Text that people or language models read should describe it as a
+# size (see abundance_magnitude_words() in narrative.R); renaming the column
+# and its values is tracked in platt#58.
 #
 # The "mild" tier is deliberately the SAME condition as being called A1/A2 at
 # all, so that `severity == "none"` and a non-call always agree. That invariant

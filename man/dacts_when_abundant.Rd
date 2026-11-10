@@ -7,7 +7,9 @@
 dacts_when_abundant(
   differential_cell_abundance,
   percent_max_thresh = 0.1,
-  with_ties = FALSE
+  with_ties = FALSE,
+  q_cut = 0.05,
+  lfc_cut = 0.5
 )
 }
 \arguments{
@@ -22,8 +24,12 @@ abundance are neutralised rather than dropped: \code{delta_log_abund} is set to
 \code{0} and \code{delta_q_value} to \code{1}. Defaults to \code{0.10}. Pass \code{0} to neutralise
 nothing.}
 
-\item{with_ties}{Passed to \code{\link[dplyr:slice]{dplyr::slice_min()}}. \code{FALSE} (the default) keeps
-exactly one row per cell type even when several tie on \code{delta_q_value}.}
+\item{with_ties}{\code{FALSE} (the default) keeps exactly one row per cell type
+even when several tie on \code{delta_q_value}; \code{TRUE} returns every tied row.}
+
+\item{q_cut, lfc_cut}{Thresholds used to break ties, passed to
+\code{\link[=assign_abundance_code]{assign_abundance_code()}}. They should be the ones the caller's code
+assignment uses.}
 }
 \value{
 A tibble with at most one row per \code{cell_group}. Cell types with no
@@ -58,6 +64,23 @@ those cell types silently. To report them instead, capture the cell-type
 universe \emph{before} calling this and pass it to
 \code{\link[=assign_phenotypes_to_cell_types]{assign_phenotypes_to_cell_types()}} as \code{all_cell_types}, which surfaces them
 as \code{"AN Not assessed"}.
+}
+
+\section{Ties}{
+
+Several timepoints often tie on the minimum \code{delta_q_value} -- whenever
+nothing is significant, every timepoint has q = 1 -- and the tied rows can
+carry different abundance codes. Keeping the first row in table order made
+"A0 No change" vs "AU Undetermined" depend on row order (1,303
+cell-type/perturbation pairs in v3.1.1, all at q = 1; platt#66). Ties are
+now broken on the data:
+\enumerate{
+\item A row coded "A0 No change" is kept only if every tied row is A0: a null is
+certified for the cell type only when every tied timepoint certifies it.
+\item Among the remaining rows, the timepoint where the cell type is most
+abundant in the wild-type reference (\code{percent_max_abund}), then the
+earliest timepoint.
+}
 }
 
 \examples{
