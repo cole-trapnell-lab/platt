@@ -221,7 +221,18 @@ classify_fitness <- function(fgsea_res,
     out <- tibble(
         fitness_label = labels,
         severity = sapply(labels, function(L) {
-            nes <- sev_map[[ifelse(L == "F3 Stress/toxicity", "F3 Stress/toxicity", L)]]
+            # No fitness phenotype has no severity. Falling through to the
+            # lookup below graded every F0 row "mild" (79,406 rows in v3.1.1),
+            # which the narrative prompt then reported as a mild fitness effect.
+            if (L == "F0 No significant phenotype") {
+                return("none")
+            }
+            # The F3 label carries its module names ("F3 Stress/toxicity
+            # (p53, Hypoxia)"), so it never equals its sev_map key. Matching it
+            # exactly sent every F3 row to the "mild" fallback (all 2,614 in
+            # v3.1.1; recomputed, 2,601 are moderate and 13 severe).
+            key <- if (startsWith(L, "F3 ")) "F3 Stress/toxicity" else L
+            nes <- sev_map[[key]]
             if (is.null(nes) || is.na(nes)) {
                 return("mild")
             }
