@@ -2487,8 +2487,14 @@ contrast_helper <- function(state_1,
     extreme_effect_lower_thresh <- min(coefficient_mode[1:2])
 
     num_large_up_effects <- sum(effect_est > extreme_effect_upper_thresh)
-    num_large_down_effects <- sum(effect_est < extreme_effect_upper_thresh)
-    up_down_large_effect_skew <- log(num_large_up_effects / num_large_down_effects)
+    num_large_down_effects <- sum(effect_est < extreme_effect_lower_thresh)
+    # A zero count on either side has no finite log ratio; report NA rather
+    # than +/-Inf (or NaN when both are zero).
+    up_down_large_effect_skew <- if (isTRUE(num_large_up_effects > 0 && num_large_down_effects > 0)) {
+      log(num_large_up_effects / num_large_down_effects)
+    } else {
+      NA_real_
+    }
     # if (abs(up_down_large_effect_skew) > log(2)){
     #  ash.mixcompdist = "halfuniform"
     # }
