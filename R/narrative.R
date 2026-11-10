@@ -328,6 +328,19 @@ dact_grounding_for <- function(ct, dact_expectations) {
   build_dact_grounding(exp, rat, thk)
 }
 
+# The words the narrative prompt uses for an `abundance_severity` tier.
+#
+# The tier is a bucket of |change in log abundance| (assign_abundance_severity),
+# unsigned and blind to whether the change is harmful, so a 7-fold expansion is
+# "severe". Shown to a language model as "Abundance severity: severe" it reads as
+# a verdict on how bad the change is. Describe the size instead (platt#58, part
+# a). The stored column and its values are unchanged; renaming them is part b.
+abundance_magnitude_words <- function(tier) {
+  words <- c(none = "none", mild = "small", moderate = "medium", severe = "large")
+  out <- unname(words[tolower(trimws(as.character(tier)))])
+  ifelse(is.na(out), as.character(tier), out)
+}
+
 summarize_cell_type_impact <- function(
   ct,
   perturbation_description,
@@ -602,7 +615,7 @@ summarize_cell_type_impact <- function(
     paste0("Cell type: ", ct),
     if (!is.null(effect_type) && nzchar(effect_type)) paste0("Effect type: ", effect_type),
     paste0("Abundance change: ", abundance_summary),
-    paste0("Abundance severity: ", abundance_severity),
+    paste0("Abundance change size: ", abundance_magnitude_words(abundance_severity)),
     paste0("Fitness label: ", fitness_label),
     paste0("Fitness severity: ", fitness_severity),
     paste0("Fitness evidence: ", fitness_evidence),

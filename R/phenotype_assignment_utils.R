@@ -1072,7 +1072,13 @@ assign_abundance_code <- function(change_when_present, change_when_present_q_val
     )
 }
 
-# Graded severity for an abundance call.
+# Effect-size tier for an abundance call.
+#
+# Despite the name, this grades how BIG the change is (|change_when_present|),
+# not how harmful it is: the tiers are unsigned, so an expansion can be
+# "severe". Text that people or language models read should describe it as a
+# size (see abundance_magnitude_words() in narrative.R); renaming the column
+# and its values is tracked in platt#58.
 #
 # The "mild" tier is deliberately the SAME condition as being called A1/A2 at
 # all, so that `severity == "none"` and a non-call always agree. That invariant
