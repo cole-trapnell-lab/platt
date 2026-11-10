@@ -32,14 +32,35 @@ get_time_window <- function(genotype, ccs, interval_col, perturbation_col = "per
 #'   computing contrasts.
 #' @param adjust_q_values Logical. Whether to adjust q-values in the contrast
 #'   calculation. Default is FALSE.
+#' @param timepoints Optional. The stages to compute contrasts at, e.g. the
+#'   stages the perturbed embryos were collected at
+#'   ([perturbation_timepoints()]). `NULL` (the default) uses every stage in
+#'   `colData(ccm@ccs)`, which includes stages sampled only for the controls: a
+#'   control-only stage inside the window gets a contrast whose perturbed side is
+#'   pure spline interpolation (mcclintock#63). Stages not in the cell count set
+#'   are dropped with a warning. The model fit is unaffected either way, and
+#'   q-values are adjusted within each stage, so the rows that remain are the
+#'   same as without this argument.
 #'
 #' @return A tibble with one row per timepoint (and any `newdata` combinations)
-#'   plus contrast results.
+#'   plus contrast results. The stage column is named `interval_col`.
 #'
 #' @export
-get_perturbation_effects <- function(ccm, interval_col = "timepoint", newdata = tibble(), adjust_q_values = FALSE) {
-  timepoints <- colData(ccm@ccs)[[interval_col]] %>% unique()
-  df <- data.frame(timepoint = timepoints)
+get_perturbation_effects <- function(ccm, interval_col = "timepoint", newdata = tibble(), adjust_q_values = FALSE,
+                                     timepoints = NULL) {
+  available <- colData(ccm@ccs)[[interval_col]] %>% unique()
+  if (!is.null(timepoints)) {
+    absent <- setdiff(as.numeric(timepoints), as.numeric(available))
+    if (length(absent) > 0) {
+      warning("get_perturbation_effects(): stages not in the cell count set, skipped: ",
+              paste(sort(absent), collapse = ", "))
+    }
+    available <- available[as.numeric(available) %in% as.numeric(timepoints)]
+  }
+  # Named after interval_col, not "timepoint": make_contrast() passes this row to
+  # estimate_abundances() as newdata, which must carry the model's own interval
+  # variable (platt#18).
+  df <- tibble::tibble(!!interval_col := available)
 
   if (nrow(newdata) > 0) {
     df <- cross_join(df, newdata)

@@ -8,7 +8,8 @@ get_perturbation_effects(
   ccm,
   interval_col = "timepoint",
   newdata = tibble(),
-  adjust_q_values = FALSE
+  adjust_q_values = FALSE,
+  timepoints = NULL
 )
 }
 \arguments{
@@ -22,10 +23,20 @@ computing contrasts.}
 
 \item{adjust_q_values}{Logical. Whether to adjust q-values in the contrast
 calculation. Default is FALSE.}
+
+\item{timepoints}{Optional. The stages to compute contrasts at, e.g. the
+stages the perturbed embryos were collected at
+(\code{\link[=perturbation_timepoints]{perturbation_timepoints()}}). \code{NULL} (the default) uses every stage in
+\code{colData(ccm@ccs)}, which includes stages sampled only for the controls: a
+control-only stage inside the window gets a contrast whose perturbed side is
+pure spline interpolation (mcclintock#63). Stages not in the cell count set
+are dropped with a warning. The model fit is unaffected either way, and
+q-values are adjusted within each stage, so the rows that remain are the
+same as without this argument.}
 }
 \value{
 A tibble with one row per timepoint (and any \code{newdata} combinations)
-plus contrast results.
+plus contrast results. The stage column is named \code{interval_col}.
 }
 \description{
 Builds a tidy table of perturbation effects by combining per-timepoint
