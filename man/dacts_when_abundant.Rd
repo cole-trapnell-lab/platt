@@ -24,21 +24,23 @@ abundance are neutralised rather than dropped: \code{delta_log_abund} is set to
 \code{0} and \code{delta_q_value} to \code{1}. Defaults to \code{0.10}. Pass \code{0} to neutralise
 nothing.}
 
-\item{with_ties}{\code{FALSE} (the default) keeps exactly one row per cell type
-even when several tie on \code{delta_q_value}; \code{TRUE} returns every tied row.}
+\item{with_ties}{\code{FALSE} (the default) keeps exactly one row per cell type;
+\code{TRUE} returns every row tied on the minimum \code{delta_q_value} among the
+candidates (the called timepoints if there are any, otherwise all of them).}
 
-\item{q_cut, lfc_cut}{Thresholds used to break ties, passed to
-\code{\link[=assign_abundance_code]{assign_abundance_code()}}. They should be the ones the caller's code
-assignment uses.}
+\item{q_cut, lfc_cut}{Thresholds of the call rule, passed to
+\code{\link[=assign_abundance_code]{assign_abundance_code()}} to decide which timepoints are called and to
+break ties. They should be the ones the caller's code assignment uses.}
 }
 \value{
 A tibble with at most one row per \code{cell_group}. Cell types with no
 qualifying row are absent, not \code{NA} -- see the section above.
 }
 \description{
-Reduces a decorated Hooke abundance contrast table to one row per cell type:
-the most significant timepoint among those where the cell type was actually
-present in the wild-type reference.
+Reduces a decorated Hooke abundance contrast table to one row per cell type,
+chosen among the timepoints where the cell type was actually present in the
+wild-type reference: the most significant timepoint that passes the call
+rule if any does, otherwise the most significant timepoint.
 }
 \details{
 This is the canonical implementation. It was duplicated verbatim in
@@ -64,6 +66,29 @@ those cell types silently. To report them instead, capture the cell-type
 universe \emph{before} calling this and pass it to
 \code{\link[=assign_phenotypes_to_cell_types]{assign_phenotypes_to_cell_types()}} as \code{all_cell_types}, which surfaces them
 as \code{"AN Not assessed"}.
+}
+
+\section{Which timepoint}{
+
+Each eligible timepoint is coded with \code{\link[=assign_abundance_code]{assign_abundance_code()}}.
+\enumerate{
+\item If any of them is called ("A1 Expansion", "A2 Depletion" or "A3
+Near-loss": q < \code{q_cut} and |\code{delta_log_abund}| >= \code{lfc_cut}), the called
+timepoint with the minimum \code{delta_q_value} is kept.
+\item Otherwise the timepoint with the minimum \code{delta_q_value} is kept.
+}
+
+So a called timepoint always beats an uncalled one, and otherwise the
+minimum q decides, as before. Rule 1 was added in November 2026. Taking the
+minimum q alone let a
+timepoint with a very significant but small change (say q = 1e-6 with
+|\code{delta_log_abund}| = 0.2, coded "A0 No change") hide a called change at
+another timepoint (say q = 0.01 with |\code{delta_log_abund}| = 1.2): the summary
+said "No change" while the table held a call. That happened for 206
+cell-type/perturbation pairs in v3.1.1. Picking the largest called change
+instead was considered and rejected: it would also have moved 441 called
+pairs to another timepoint and flipped about 120 between expansion and
+depletion, mostly towards noisier timepoints.
 }
 
 \section{Ties}{
