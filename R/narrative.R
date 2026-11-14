@@ -49,11 +49,10 @@ load_ai_precompute_for_cell_types <- function(cell_types, ai_notes_path = "../..
   ai_lineage_bg <- lapply(cell_types, read_cell_type_background, ai_notes_path = ai_notes_path, bg_type = "lineage_summary.md")
   names(ai_lineage_bg) <- cell_types
 
-  ai_pathway_bg <- lapply(cell_types, read_cell_type_background, ai_notes_path = ai_notes_path, bg_type = "pathway_summary.md")
-  names(ai_pathway_bg) <- cell_types
-
-  ai_regulator_pathway_bg <- lapply(cell_types, read_cell_type_background, ai_notes_path = ai_notes_path, bg_type = "regulator_pathway_summary.md")
-  names(ai_regulator_pathway_bg) <- cell_types
+  # pathway_summary.md and regulator_pathway_summary.md are no longer read:
+  # Sulston stopped writing them (neither was shown on the portal). The impact
+  # prompt gets the cell type's genes-required claims instead (cell_type_claims
+  # in summarize_impact_in_lineage_context).
 
   ai_summary_bg <- lapply(cell_types, read_cell_type_background, ai_notes_path = ai_notes_path, bg_type = "summary.md")
   names(ai_summary_bg) <- cell_types
@@ -67,8 +66,6 @@ load_ai_precompute_for_cell_types <- function(cell_types, ai_notes_path = "../..
     genetic_req_background = unlist(ai_gen_req_bg),
     kinetic_background = unlist(ai_kinetic_bg),
     lineage_background = unlist(ai_lineage_bg),
-    pathway_background = unlist(ai_pathway_bg),
-    regulator_pathway_background = unlist(ai_regulator_pathway_bg),
     summary_background = unlist(ai_summary_bg),
     sig_pathways = sig_pathways
   )
@@ -470,7 +467,6 @@ summarize_cell_type_impact <- function(
 
   # 5. Pathway enrichment (using precomputed or run on the fly)
   precompute_data <- load_ai_precompute_for_cell_types(cell_types = ct, ai_notes_path = ai_notes_path)
-  pathway_background <- precompute_data$pathway_background
   sig_pathways <- precompute_data$sig_pathways[[1]]
   if (is.null(sig_pathways) || !is.data.frame(sig_pathways)) {
     sig_pathways <- tibble::tibble(pathway = character())
@@ -623,7 +619,6 @@ summarize_cell_type_impact <- function(
     paste0("Identity evidence: ", identity_evidence), # <-- NEW LINE
     paste0("Target genes expressed in this cell type: ", expressed_targets_line),
     if (nzchar(dact_grounding)) paste0("Literature expectation: ", dact_grounding),
-    paste0("Pathway background: ", pathway_background),
     pathway_lines,
     if (other_regulatory_genes_line != "") other_regulatory_genes_line,
     sep = "\n"
@@ -867,6 +862,27 @@ reencode_pathway_arrows <- function(tbl, lookup) {
   tbl
 }
 
+# One cell type's entry in a cell_type_claims vector/list, or "".
+claims_for_cell_type <- function(cell_type_claims, ct) {
+  if (is.null(cell_type_claims) || !(ct %in% names(cell_type_claims))) return("")
+  x <- cell_type_claims[[ct]]
+  if (is.null(x) || length(x) != 1 || is.na(x)) "" else as.character(x)
+}
+
+# Prefix an impact call's context with the claims it may cite: the perturbed
+# genes' claims, then the cell type's own. No block when both are empty.
+with_pre_cited_claims <- function(cell_impact_text, gene_claims = NULL, cell_type_claims_text = "") {
+  parts <- c(gene_claims, cell_type_claims_text)
+  parts <- parts[!is.na(parts) & nzchar(parts)]
+  if (length(parts) == 0) return(cell_impact_text)
+  paste0(
+    "<pre_cited_claims>\n",
+    paste(parts, collapse = "\n\n"),
+    "\n</pre_cited_claims>\n\n",
+    cell_impact_text
+  )
+}
+
 summarize_impact_in_lineage_context <- function(
   perturbation_description,
   target_gene_expression,
@@ -890,6 +906,10 @@ summarize_impact_in_lineage_context <- function(
   dact_expectations = NULL,
   effect_type = NULL,
   pre_cited_gene_claims = NULL,
+  # Named character vector or list: cell type -> that cell type's own literature
+  # claims (rendered bullets with [@PMID] citations). Added to the cell's
+  # <pre_cited_claims> block so the model may cite them.
+  cell_type_claims = NULL,
   verbose = FALSE,
   ...
 ) {
@@ -965,15 +985,11 @@ summarize_impact_in_lineage_context <- function(
         dact_expectations = dact_expectations,
         effect_type = effect_type
       )
-      cell_impact_text <- build_lineage_context(ct, parents, results, all_types)
-      if (!is.null(pre_cited_gene_claims) && nzchar(pre_cited_gene_claims)) {
-        cell_impact_text <- paste0(
-          "<pre_cited_claims>\n",
-          pre_cited_gene_claims,
-          "\n</pre_cited_claims>\n\n",
-          cell_impact_text
-        )
-      }
+      cell_impact_text <- with_pre_cited_claims(
+        build_lineage_context(ct, parents, results, all_types),
+        pre_cited_gene_claims,
+        claims_for_cell_type(cell_type_claims, ct)
+      )
 
       expresses_target <- !is.null(target_gene_expression) && ct %in% target_gene_expression$cell_group
       has_abundance <- !is.null(abundance_phenotypes) &&
@@ -1222,15 +1238,11 @@ summarize_impact_in_lineage_context <- function(
     }
     for (ct in failed_cell_types) {
       parents <- get_parents(combined_psg, ct)
-      cell_impact_text <- build_lineage_context(ct, parents, results, all_types)
-      if (!is.null(pre_cited_gene_claims) && nzchar(pre_cited_gene_claims)) {
-        cell_impact_text <- paste0(
-          "<pre_cited_claims>\n",
-          pre_cited_gene_claims,
-          "\n</pre_cited_claims>\n\n",
-          cell_impact_text
-        )
-      }
+      cell_impact_text <- with_pre_cited_claims(
+        build_lineage_context(ct, parents, results, all_types),
+        pre_cited_gene_claims,
+        claims_for_cell_type(cell_type_claims, ct)
+      )
       allowed_degs_map <- build_allowed_degs_map(results[[ct]]$degs)
       if (length(allowed_degs_map) == 0 || is.null(llm_fun)) {
         still_failed_cell_types <- c(still_failed_cell_types, ct)
