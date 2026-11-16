@@ -586,9 +586,10 @@ filter_denylisted_cell_types <- function(dact_tbl, deg_tbl, cell_type_denylist) 
 
 #' Pick one abundance contrast per cell type, where the cell type was abundant
 #'
-#' Reduces a decorated Hooke abundance contrast table to one row per cell type:
-#' the most significant timepoint among those where the cell type was actually
-#' present in the wild-type reference.
+#' Reduces a decorated Hooke abundance contrast table to one row per cell type,
+#' chosen among the timepoints where the cell type was actually present in the
+#' wild-type reference: the most significant timepoint that passes the call
+#' rule if any does, otherwise the most significant timepoint.
 #'
 #' This is the canonical implementation. It was duplicated verbatim in
 #' zscapetools for some time; that copy now calls this one. Do not reintroduce a
@@ -622,11 +623,31 @@ filter_denylisted_cell_types <- function(dact_tbl, deg_tbl, cell_type_denylist) 
 #'   abundance are neutralised rather than dropped: `delta_log_abund` is set to
 #'   `0` and `delta_q_value` to `1`. Defaults to `0.10`. Pass `0` to neutralise
 #'   nothing.
-#' @param with_ties `FALSE` (the default) keeps exactly one row per cell type
-#'   even when several tie on `delta_q_value`; `TRUE` returns every tied row.
-#' @param q_cut,lfc_cut Thresholds used to break ties, passed to
-#'   [assign_abundance_code()]. They should be the ones the caller's code
-#'   assignment uses.
+#' @param with_ties `FALSE` (the default) keeps exactly one row per cell type;
+#'   `TRUE` returns every row tied on the minimum `delta_q_value` among the
+#'   candidates (the called timepoints if there are any, otherwise all of them).
+#' @param q_cut,lfc_cut Thresholds of the call rule, passed to
+#'   [assign_abundance_code()] to decide which timepoints are called and to
+#'   break ties. They should be the ones the caller's code assignment uses.
+#'
+#' @section Which timepoint:
+#' Each eligible timepoint is coded with [assign_abundance_code()].
+#' 1. If any of them is called ("A1 Expansion", "A2 Depletion" or "A3
+#'    Near-loss": q < `q_cut` and |`delta_log_abund`| >= `lfc_cut`), the called
+#'    timepoint with the minimum `delta_q_value` is kept.
+#' 2. Otherwise the timepoint with the minimum `delta_q_value` is kept.
+#'
+#' So a called timepoint always beats an uncalled one, and otherwise the
+#' minimum q decides, as before. Rule 1 was added in November 2026. Taking the
+#' minimum q alone let a
+#' timepoint with a very significant but small change (say q = 1e-6 with
+#' |`delta_log_abund`| = 0.2, coded "A0 No change") hide a called change at
+#' another timepoint (say q = 0.01 with |`delta_log_abund`| = 1.2): the summary
+#' said "No change" while the table held a call. That happened for 206
+#' cell-type/perturbation pairs in v3.1.1. Picking the largest called change
+#' instead was considered and rejected: it would also have moved 441 called
+#' pairs to another timepoint and flipped about 120 between expansion and
+#' depletion, mostly towards noisier timepoints.
 #'
 #' @section Ties:
 #' Several timepoints often tie on the minimum `delta_q_value` -- whenever
@@ -667,13 +688,13 @@ filter_denylisted_cell_types <- function(dact_tbl, deg_tbl, cell_type_denylist) 
 #
 # The summarised table carries change_when_present_se/_tvalue_df natively. The
 # unsummarised one holds the same quantities under hooke's names, and
-# dacts_when_abundant() is a filter()/slice_min() with no select(), so they are
+# dacts_when_abundant() only selects rows, never drops columns, so they are
 # still present here -- only the rename was missing.
 #
-# Pairing is per row and deliberate: `change_when_present` is the single
-# slice_min(delta_q_value) row's `delta_log_abund`, so the detection limit must
-# come from THAT row's `delta_log_abund_se` and `df_resid`, describing the same
-# contrast the code is assigned from.
+# Pairing is per row and deliberate: `change_when_present` is the
+# `delta_log_abund` of the single row dacts_when_abundant() kept, so the
+# detection limit must come from THAT row's `delta_log_abund_se` and `df_resid`,
+# describing the same contrast the code is assigned from.
 #
 # df_resid arrives from hooke 0.0.3, or from decorate_contrast_detectability()
 # backfilling it onto a legacy table, so it is absent on tables predating both.
@@ -723,37 +744,49 @@ dacts_when_abundant <- function(differential_cell_abundance, percent_max_thresh 
     if (!is.null(n_obs)) {
         differential_cell_abundance <- differential_cell_abundance[is.na(n_obs) | n_obs > 0, , drop = FALSE]
     }
-    tied <- differential_cell_abundance %>%
+    eligible <- differential_cell_abundance %>%
         mutate(timepoint_x = as.numeric(timepoint_x)) %>%
         filter(is.na(delta_log_abund) == FALSE &
             is.na(present_above_thresh) == FALSE &
             present_above_thresh) %>%
-        # filter(present_above_thresh) %>%
         mutate(delta_log_abund = ifelse(percent_max_abund < percent_max_thresh, 0, delta_log_abund)) %>%
-        mutate(delta_q_value = ifelse(delta_log_abund == 0, 1, delta_q_value)) %>%
-        group_by(cell_group) %>%
-        slice_min(delta_q_value, with_ties = TRUE) %>%
-        ungroup()
-    if (with_ties) {
-        return(tied)
-    }
+        mutate(delta_q_value = ifelse(delta_log_abund == 0, 1, delta_q_value))
 
-    # Break ties on the data, not on row order (see the Ties section above).
-    # The SE/df columns are absent on tables predating hooke 0.0.3; the code
-    # then degrades to AU exactly as assign_phenotypes_to_cell_types() does.
-    col_or_null <- function(nm) if (nm %in% names(tied)) tied[[nm]] else NULL
-    tie_code <- assign_abundance_code(tied$delta_log_abund, tied$delta_q_value,
+    # Code every eligible timepoint, so a called change anywhere in the window
+    # is seen (see "Which timepoint" above) and ties are broken on the data,
+    # not on row order (see "Ties"). The SE/df columns are absent on tables
+    # predating hooke 0.0.3; the code then degrades to AU exactly as
+    # assign_phenotypes_to_cell_types() does. That only touches A0 vs AU: the
+    # called codes need neither column.
+    col_or_null <- function(nm) if (nm %in% names(eligible)) eligible[[nm]] else NULL
+    code <- assign_abundance_code(eligible$delta_log_abund, eligible$delta_q_value,
         q_cut = q_cut, lfc_cut = lfc_cut,
         se = col_or_null("delta_log_abund_se"), df = col_or_null("df_resid")
     )
-    wt_abund <- if ("percent_max_abund" %in% names(tied)) tied$percent_max_abund else rep(NA_real_, nrow(tied))
-    tied %>%
-        mutate(.is_a0 = tie_code == "A0 No change", .wt_abund = wt_abund) %>%
+    wt_abund <- if ("percent_max_abund" %in% names(eligible)) eligible$percent_max_abund else rep(NA_real_, nrow(eligible))
+    scored <- eligible %>%
+        mutate(
+            .called = code %in% c("A1 Expansion", "A2 Depletion", "A3 Near-loss"),
+            .is_a0 = code == "A0 No change",
+            .wt_abund = wt_abund
+        )
+
+    # A called timepoint beats an uncalled one; within the candidates, the
+    # minimum q, as before.
+    tied <- scored %>%
         group_by(cell_group) %>%
-        arrange(.is_a0, desc(.wt_abund), timepoint_x, .by_group = TRUE) %>%
-        slice_head(n = 1) %>%
-        ungroup() %>%
-        select(-.is_a0, -.wt_abund)
+        filter(.called | !any(.called)) %>%
+        slice_min(delta_q_value, with_ties = TRUE) %>%
+        ungroup()
+
+    if (!with_ties) {
+        tied <- tied %>%
+            group_by(cell_group) %>%
+            arrange(.is_a0, desc(.wt_abund), timepoint_x, .by_group = TRUE) %>%
+            slice_head(n = 1) %>%
+            ungroup()
+    }
+    tied %>% select(-.called, -.is_a0, -.wt_abund)
 }
 
 #' Assign phenotype labels for every cell type within one perturbation
