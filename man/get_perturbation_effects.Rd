@@ -9,7 +9,8 @@ get_perturbation_effects(
   interval_col = "timepoint",
   newdata = tibble(),
   adjust_q_values = FALSE,
-  timepoints = NULL
+  timepoints = NULL,
+  ...
 )
 }
 \arguments{
@@ -33,6 +34,12 @@ pure spline interpolation (mcclintock#63). Stages not in the cell count set
 are dropped with a warning. The model fit is unaffected either way, and
 q-values are adjusted within each stage, so the rows that remain are the
 same as without this argument.}
+
+\item{...}{Further arguments for \code{hooke::compare_abundances()}, passed through
+\code{\link[=make_contrast]{make_contrast()}} unchanged: for example \code{test = "lrt_diagonal"},
+\code{contrast_se = "covariance"} or \code{support_by = c("knockout", interval_col)}
+(hooke >= 0.0.6). With none given, the contrasts are computed exactly as
+before.}
 }
 \value{
 A tibble with one row per timepoint (and any \code{newdata} combinations)
