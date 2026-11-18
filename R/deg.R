@@ -2363,6 +2363,36 @@ fit_genotype_deg <- function(ccm,
 # state 1 - state 2
 # is state 1 higher
 #
+#' Combine log-scale estimates of several states into their total
+#'
+#' For each row, the total of the states' levels on the natural scale, returned on the log scale:
+#' log(sum_i exp(e_i)), computed stably. The standard error is by the delta method:
+#' se^2 = sum_i w_i^2 se_i^2 with w_i = exp(e_i) / sum_j exp(e_j). A single state is returned unchanged.
+#' A state with an infinite standard error and non-zero weight makes the total's standard error infinite.
+#'
+#' @param est matrix of log-scale estimates (rows = genes, columns = states)
+#' @param se matrix of their standard errors, same shape
+#' @return list(effect, se), named numeric vectors
+#' @keywords internal
+combine_log_states <- function(est, se) {
+  est <- as.matrix(est)
+  se <- as.matrix(se)
+  if (ncol(est) == 1) {
+    return(list(effect = stats::setNames(est[, 1], rownames(est)), se = stats::setNames(se[, 1], rownames(est))))
+  }
+  m <- apply(est, 1, max)
+  m_safe <- ifelse(is.finite(m), m, 0)
+  e <- exp(est - m_safe)
+  tot <- rowSums(e)
+  effect <- m_safe + log(tot)
+  w <- e / tot
+  v <- w^2 * se^2
+  v[w == 0] <- 0
+  out_se <- sqrt(rowSums(v))
+  list(effect = stats::setNames(effect, rownames(est)), se = stats::setNames(out_se, rownames(est)))
+}
+
+
 #' Contrast Helper Function
 #'
 #' This function calculates the contrast between two states using provided effect matrices and standard error matrices.
@@ -2434,11 +2464,15 @@ contrast_helper <- function(state_1,
     rownames(PSEM_2) <- ids
   }
 
-  state_1_effects <- Matrix::rowSums(PEM[, state_1, drop = F])
-  state_1_effects_se <- sqrt(Matrix::rowSums(PSEM[, state_1, drop = F]^2))
+  # Several states (e.g. a cell state's parents) are combined into their total: log(sum(exp(estimate))).
+  # The estimates are log scale, so summing them directly would multiply the states' levels.
+  state_1_combined <- combine_log_states(PEM[, state_1, drop = F], PSEM[, state_1, drop = F])
+  state_1_effects <- state_1_combined$effect
+  state_1_effects_se <- state_1_combined$se
 
-  state_2_effects <- Matrix::rowSums(PEM_2[, state_2, drop = F])
-  state_2_effects_se <- sqrt(Matrix::rowSums(PSEM_2[, state_2, drop = F]^2))
+  state_2_combined <- combine_log_states(PEM_2[, state_2, drop = F], PSEM_2[, state_2, drop = F])
+  state_2_effects <- state_2_combined$effect
+  state_2_effects_se <- state_2_combined$se
 
   log_mean_expression <- log(exp(state_1_effects[ids]) + exp(state_2_effects[ids]))
 
