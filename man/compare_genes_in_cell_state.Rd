@@ -54,6 +54,8 @@ The function performs the following steps:
 \item Identifies parent, sibling, and child states of the given cell state.
 \item Computes gene expression levels and significance for the cell state and its related states.
 \item Compares gene expression levels between the cell state and its parent, sibling, and child states.
+Several parents are combined and compared as their average (see \code{contrast_helper()}); siblings and
+children are compared one at a time.
 \item Interprets the gene expression patterns based on the comparisons.
 }
 }
