@@ -43,6 +43,15 @@ A tibble containing the contrast results, including raw and shrunken log fold ch
 \description{
 This function calculates the contrast between two states using provided effect matrices and standard error matrices.
 }
+\details{
+When \code{state_1} or \code{state_2} names several states (for example the parents of a cell state), they are
+combined into their total on the natural scale, log(sum(exp(estimate))), with a delta-method standard
+error. They are not summed on the log scale, which would multiply their levels. A gene at the same
+level in a state and in each of its k parents therefore has a raw contrast of -log(k). When
+\code{ash.control$mode} gives an interval, the median contrast is subtracted, which removes that offset, so
+the state is compared with the average of the combined states. A gene can then be called higher than
+its parents without being higher than each one of them.
+}
 \examples{
 # Example usage:
 contrast_res <- contrast_helper(

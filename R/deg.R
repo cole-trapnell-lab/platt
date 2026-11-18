@@ -2360,39 +2360,54 @@ fit_genotype_deg <- function(ccm,
 
 
 
-# state 1 - state 2
-# is state 1 higher
-#
 #' Combine log-scale estimates of several states into their total
 #'
 #' For each row, the total of the states' levels on the natural scale, returned on the log scale:
 #' log(sum_i exp(e_i)), computed stably. The standard error is by the delta method:
 #' se^2 = sum_i w_i^2 se_i^2 with w_i = exp(e_i) / sum_j exp(e_j). A single state is returned unchanged.
 #' A state with an infinite standard error and non-zero weight makes the total's standard error infinite.
+#' Where the total is not finite (every state at -Inf, or a state at +Inf), the weight is shared equally
+#' among the states at the row maximum, so the standard error is still defined.
+#'
+#' Standard errors are matched to estimates by row name when both matrices have row names, and by
+#' position otherwise.
 #'
 #' @param est matrix of log-scale estimates (rows = genes, columns = states)
 #' @param se matrix of their standard errors, same shape
 #' @return list(effect, se), named numeric vectors
-#' @keywords internal
+#' @noRd
 combine_log_states <- function(est, se) {
   est <- as.matrix(est)
   se <- as.matrix(se)
+  if (!identical(dim(est), dim(se))) {
+    stop("combine_log_states: est and se must have the same dimensions.")
+  }
+  if (!is.null(rownames(est)) && !is.null(rownames(se)) && !identical(rownames(est), rownames(se))) {
+    if (anyDuplicated(rownames(est)) > 0 || !setequal(rownames(est), rownames(se))) {
+      stop("combine_log_states: est and se must have the same row names.")
+    }
+    se <- se[rownames(est), , drop = FALSE]
+  }
   if (ncol(est) == 1) {
     return(list(effect = stats::setNames(est[, 1], rownames(est)), se = stats::setNames(se[, 1], rownames(est))))
   }
-  m <- apply(est, 1, max)
-  m_safe <- ifelse(is.finite(m), m, 0)
-  e <- exp(est - m_safe)
-  tot <- rowSums(e)
-  effect <- m_safe + log(tot)
-  w <- e / tot
+  effect <- matrixStats::rowLogSumExps(est, useNames = FALSE)
+  w <- exp(est - effect)
+  no_total <- which(is.infinite(effect))
+  if (length(no_total) > 0) {
+    at_max <- est[no_total, , drop = FALSE] == matrixStats::rowMaxs(est[no_total, , drop = FALSE], useNames = FALSE)
+    w[no_total, ] <- at_max / rowSums(at_max)
+  }
   v <- w^2 * se^2
-  v[w == 0] <- 0
+  v[which(w == 0)] <- 0
   out_se <- sqrt(rowSums(v))
   list(effect = stats::setNames(effect, rownames(est)), se = stats::setNames(out_se, rownames(est)))
 }
 
 
+# state 1 - state 2
+# is state 1 higher
+#
 #' Contrast Helper Function
 #'
 #' This function calculates the contrast between two states using provided effect matrices and standard error matrices.
@@ -2408,6 +2423,15 @@ combine_log_states <- function(est, se) {
 #' @param cv_threshold A numeric value specifying the coefficient of variation threshold. Defaults to 10.
 #'
 #' @return A tibble containing the contrast results, including raw and shrunken log fold changes, standard errors, p-values, and other metrics.
+#'
+#' @details
+#' When `state_1` or `state_2` names several states (for example the parents of a cell state), they are
+#' combined into their total on the natural scale, log(sum(exp(estimate))), with a delta-method standard
+#' error. They are not summed on the log scale, which would multiply their levels. A gene at the same
+#' level in a state and in each of its k parents therefore has a raw contrast of -log(k). When
+#' `ash.control$mode` gives an interval, the median contrast is subtracted, which removes that offset, so
+#' the state is compared with the average of the combined states. A gene can then be called higher than
+#' its parents without being higher than each one of them.
 #'
 #' @importFrom Matrix rowSums
 #' @importFrom ashr ash
@@ -2604,6 +2628,8 @@ contrast_helper <- function(state_1,
 #' 1. Identifies parent, sibling, and child states of the given cell state.
 #' 2. Computes gene expression levels and significance for the cell state and its related states.
 #' 3. Compares gene expression levels between the cell state and its parent, sibling, and child states.
+#'    Several parents are combined and compared as their average (see `contrast_helper()`); siblings and
+#'    children are compared one at a time.
 #' 4. Interprets the gene expression patterns based on the comparisons.
 #'
 #' @examples
