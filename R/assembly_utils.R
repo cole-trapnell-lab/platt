@@ -41,13 +41,18 @@ get_time_window <- function(genotype, ccs, interval_col, perturbation_col = "per
 #'   are dropped with a warning. The model fit is unaffected either way, and
 #'   q-values are adjusted within each stage, so the rows that remain are the
 #'   same as without this argument.
+#' @param ... Further arguments for `hooke::compare_abundances()`, passed through
+#'   [make_contrast()] unchanged: for example `test = "lrt_diagonal"`,
+#'   `contrast_se = "covariance"` or `support_by = c("knockout", interval_col)`
+#'   (hooke >= 0.0.6). With none given, the contrasts are computed exactly as
+#'   before.
 #'
 #' @return A tibble with one row per timepoint (and any `newdata` combinations)
 #'   plus contrast results. The stage column is named `interval_col`.
 #'
 #' @export
 get_perturbation_effects <- function(ccm, interval_col = "timepoint", newdata = tibble(), adjust_q_values = FALSE,
-                                     timepoints = NULL) {
+                                     timepoints = NULL, ...) {
   available <- colData(ccm@ccs)[[interval_col]] %>% unique()
   if (!is.null(timepoints)) {
     absent <- setdiff(as.numeric(timepoints), as.numeric(available))
@@ -73,7 +78,8 @@ get_perturbation_effects <- function(ccm, interval_col = "timepoint", newdata = 
       .f = make_contrast,
       .x = data,
       ccm = ccm,
-      adjust_q_values = adjust_q_values
+      adjust_q_values = adjust_q_values,
+      ...
     )) %>%
     unnest(c(data, genotype_eff))
   return(df)
@@ -331,6 +337,8 @@ fit_genotype_ccm <- function(genotype,
 #'   before estimating abundances.
 #' @param adjust_q_values Logical. Whether to adjust q-values in
 #'   `compare_abundances()`. Default is FALSE.
+#' @param ... Further arguments passed to `hooke::compare_abundances()`
+#'   unchanged, such as `test`, `contrast_se` or `support_by` (hooke >= 0.0.6).
 #'
 #' @return A tibble of contrast results as returned by `compare_abundances()`.
 #'
@@ -340,7 +348,7 @@ fit_genotype_ccm <- function(genotype,
 #' `knockout` column set to FALSE (WT) or TRUE (KO).
 #'
 #' @export
-make_contrast <- function(ccm, newdata = tibble(), adjust_q_values = FALSE) {
+make_contrast <- function(ccm, newdata = tibble(), adjust_q_values = FALSE, ...) {
   if (nrow(newdata) > 0) {
     newdata_wt <- cross_join(tibble(knockout = FALSE), newdata)
     newdata_mt <- cross_join(tibble(knockout = TRUE), newdata)
@@ -351,7 +359,7 @@ make_contrast <- function(ccm, newdata = tibble(), adjust_q_values = FALSE) {
 
   wt_cond <- estimate_abundances(ccm, newdata = newdata_wt)
   mt_cond <- estimate_abundances(ccm, newdata = newdata_mt)
-  tbl <- compare_abundances(ccm, wt_cond, mt_cond, adjust_q_values = adjust_q_values)
+  tbl <- compare_abundances(ccm, wt_cond, mt_cond, adjust_q_values = adjust_q_values, ...)
   return(tbl)
 }
 

@@ -4,7 +4,7 @@
 \alias{make_contrast}
 \title{Build WT vs KO contrasts from a fitted CCM}
 \usage{
-make_contrast(ccm, newdata = tibble(), adjust_q_values = FALSE)
+make_contrast(ccm, newdata = tibble(), adjust_q_values = FALSE, ...)
 }
 \arguments{
 \item{ccm}{A fitted cell count model object.}
@@ -14,6 +14,9 @@ before estimating abundances.}
 
 \item{adjust_q_values}{Logical. Whether to adjust q-values in
 \code{compare_abundances()}. Default is FALSE.}
+
+\item{...}{Further arguments passed to \code{hooke::compare_abundances()}
+unchanged, such as \code{test}, \code{contrast_se} or \code{support_by} (hooke >= 0.0.6).}
 }
 \value{
 A tibble of contrast results as returned by \code{compare_abundances()}.

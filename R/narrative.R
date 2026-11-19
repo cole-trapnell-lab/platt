@@ -383,7 +383,12 @@ summarize_cell_type_impact <- function(
   abundance_summary <- if (!is.na(abundance_code)) {
     abundance_code
   } else if (nrow(dact_row) > 0 && all(c("delta_q_value", "delta_log_abund") %in% colnames(dact_row))) {
-    if (dact_row$delta_q_value[1] < sig_p_val_thresh) {
+    # An empty q-value means the contrast was not tested (hooke's `support_by`
+    # guard, or a likelihood-ratio fit that failed). That is neither a change
+    # nor a null, and `if (NA < x)` is an error.
+    if (is.na(dact_row$delta_q_value[1])) {
+      "unknown (not tested)"
+    } else if (dact_row$delta_q_value[1] < sig_p_val_thresh) {
       if (dact_row$delta_log_abund[1] < 0) {
         "depleted"
       } else if (dact_row$delta_log_abund[1] > 0) {
