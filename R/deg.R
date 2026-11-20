@@ -2434,6 +2434,47 @@ state_contrast_measurable <- function(support, side_1, side_2, genes, min_replic
 }
 
 
+#' Count-gate inputs for state-graph contrasts, from a cell count set
+#'
+#' Builds the `state_support` list `compare_genes_in_cell_state()` and `classify_gene_patterns()` take,
+#' with the knockout gates' own quantities: cells detecting each gene per state (cells with a nonzero
+#' count, aggregated with `monocle3::aggregate_gene_expression(norm_method = "binary")`), embryos
+#' detecting it (pseudobulks with a nonzero value), cells per state and pseudobulks per state. Only the
+#' pseudobulks the fit used count: those in `pb_cds` with at least `min_cells_per_pseudobulk` cells
+#' (as `compute_glm()`), and only their cells.
+#'
+#' @param ccs the cell count set `pb_cds` was built from (`hooke:::pseudobulk_ccs_for_states(ccs)`).
+#' @param pb_cds its pseudobulk cell_data_set.
+#' @param genes gene ids to return (default: all rows of `pb_cds`).
+#' @param state_term pseudobulk column holding the state.
+#' @param min_cells_per_pseudobulk pseudobulks below this many cells are left out, as in the fit.
+#' @return list(detections, embryos, size, pseudobulks)
+#' @keywords internal
+state_support_from_ccs <- function(ccs, pb_cds, genes = rownames(pb_cds), state_term = "cell_group",
+                                   min_cells_per_pseudobulk = 10) {
+  cd <- as.data.frame(SummarizedExperiment::colData(pb_cds))
+  used <- cd$num_cells_in_group >= min_cells_per_pseudobulk
+  pb_ids <- rownames(cd)[used]
+  pb_state <- as.character(cd[[state_term]][used])
+  states <- sort(unique(pb_state))
+  ind <- Matrix::sparseMatrix(i = seq_along(pb_ids), j = match(pb_state, states), x = 1,
+                              dims = c(length(pb_ids), length(states)), dimnames = list(pb_ids, states))
+  embryos <- as.matrix((SingleCellExperiment::counts(pb_cds)[genes, pb_ids, drop = FALSE] > 0) %*% ind)
+  size <- stats::setNames(as.vector(Matrix::colSums(ind * cd$num_cells_in_group[used])), states)
+  pseudobulks <- stats::setNames(as.vector(Matrix::colSums(ind)), states)
+  # cells of the used pseudobulks only, grouped by state (hooke's pseudobulk id = "<group_id>_cell_group")
+  cga <- ccs@metadata[["cell_group_assignments"]]
+  cell_pb <- paste(cga$group_id, "cell_group", sep = "_")
+  keep <- cell_pb %in% pb_ids & rownames(cga) %in% colnames(ccs@cds)
+  cell_df <- data.frame(cell = rownames(cga)[keep], state = pb_state[match(cell_pb[keep], pb_ids)])
+  det <- monocle3::aggregate_gene_expression(ccs@cds[genes, cell_df$cell], cell_group_df = cell_df,
+                                             norm_method = "binary", scale_agg_values = FALSE, cell_agg_fun = "sum")
+  detections <- matrix(0, length(genes), length(states), dimnames = list(genes, states))
+  detections[rownames(det), colnames(det)] <- as.matrix(det)
+  list(detections = detections, embryos = embryos, size = size, pseudobulks = pseudobulks)
+}
+
+
 #' The reverse of a contrast_helper result
 #'
 #' contrast_helper(b, a) is the mirror of contrast_helper(a, b): the thresholded effects and the

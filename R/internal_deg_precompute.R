@@ -131,6 +131,11 @@ combine_gene_models <- function(gene_model_list) {
 #' @param cv_threshold Coefficient of variation threshold for filtering.
 #' @param sig_thresh Significance threshold for class assignment.
 #' @param cores Number of cores for scoring.
+#' @param ccs Optional cell count set `pb_cds` was built from. When given, Platt's knockout count gates
+#'   are applied to every contrast (see `compare_genes_in_cell_state()`): cells detecting each gene, embryos,
+#'   cells and pseudobulks per state come from `state_support_from_ccs()`. NULL leaves the output unchanged.
+#' @param min_cells_per_pseudobulk Pseudobulks below this many cells are left out of the gate inputs, as
+#'   `compute_glm()` leaves them out of the fit (default 10, its default).
 #'
 #' @return A tibble of per-state gene class scores, nested by cell state.
 classify_gene_patterns <- function(state_graph,
@@ -142,9 +147,16 @@ classify_gene_patterns <- function(state_graph,
                                    abs_expr_thresh = 1e-3,
                                    cv_threshold = 100,
                                    sig_thresh = 0.05,
-                                   cores = 1) {
+                                   cores = 1,
+                                   ccs = NULL,
+                                   min_cells_per_pseudobulk = 10) {
   
   n <- dim(pb_cds)[2]
+  # Platt's knockout count gates for every contrast (see compare_genes_in_cell_state), when the cell
+  # count set is given; their inputs come from the pseudobulks the fit used
+  state_support <- if (is.null(ccs)) NULL else
+    state_support_from_ccs(ccs, pb_cds, genes = rownames(pb_coeffs$coefficients), state_term = state_term,
+                           min_cells_per_pseudobulk = min_cells_per_pseudobulk)
   if (length(states_to_assess) == 0) {
     states_to_assess <- unlist(igraph::V(state_graph)$name)
   } else {
@@ -165,7 +177,8 @@ classify_gene_patterns <- function(state_graph,
       cv_threshold = cv_threshold,
       n = n,
       sig_thresh = sig_thresh,
-      cores = cores
+      cores = cores,
+      state_support = state_support
     ))
 
   cell_states <- cell_states %>%

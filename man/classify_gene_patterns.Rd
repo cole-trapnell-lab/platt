@@ -14,7 +14,9 @@ classify_gene_patterns(
   abs_expr_thresh = 0.001,
   cv_threshold = 100,
   sig_thresh = 0.05,
-  cores = 1
+  cores = 1,
+  ccs = NULL,
+  min_cells_per_pseudobulk = 10
 )
 }
 \arguments{
@@ -37,6 +39,13 @@ classify_gene_patterns(
 \item{sig_thresh}{Significance threshold for class assignment.}
 
 \item{cores}{Number of cores for scoring.}
+
+\item{ccs}{Optional cell count set \code{pb_cds} was built from. When given, Platt's knockout count gates
+are applied to every contrast (see \code{compare_genes_in_cell_state()}): cells detecting each gene, embryos,
+cells and pseudobulks per state come from \code{state_support_from_ccs()}. NULL leaves the output unchanged.}
+
+\item{min_cells_per_pseudobulk}{Pseudobulks below this many cells are left out of the gate inputs, as
+\code{compute_glm()} leaves them out of the fit (default 10, its default).}
 }
 \value{
 A tibble of per-state gene class scores, nested by cell state.
