@@ -2233,9 +2233,44 @@ extract_dispersion_helper <- function(model, model_summary) {
   }
 }
 
+#' Does the installed speedglm take a dispersion in summary()?
+#'
+#' The lab fork (cole-trapnell-lab/speedglm) has `summary.speedglm(object, dispersion = NULL, ...)`.
+#' CRAN speedglm has `summary.speedglm(object, correlation = FALSE, ...)`: a dispersion passed to it
+#' is taken as `correlation` (or lost in `...`) and ignored without a warning.
+#' @noRd
+.speedglm_takes_dispersion <- function() {
+  f <- utils::getS3method("summary", "speedglm", optional = TRUE, envir = asNamespace("speedglm"))
+  !is.null(f) && "dispersion" %in% names(formals(f))
+}
+
+#' Recompute each model's summary with a chosen dispersion
+#'
+#' Standard errors in the summary scale with the square root of the dispersion. For speedglm models
+#' the dispersion is passed by name, and the function stops if the installed speedglm cannot take
+#' it (see `.speedglm_takes_dispersion()`), because the standard errors would then silently use
+#' each gene's raw dispersion instead. `dispersion_type = "estimated"` passes each model's own
+#' dispersion, which is what any speedglm uses by default, so it is not checked.
 #' @noRd
 update_summary <- function(model_tbl, dispersion_type = c("max", "fitted", "estimated"), min_dispersion = 1) {
   dispersion_type <- match.arg(dispersion_type)
+  is_speedglm <- vapply(model_tbl$model, inherits, logical(1), what = "speedglm")
+  if (dispersion_type != "estimated" && any(is_speedglm) && !.speedglm_takes_dispersion()) {
+    stop(
+      sprintf(
+        paste0(
+          "The installed speedglm (%s, in %s) has no `dispersion` argument in summary.speedglm(), so the ",
+          "%s dispersion would be ignored and standard errors would use each gene's raw dispersion. ",
+          "Install the lab fork: remotes::install_github(\"cole-trapnell-lab/speedglm\")."
+        ),
+        as.character(utils::packageVersion("speedglm")), dirname(find.package("speedglm")), dispersion_type
+      ),
+      call. = FALSE
+    )
+  }
+  summary_with_dispersion <- function(model, dispersion) {
+    if (inherits(model, "speedglm")) summary(model, dispersion = dispersion) else summary(model, dispersion)
+  }
   model_tbl <- model_tbl %>% mutate(
     disp_for_test = dplyr::case_when(
       dispersion_type == "estimated" ~ dispersion,
@@ -2243,7 +2278,7 @@ update_summary <- function(model_tbl, dispersion_type = c("max", "fitted", "esti
       dispersion_type == "max" ~ pmax(disp_fit, dispersion, min_dispersion),
       .default = dispersion
     ),
-    model_summary = purrr::map2(model, .y = disp_for_test, .f = summary)
+    model_summary = purrr::map2(model, .y = disp_for_test, .f = summary_with_dispersion)
   )
   return(model_tbl)
 }
