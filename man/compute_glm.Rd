@@ -15,7 +15,8 @@ compute_glm(
   min_cells_per_pseudobulk = 10,
   nuisance_model_formula_str = "0",
   abs_expr_thresh = 0.1,
-  cores = 1
+  cores = 1,
+  fit_method = c("closed_form", "monocle")
 )
 }
 \arguments{
@@ -40,6 +41,10 @@ compute_glm(
 \item{abs_expr_thresh}{Absolute expression threshold for shrinkage.}
 
 \item{cores}{Number of cores for model fitting.}
+
+\item{fit_method}{"closed_form" (default) computes the ~ 0 + cell_group fit directly when there is no
+nuisance term (identical to the monocle fit; see \code{closed_form_state_coefficients()}); "monocle" always
+calls \code{monocle3::fit_models()}. With a nuisance term the monocle fit is used either way.}
 }
 \value{
 A list-like object from \code{collect_coefficients_for_shrinkage()} that
