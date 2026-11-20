@@ -24,6 +24,7 @@ compare_gene_expression_within_node(
   write_dir = NULL,
   cores = 1,
   max_simultaneous_genes = NULL,
+  fit_method = c("closed_form", "monocle"),
   cv_threshold = NULL,
   return_perf = FALSE,
   alpha = 0.05,
@@ -69,7 +70,14 @@ compare_gene_expression_within_node(
 
 \item{cores}{Integer. Number of cores to use for parallel processing.}
 
-\item{max_simultaneous_genes}{Integer. Maximum number of genes to process simultaneously.}
+\item{max_simultaneous_genes}{Integer. Maximum number of genes to process simultaneously (monocle fit only).}
+
+\item{fit_method}{"closed_form" (default) or "monocle". With no nuisance term the model is
+\code{~ 0 + perturbation}, whose quasi-Poisson fit has a closed form (\code{closed_form_state_coefficients()}):
+one call over all of the cell group's genes, so the dispersion trend is fitted once over all of them.
+"monocle" fits each gene with \code{monocle3::fit_models()} in blocks of \code{max_simultaneous_genes}, with a
+trend per block. With a nuisance term (e.g. a time spline) there is no closed form and the monocle
+fit is used either way.}
 
 \item{return_perf}{Logical. Whether to return performance diagnostics alongside results.}
 }
