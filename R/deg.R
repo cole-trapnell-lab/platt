@@ -2404,6 +2404,55 @@ combine_log_states <- function(est, se) {
   list(effect = stats::setNames(effect, rownames(est)), se = stats::setNames(out_se, rownames(est)))
 }
 
+#' Is a contrast between two sets of states measurable for each gene?
+#'
+#' The knockout-contrast count gates (see `annotate_empirical_fdr_model`) applied to a contrast
+#' between two sides of a state graph, each side one state or several (summed, as
+#' `combine_log_states` totals them). Uses the same constants:
+#'   too_few_embryos  a side has fewer than `.EFDR_MIN_PB` pseudobulks;
+#'   not_replicated   fewer than `min_replicate_embryos` embryos detect the gene on either side;
+#'   too_few_cells    expected detections in the thinner side, min(size) x max(detection rate),
+#'                    are below `.EFDR_MIN_EXPECTED`: an absence there cannot be told from not sampling.
+#'
+#' @param support list with `detections` (genes x states: cells detecting the gene; for chromatin,
+#'   insertions), `embryos` (genes x states: embryos detecting it), `size` (named per-state cells,
+#'   or for chromatin depth in average-depth cells) and `pseudobulks` (named per-state embryo count).
+#' @param side_1,side_2 state names on each side.
+#' @param genes gene ids (rows of the support matrices).
+#' @param min_replicate_embryos as in `annotate_empirical_fdr_model`.
+#' @return logical vector over `genes`, TRUE = measurable.
+#' @keywords internal
+state_contrast_measurable <- function(support, side_1, side_2, genes, min_replicate_embryos = .EFDR_MIN_REP_EMB) {
+  side_sum <- function(m, s) Matrix::rowSums(m[genes, s, drop = FALSE])
+  size_1 <- sum(support$size[side_1]); size_2 <- sum(support$size[side_2])
+  rate <- pmax(side_sum(support$detections, side_1) / size_1, side_sum(support$detections, side_2) / size_2)
+  expected <- min(size_1, size_2) * rate
+  emb <- pmax(side_sum(support$embryos, side_1), side_sum(support$embryos, side_2))
+  enough_pb <- min(sum(support$pseudobulks[side_1]), sum(support$pseudobulks[side_2])) >= .EFDR_MIN_PB
+  out <- enough_pb & is.finite(expected) & expected >= .EFDR_MIN_EXPECTED & emb >= min_replicate_embryos
+  stats::setNames(out, genes)
+}
+
+
+#' The reverse of a contrast_helper result
+#'
+#' contrast_helper(b, a) is the mirror of contrast_helper(a, b): the thresholded effects and the
+#' standard errors are symmetric in the two sides and ashr's uniform prior is fitted with mode 0, so
+#' the reverse has negated raw and shrunken log fold changes and the same standard errors, p values
+#' and log mean expression (checked to 1e-7, the ashr optimizer's tolerance). Computing one direction
+#' and mirroring it halves the ashr fits in compare_genes_in_cell_state.
+#'
+#' @param res a contrast_helper result with column prefix `from`
+#' @param from,to the prefix of `res` and the prefix of the mirrored result
+#' @keywords internal
+mirror_contrast <- function(res, from, to) {
+  for (col in c("raw_lfc", "shrunken_lfc")) res[[paste(from, col, sep = "_")]] <- -res[[paste(from, col, sep = "_")]]
+  if ("effect_skew" %in% names(res)) res$effect_skew <- -res$effect_skew
+  if ("coefficient_mode" %in% names(res)) res$coefficient_mode <- -res$coefficient_mode
+  names(res) <- sub(paste0("^", from, "_"), paste0(to, "_"), names(res))
+  res
+}
+
 
 # state 1 - state 2
 # is state 1 higher
@@ -2514,12 +2563,15 @@ contrast_helper <- function(state_1,
     reliable_state_1_effects = abs(cv_state_1) < cv_threshold
     reliable_state_2_effects = abs(cv_state_2) < cv_threshold
     
-    # what is the smallest nonzero expression value in each condition
-    min_state_1_effect = min(state_1_effects[reliable_state_1_effects])
-    min_state_1_effect_se = mean(state_1_effects_se[which(state_1_effects == min_state_1_effect)])
-    
-    min_state_2_effect = min(state_2_effects[reliable_state_2_effects])
-    min_state_2_effect_se = mean(state_2_effects_se[which(state_2_effects == min_state_2_effect)])
+    # what is the smallest nonzero expression value in each condition; a side with no reliable
+    # effect at all (e.g. a very thin state) has nothing to threshold to, so it is left as is
+    # (min() over an empty set would be Inf and turn every effect into NaN)
+    min_reliable <- function(effects, reliable) {
+      r <- which(reliable)
+      if (length(r)) min(effects[r]) else -Inf
+    }
+    min_state_1_effect = min_reliable(state_1_effects, reliable_state_1_effects)
+    min_state_2_effect = min_reliable(state_2_effects, reliable_state_2_effects)
     
     # set any gene that has a lower value to that determined threshold value
     state_1_effects_thresholded = pmax(state_1_effects, min_state_1_effect)
@@ -2620,6 +2672,11 @@ contrast_helper <- function(state_1,
 #' @param cores An integer representing the number of cores to use for parallel processing. Default is 1.
 #' @param expected_effect_mode_interval A numeric vector representing the expected effect mode interval. Default is c(-10, 10).
 #' @param cv_threshold A numeric value representing the coefficient of variation threshold. Default is 10.
+#' @param state_support Optional list of per-state counts for the knockout count gates (see
+#'   `state_contrast_measurable()`): `detections` and `embryos` (genes x states), `size` and `pseudobulks`
+#'   (named per state). When given, a gene whose parent contrast is unmeasurable is interpreted as
+#'   "Not measurable" (unless it is expressed neither here nor in the parents: "Absent"), and unmeasurable
+#'   sibling and child contrasts are not counted as calls. NULL (default) leaves the output unchanged.
 #'
 #' @return A tibble containing gene expression comparisons and interpretations.
 #'
@@ -2660,7 +2717,8 @@ compare_genes_in_cell_state <- function(cell_state,
                                         sig_thresh = 0.05,
                                         cores = 1,
                                         expected_effect_mode_interval = c(-10, 10),
-                                        cv_threshold = NULL) {
+                                        cv_threshold = NULL,
+                                        state_support = NULL) {
   parents <- get_parents(state_graph, cell_state) # igraph::neighbors(state_graph, cell_state, mode="in")
   parents <- intersect(parents, colnames(estimate_matrix))
 
@@ -2724,15 +2782,7 @@ compare_genes_in_cell_state <- function(cell_state,
     )
 
 
-    parents_to_cell_state <- contrast_helper(parents, cell_state,
-      PEM = estimate_matrix[genes_to_test, ],
-      PSEM = stderr_matrix[genes_to_test, ],
-      prefix = "parents_to_cell_state",
-      ash.control = list(mode = expected_effect_mode_interval),
-      cv_threshold = cv_threshold, 
-      n = n, 
-      abs_expr_thresh = abs_expr_thresh
-    )
+    parents_to_cell_state <- mirror_contrast(cell_state_to_parents, "cell_state_to_parents", "parents_to_cell_state")
 
     expr_df <- left_join(expr_df, cell_state_to_parents, by = c("gene_id" = "id"))
     expr_df <- left_join(
@@ -2772,8 +2822,8 @@ compare_genes_in_cell_state <- function(cell_state,
     expressed_in_siblings_mat <- expressed_in_siblings_mat < sig_thresh
     expr_df$expressed_in_siblings <- Matrix::rowSums(expressed_in_siblings_mat) > 0
 
-    higher_than_siblings_mat <- lapply(siblings, function(sibling) {
-      cell_state_to_sibling <- contrast_helper(cell_state, sibling,
+    siblings_contrasts <- lapply(siblings, function(sibling) {
+      contrast_helper(cell_state, sibling,
         PEM = estimate_matrix[genes_to_test, ],
         PSEM = stderr_matrix[genes_to_test, ],
         prefix = "cell_state_to_sibling",
@@ -2782,7 +2832,8 @@ compare_genes_in_cell_state <- function(cell_state,
         n = n, 
         abs_expr_thresh = abs_expr_thresh
       )
-
+    })
+    higher_than_siblings_mat <- lapply(siblings_contrasts, function(cell_state_to_sibling) {
       p.adjust(cell_state_to_sibling$cell_state_to_sibling_p_value) < sig_thresh &
         cell_state_to_sibling$cell_state_to_sibling_shrunken_lfc > log_fc_thresh
     })
@@ -2790,17 +2841,9 @@ compare_genes_in_cell_state <- function(cell_state,
     names(higher_than_siblings_mat) <- siblings
     row.names(higher_than_siblings_mat) <- genes_to_test
 
-    lower_than_siblings_mat <- lapply(siblings, function(sibling) {
-      sibling_to_cell_state <- contrast_helper(sibling, cell_state,
-        PEM = estimate_matrix[genes_to_test, ],
-        PSEM = stderr_matrix[genes_to_test, ],
-        prefix = "sibling_to_cell_state",
-        ash.control = list(mode = expected_effect_mode_interval),
-        cv_threshold = cv_threshold, 
-        n = n, 
-        abs_expr_thresh = abs_expr_thresh
-      )
-
+    # the sibling-to-cell-state direction is the mirror of the contrast above (see mirror_contrast)
+    lower_than_siblings_mat <- lapply(siblings_contrasts, function(x) {
+      sibling_to_cell_state <- mirror_contrast(x, "cell_state_to_sibling", "sibling_to_cell_state")
       p.adjust(sibling_to_cell_state$sibling_to_cell_state_p_value) < sig_thresh &
         sibling_to_cell_state$sibling_to_cell_state_shrunken_lfc > log_fc_thresh
     })
@@ -2849,8 +2892,8 @@ compare_genes_in_cell_state <- function(cell_state,
     expressed_in_children_mat <- expressed_in_children_mat < sig_thresh
     expr_df$expressed_in_children <- Matrix::rowSums(expressed_in_children_mat) > 0
 
-    higher_than_children_mat <- lapply(children, function(child) {
-      cell_state_to_child <- contrast_helper(cell_state, child,
+    children_contrasts <- lapply(children, function(child) {
+      contrast_helper(cell_state, child,
         PEM = estimate_matrix[genes_to_test, ],
         PSEM = stderr_matrix[genes_to_test, ],
         prefix = "cell_state_to_child",
@@ -2859,7 +2902,8 @@ compare_genes_in_cell_state <- function(cell_state,
         n = n, 
         abs_expr_thresh = abs_expr_thresh
       )
-
+    })
+    higher_than_children_mat <- lapply(children_contrasts, function(cell_state_to_child) {
       p.adjust(cell_state_to_child$cell_state_to_child_p_value) < sig_thresh &
         cell_state_to_child$cell_state_to_child_shrunken_lfc > log_fc_thresh
     })
@@ -2867,17 +2911,9 @@ compare_genes_in_cell_state <- function(cell_state,
     names(higher_than_children_mat) <- children
     row.names(higher_than_children_mat) <- genes_to_test
 
-    lower_than_children_mat <- lapply(children, function(child) {
-      child_to_cell_state <- contrast_helper(child, cell_state,
-        PEM = estimate_matrix[genes_to_test, ],
-        PSEM = stderr_matrix[genes_to_test, ],
-        prefix = "child_to_cell_state",
-        ash.control = list(mode = expected_effect_mode_interval),
-        cv_threshold = cv_threshold, 
-        n = n, 
-        abs_expr_thresh = abs_expr_thresh
-      )
-
+    # the child-to-cell-state direction is the mirror of the contrast above (see mirror_contrast)
+    lower_than_children_mat <- lapply(children_contrasts, function(x) {
+      child_to_cell_state <- mirror_contrast(x, "cell_state_to_child", "child_to_cell_state")
       p.adjust(child_to_cell_state$child_to_cell_state_p_value) < sig_thresh &
         child_to_cell_state$child_to_cell_state_shrunken_lfc > log_fc_thresh
     })
@@ -2914,6 +2950,33 @@ compare_genes_in_cell_state <- function(cell_state,
     expr_df$lower_than_all_children <- NA
     expr_df$higher_than_children <- NA
     expr_df$lower_than_children <- NA
+  }
+
+  # Count gates (state_support given): a contrast the knockout gates call unmeasurable for a gene
+  # carries no information. The parent contrast is recorded in parents_measurable and, when it is
+  # unmeasurable, the interpretation becomes "Not measurable" (below). An unmeasurable sibling or
+  # child contrast counts as not called, and "higher/lower than all" runs over the measurable ones
+  # only (FALSE when none is). Expression in siblings/children is not a contrast and is unchanged,
+  # so the interpretation tree takes the same branch it would without gates.
+  expr_df$parents_measurable <- NA
+  if (!is.null(state_support)) {
+    g <- expr_df$gene_id
+    if (length(parents) > 0) {
+      expr_df$parents_measurable <- unname(state_contrast_measurable(state_support, cell_state, parents, g))
+    }
+    regate <- function(prefix, others, higher_mat, lower_mat) {
+      ok <- matrix(vapply(others, function(o) state_contrast_measurable(state_support, cell_state, o, g), logical(length(g))),
+                   nrow = length(g))
+      n_ok <- rowSums(ok)
+      hi <- rowSums(as.matrix(higher_mat) & ok); lo <- rowSums(as.matrix(lower_mat) & ok)
+      expr_df[[paste0("higher_than_", prefix)]] <<- hi > 0
+      expr_df[[paste0("lower_than_", prefix)]] <<- lo > 0
+      expr_df[[paste0("higher_than_all_", prefix)]] <<- n_ok > 0 & hi == n_ok
+      expr_df[[paste0("lower_than_all_", prefix)]] <<- n_ok > 0 & lo == n_ok
+      expr_df[[paste0("n_", prefix, "_measurable")]] <<- n_ok
+    }
+    if (length(siblings) > 0) regate("siblings", siblings, higher_than_siblings_mat, lower_than_siblings_mat)
+    if (length(children) > 0) regate("children", children, higher_than_children_mat, lower_than_children_mat)
   }
 
   expr_df <- expr_df %>% tidyr::nest(data = !gene_id)
@@ -3146,6 +3209,13 @@ compare_genes_in_cell_state <- function(cell_state,
     interpret_expression_pattern, NA_character_
   ), .x = data))
   expr_df <- expr_df %>% tidyr::unnest(interpretation)
+  if (!is.null(state_support) && length(parents) > 0) {
+    # The parent contrast decides every label except "Absent" (expressed neither here nor in the
+    # parents); when it is unmeasurable, no such label can be claimed.
+    d <- tidyr::unnest(dplyr::select(expr_df, gene_id, data), data)
+    nm <- d$parents_measurable %in% FALSE & (d$expr_self %in% TRUE | d$expressed_in_parents %in% TRUE)
+    expr_df$interpretation[match(d$gene_id[nm], expr_df$gene_id)] <- "Not measurable"
+  }
   message("      completed ", cell_state)
   return(expr_df)
 }

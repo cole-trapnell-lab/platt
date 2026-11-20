@@ -16,7 +16,8 @@ compare_genes_in_cell_state(
   sig_thresh = 0.05,
   cores = 1,
   expected_effect_mode_interval = c(-10, 10),
-  cv_threshold = NULL
+  cv_threshold = NULL,
+  state_support = NULL
 )
 }
 \arguments{
@@ -41,6 +42,12 @@ compare_genes_in_cell_state(
 \item{expected_effect_mode_interval}{A numeric vector representing the expected effect mode interval. Default is c(-10, 10).}
 
 \item{cv_threshold}{A numeric value representing the coefficient of variation threshold. Default is 10.}
+
+\item{state_support}{Optional list of per-state counts for the knockout count gates (see
+\code{state_contrast_measurable()}): \code{detections} and \code{embryos} (genes x states), \code{size} and \code{pseudobulks}
+(named per state). When given, a gene whose parent contrast is unmeasurable is interpreted as
+"Not measurable" (unless it is expressed neither here nor in the parents: "Absent"), and unmeasurable
+sibling and child contrasts are not counted as calls. NULL (default) leaves the output unchanged.}
 }
 \value{
 A tibble containing gene expression comparisons and interpretations.
