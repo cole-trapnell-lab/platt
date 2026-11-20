@@ -99,3 +99,17 @@ test_that("with recentring, a gene unchanged from its parents reads zero for any
     expect_equal(median(raw$raw_lfc[-seq_len(n_up)]), -log(k), tolerance = 0.05)
   }
 })
+
+test_that("a state with no counts (negligible weight, infinite SE) adds nothing to the total's SE", {
+  # the closed-form fit gives a state with no counts log(abs_expr_thresh) - 20 and an infinite SE
+  sentinel <- log(1e-3) - 20
+  est <- rbind(g1 = c(log(0.05), sentinel), g2 = c(log(0.05), log(0.02)), g3 = c(sentinel, sentinel))
+  se <- rbind(g1 = c(0.2, Inf), g2 = c(0.2, Inf), g3 = c(Inf, Inf))
+  out <- platt:::combine_log_states(est, se)
+  expect_equal(unname(out$se["g1"]), 0.2, tolerance = 1e-8)       # only the counted state contributes
+  expect_equal(unname(out$effect["g1"]), log(0.05), tolerance = 1e-6)
+  expect_true(is.infinite(out$se["g2"]))                            # unknown level with real weight: still infinite
+  expect_true(is.infinite(out$se["g3"]))                            # no counts anywhere: nothing is known
+  # the tolerance is an argument; 0 gives the old rule (any non-zero weight propagates)
+  expect_true(is.infinite(platt:::combine_log_states(est, se, negligible_weight = 0)$se["g1"]))
+})

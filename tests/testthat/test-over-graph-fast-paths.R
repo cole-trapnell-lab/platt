@@ -65,3 +65,31 @@ test_that("closed_form_state_coefficients matches the monocle fit", {
   expect_equal(unname(cf$est_dispersion[rownames(ref$coefficients)]), unname(ref$est_dispersion), tolerance = 1e-4)   # speedglm stops at acc = 0.001
   expect_equal(cf$stdev.unscaled[rownames(ref$coefficients), ][ok], ref$stdev.unscaled[ok], tolerance = 1e-2)
 })
+
+test_that("closed-form fit: a parent with no counts does not remove the parents' standard error", {
+  skip_if_not_installed("monocle3")
+  set.seed(1)
+  ng <- 120; ns <- 90; grp <- factor(rep(c("s", "p1", "p2"), each = 30)); sf <- runif(ns, 5, 50)
+  # rates well below 1 per unit size: contrast_helper divides by the log estimate to get a CV, so a
+  # rate near 1 (log near 0) lands on the high-CV branch whatever its standard error
+  mu <- outer(exp(runif(ng, -5, -1.5)), sf) * exp(rnorm(ng * ns, 0, 0.5))
+  Y <- matrix(rpois(ng * ns, mu), ng, ns, dimnames = list(paste0("g", 1:ng), paste0("p", 1:ns)))
+  zero <- paste0("g", 1:30)
+  Y[zero, grp == "p2"] <- 0                                              # no counts in one of the two parents
+  Y <- Y[rowSums(Y[, grp == "s"]) > 0 & rowSums(Y[, grp == "p1"]) > 0, ]
+  zero <- intersect(zero, rownames(Y))
+  cds <- suppressWarnings(monocle3::new_cell_data_set(methods::as(Y, "CsparseMatrix"),
+    cell_metadata = data.frame(cell_group = grp, row.names = colnames(Y)),
+    gene_metadata = data.frame(id = rownames(Y), gene_short_name = rownames(Y), row.names = rownames(Y))))
+  SummarizedExperiment::colData(cds)$Size_Factor <- sf
+  cf <- closed_form_state_coefficients(cds, "cell_group", 1e-3)
+  expect_true(all(is.infinite(cf$stdev.unscaled[zero, "p2"])))
+  parents <- combine_log_states(cf$coefficients[, c("p1", "p2")], cf$stdev.unscaled[, c("p1", "p2")])
+  # the parents' total and its standard error are those of the parent that has counts
+  expect_equal(unname(parents$se[zero]), unname(cf$stdev.unscaled[zero, "p1"]), tolerance = 1e-8)
+  expect_equal(unname(parents$effect[zero]), unname(cf$coefficients[zero, "p1"]), tolerance = 1e-6)
+  # so the contrast keeps both sides' standard errors instead of falling back to the state's own
+  res <- contrast_helper("s", c("p1", "p2"), cf$coefficients, cf$stdev.unscaled, n = ns, cv_threshold = 100)
+  both <- sqrt(cf$stdev.unscaled[zero, "s"]^2 + cf$stdev.unscaled[zero, "p1"]^2)
+  expect_equal(unname(res$raw_lfc_se[match(zero, res$id)]), unname(both), tolerance = 1e-8)
+})

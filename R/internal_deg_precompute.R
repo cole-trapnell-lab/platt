@@ -217,7 +217,9 @@ classify_gene_patterns <- function(state_graph,
 #'   std error(g, c)    = sqrt(disp_fit(g) / sum of counts in c)
 #' A group with no counts for a gene (where speedglm diverges to an arbitrarily low coefficient with
 #' a huge standard error) gets `log(abs_expr_thresh) - 20` and an infinite standard error; both put it
-#' on contrast_helper's high-CV branch, as the fitted values do.
+#' on contrast_helper's high-CV branch, as the fitted values do. When several states are combined
+#' (a state's parents), such a group adds nothing to the total or its standard error (see
+#' `combine_log_states()`), as the fitted values' negligible weight does.
 #'
 #' @param cds pseudobulk cell_data_set with `Size_Factor` and the grouping column set.
 #' @param term grouping column (the model's only factor).

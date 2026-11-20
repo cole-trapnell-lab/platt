@@ -2365,7 +2365,11 @@ fit_genotype_deg <- function(ccm,
 #' For each row, the total of the states' levels on the natural scale, returned on the log scale:
 #' log(sum_i exp(e_i)), computed stably. The standard error is by the delta method:
 #' se^2 = sum_i w_i^2 se_i^2 with w_i = exp(e_i) / sum_j exp(e_j). A single state is returned unchanged.
-#' A state with an infinite standard error and non-zero weight makes the total's standard error infinite.
+#' A state with an infinite standard error makes the total's standard error infinite when it carries
+#' weight: its level is unknown, so the total is too. A state with an infinite standard error and a
+#' weight below `negligible_weight` adds nothing instead. That is a state with no counts for the gene
+#' (the closed-form fit puts it about e^-20 below the expression threshold, with an infinite standard
+#' error): it is known to be near zero, and whatever its exact level it cannot move the total.
 #' Where the total is not finite (every state at -Inf, or a state at +Inf), the weight is shared equally
 #' among the states at the row maximum, so the standard error is still defined.
 #'
@@ -2374,9 +2378,11 @@ fit_genotype_deg <- function(ccm,
 #'
 #' @param est matrix of log-scale estimates (rows = genes, columns = states)
 #' @param se matrix of their standard errors, same shape
+#' @param negligible_weight a state whose share of the total is below this, and whose standard error
+#'   is infinite, adds nothing to the total's standard error (default 1e-6, one part per million)
 #' @return list(effect, se), named numeric vectors
 #' @noRd
-combine_log_states <- function(est, se) {
+combine_log_states <- function(est, se, negligible_weight = 1e-6) {
   est <- as.matrix(est)
   se <- as.matrix(se)
   if (!identical(dim(est), dim(se))) {
@@ -2399,7 +2405,8 @@ combine_log_states <- function(est, se) {
     w[no_total, ] <- at_max / rowSums(at_max)
   }
   v <- w^2 * se^2
-  v[which(w == 0)] <- 0
+  # zero weight, or an infinite standard error on a negligible share of the total: no contribution
+  v[which(w == 0 | (is.infinite(se) & w < negligible_weight))] <- 0
   out_se <- sqrt(rowSums(v))
   list(effect = stats::setNames(effect, rownames(est)), se = stats::setNames(out_se, rownames(est)))
 }
