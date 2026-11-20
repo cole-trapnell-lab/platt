@@ -1249,6 +1249,11 @@ collect_coefficients_for_shrinkage <- function(cds, model_tbl, abs_expr_thresh, 
 #' @param cores Number of cores to use for parallel processing. Default is 1.
 #' @param write_dir Directory to write output files. Default is NULL.
 #' @param max_simultaneous_genes Maximum number of genes to analyze simultaneously. Default is NULL.
+#'   Only the monocle fit uses it (see `fit_method`).
+#' @param fit_method "closed_form" (default) fits `~ 0 + perturbation` directly when there is no nuisance
+#'   term, over all of a cell group's genes at once (see `closed_form_state_coefficients()`); "monocle"
+#'   always calls `monocle3::fit_models()` in blocks of `max_simultaneous_genes`. With a nuisance term the
+#'   monocle fit is used either way.
 #' @param filter_mode Gene filtering strategy ("global" uses aggregate detection, "by_background_count" uses per-cell-type background rates).
 #' @param perf_summary_path Optional path to a TSV where runtime and filtering diagnostics will be appended.
 #' @param profile Whether to enable Rprof profiling for the DEG run.
@@ -1291,6 +1296,7 @@ compare_genes_within_state_graph <- function(ccs,
                                              perf_summary_path = NULL,
                                              profile = FALSE,
                                              profile_out = NULL,
+                                             fit_method = c("closed_form", "monocle"),
                                              ...) {
   # to do make sure that ccs and state graph match
   # check if all nodes in the state graph exist in the cds
@@ -1299,6 +1305,7 @@ compare_genes_within_state_graph <- function(ccs,
   #
   # }
   filter_mode <- .match_filter_mode(filter_mode)
+  fit_method <- match.arg(fit_method)
   perf_enabled <- is.null(perf_summary_path) == FALSE
   if (perf_enabled) {
     dir.create(dirname(perf_summary_path), recursive = TRUE, showWarnings = FALSE)
@@ -1586,6 +1593,7 @@ compare_genes_within_state_graph <- function(ccs,
               ambient_stderr_matrix = ambient_coeffs$stdev.unscaled,
               cores = cores,
               max_simultaneous_genes = max_simultaneous_genes,
+              fit_method = fit_method,
               nuisance_model_formula_str = nuisance_model_formula_str,
               min_cells_per_pseudobulk = min_cells_per_pseudobulk,
               write_dir = write_dir,
@@ -1701,7 +1709,13 @@ compare_genes_within_state_graph <- function(ccs,
 #' @param expected_effect_mode_interval Numeric vector. Interval for expected effect mode.
 #' @param write_dir Character. Directory to write output files.
 #' @param cores Integer. Number of cores to use for parallel processing.
-#' @param max_simultaneous_genes Integer. Maximum number of genes to process simultaneously.
+#' @param max_simultaneous_genes Integer. Maximum number of genes to process simultaneously (monocle fit only).
+#' @param fit_method "closed_form" (default) or "monocle". With no nuisance term the model is
+#'   `~ 0 + perturbation`, whose quasi-Poisson fit has a closed form (`closed_form_state_coefficients()`):
+#'   one call over all of the cell group's genes, so the dispersion trend is fitted once over all of them.
+#'   "monocle" fits each gene with `monocle3::fit_models()` in blocks of `max_simultaneous_genes`, with a
+#'   trend per block. With a nuisance term (e.g. a time spline) there is no closed form and the monocle
+#'   fit is used either way.
 #' @param return_perf Logical. Whether to return performance diagnostics alongside results.
 #'
 #' @return A data frame with perturbation effects, or NULL if write_dir is specified.
@@ -1745,6 +1759,7 @@ compare_gene_expression_within_node <- function(cell_group,
                                                 write_dir = NULL,
                                                 cores = 1,
                                                 max_simultaneous_genes = NULL,
+                                                fit_method = c("closed_form", "monocle"),
                                                 cv_threshold = NULL,
                                                 return_perf = FALSE,
                                                 alpha = 0.05,
@@ -1753,6 +1768,7 @@ compare_gene_expression_within_node <- function(cell_group,
                                                 background_quantile_p = NA_real_,
                                                 background_count_floor = NA_real_,
                                                 detection_min_samples = 1) {
+  fit_method <- match.arg(fit_method)
   # now fit models per cell group
   elapsed_sec <- function(start_time) as.numeric((proc.time() - start_time)[3])
   cg_start <- proc.time()
@@ -1943,98 +1959,119 @@ compare_gene_expression_within_node <- function(cell_group,
     full_model_str <- paste0(full_model_str, " + ", nuisance_model_formula_str)
   }
 
-  if (is.null(max_simultaneous_genes)) {
-    max_simultaneous_genes <- nrow(cg_pb_cds)
-  }
-  message(paste0("\tregressing with formula ", full_model_str))
-  message(paste0("\tUsing max_simultaneous_genes = ", max_simultaneous_genes))
-
-  # fit_model_blocks = ceiling(rcg_pb_cds) / max_simultaneous_genes)
-  # print (ceiling(seq_along(row.names(cg_pb_cds))/max_simultaneous_genes))
-
-  gene_blocks <- split(row.names(cg_pb_cds), ceiling(seq_along(row.names(cg_pb_cds)) / max_simultaneous_genes))
-  # print (head(gene_blocks))
-  print("levels for contrast:")
-  print(levels(colData(cg_pb_cds)$perturbation))
-
   model_timer <- proc.time()
   n_models_total <- 0
   n_models_non_fail <- 0
-  model_statuses <- list()
-  coeffs_for_blocks <- lapply(gene_blocks, function(gb) {
-    gb <- unlist(gb)
-    # print (gb)
-    gb_cds <- cg_pb_cds[gb, ]
-    # print (gb_cds)
-    pb_group_models <- fit_models(gb_cds,
-      model_formula_str = full_model_str,
-      cores = cores
-    ) %>% dplyr::select(gene_short_name, id, model, model_summary, status)
+  message(paste0("\tregressing with formula ", full_model_str))
+  if (fit_method == "closed_form" && nuisance_model_formula_str == "0") {
+    # ~ 0 + perturbation alone: the closed form of the same quasi-Poisson fit, over all genes at once
+    # (see closed_form_state_coefficients). Levels with no pseudobulks here get no column, as in
+    # fit_models, which drops their aliased coefficient.
+    message("\tclosed-form fit over all ", nrow(cg_pb_cds), " genes")
+    cf <- closed_form_state_coefficients(cg_pb_cds, term = "perturbation", abs_expr_thresh = abs_expr_thresh)
+    gene_ids <- rownames(cf$coefficients)
+    pb_coeffs <- list(
+      coefficients = cf$coefficients,
+      stdev.unscaled = cf$stdev.unscaled,
+      sigma = stats::setNames(cf$sigma, gene_ids),
+      df.residual = stats::setNames(cf$df.residual, gene_ids),
+      trend = stats::setNames(cf$trend, gene_ids),
+      est_dispersion = stats::setNames(cf$est_dispersion, gene_ids),
+      disp_fit = stats::setNames(cf$disp_fit, gene_ids)
+    )
+    rm(cf)
+    n_models_total <- nrow(cg_pb_cds)
+    n_models_non_fail <- nrow(cg_pb_cds)
+  } else {
+    if (is.null(max_simultaneous_genes)) {
+      max_simultaneous_genes <- nrow(cg_pb_cds)
+    }
+    message(paste0("\tUsing max_simultaneous_genes = ", max_simultaneous_genes))
 
-    n_models_total <<- n_models_total + nrow(pb_group_models)
-    n_models_non_fail <<- n_models_non_fail + sum(pb_group_models$status != "FAIL", na.rm = TRUE)
-    model_statuses[[length(model_statuses) + 1]] <<- pb_group_models$status
+    # fit_model_blocks = ceiling(rcg_pb_cds) / max_simultaneous_genes)
+    # print (ceiling(seq_along(row.names(cg_pb_cds))/max_simultaneous_genes))
+
+    gene_blocks <- split(row.names(cg_pb_cds), ceiling(seq_along(row.names(cg_pb_cds)) / max_simultaneous_genes))
+    # print (head(gene_blocks))
+    print("levels for contrast:")
+    print(levels(colData(cg_pb_cds)$perturbation))
+
+    model_statuses <- list()
+    coeffs_for_blocks <- lapply(gene_blocks, function(gb) {
+      gb <- unlist(gb)
+      # print (gb)
+      gb_cds <- cg_pb_cds[gb, ]
+      # print (gb_cds)
+      pb_group_models <- fit_models(gb_cds,
+        model_formula_str = full_model_str,
+        cores = cores
+      ) %>% dplyr::select(gene_short_name, id, model, model_summary, status)
+
+      n_models_total <<- n_models_total + nrow(pb_group_models)
+      n_models_non_fail <<- n_models_non_fail + sum(pb_group_models$status != "FAIL", na.rm = TRUE)
+      model_statuses[[length(model_statuses) + 1]] <<- pb_group_models$status
     
-    # pb_coeffs = collect_coefficients_for_limma(cg_pb_cds, pb_group_models, abs_expr_thresh) #coefficient_table(pb_group_models) %>%
+      # pb_coeffs = collect_coefficients_for_limma(cg_pb_cds, pb_group_models, abs_expr_thresh) #coefficient_table(pb_group_models) %>%
 
-    message("\tcollecting coefficients")
+      message("\tcollecting coefficients")
 
-    pb_coeffs <- collect_coefficients_for_shrinkage(gb_cds, pb_group_models, abs_expr_thresh, term_to_keep = "perturbation") # coefficient_table(pb_group_models) %>%
+      pb_coeffs <- collect_coefficients_for_shrinkage(gb_cds, pb_group_models, abs_expr_thresh, term_to_keep = "perturbation") # coefficient_table(pb_group_models) %>%
 
-    # Ensure gene ids are preserved as rownames for downstream joins/contrasts
-    if (length(gb) == nrow(pb_coeffs$coefficients)) {
-      rownames(pb_coeffs$coefficients) <- gb
-      rownames(pb_coeffs$stdev.unscaled) <- gb
-      names(pb_coeffs$sigma) <- gb
-      names(pb_coeffs$df.residual) <- gb
-      names(pb_coeffs$trend) <- gb
-      names(pb_coeffs$est_dispersion) <- gb
-      names(pb_coeffs$disp_fit) <- gb
+      # Ensure gene ids are preserved as rownames for downstream joins/contrasts
+      if (length(gb) == nrow(pb_coeffs$coefficients)) {
+        rownames(pb_coeffs$coefficients) <- gb
+        rownames(pb_coeffs$stdev.unscaled) <- gb
+        names(pb_coeffs$sigma) <- gb
+        names(pb_coeffs$df.residual) <- gb
+        names(pb_coeffs$trend) <- gb
+        names(pb_coeffs$est_dispersion) <- gb
+        names(pb_coeffs$disp_fit) <- gb
+      }
+
+      rm(pb_group_models) # DO NOT REMOVE. This is important for keeping the memory footprint of this analysis light.
+      gc()
+
+      return(pb_coeffs)
+    })
+
+    if (length(model_statuses) > 0) {
+      status_vec <- unlist(model_statuses, use.names = FALSE)
+      status_tab <- table(status_vec, useNA = "ifany")
+      msg <- paste(paste(names(status_tab), status_tab, sep = "="), collapse = "; ")
+      message(sprintf("\tmodel status counts for %s: %s", cell_group, msg))
     }
 
-    rm(pb_group_models) # DO NOT REMOVE. This is important for keeping the memory footprint of this analysis light.
-    gc()
+    pb_coeffs <- list()
+    pb_coeffs$coefficients <- do.call(rbind, lapply(coeffs_for_blocks, function(b) {
+      b$coefficients
+    }))
+    pb_coeffs$stdev.unscaled <- do.call(rbind, lapply(coeffs_for_blocks, function(b) {
+      b$stdev.unscaled
+    }))
+    # pb_coeffs$sigma = do.call(rbind, lapply(coeffs_for_blocks, function(b){b$sigma}))
+    pb_coeffs$sigma <- do.call(c, lapply(coeffs_for_blocks, function(b) {
+      b$sigma
+    }))
+    pb_coeffs$df.residual <- do.call(c, lapply(coeffs_for_blocks, function(b) {
+      b$df.residual
+    }))
+    pb_coeffs$trend <- do.call(c, lapply(coeffs_for_blocks, function(b) {
+      b$trend
+    }))
+    pb_coeffs$est_dispersion <- do.call(c, lapply(coeffs_for_blocks, function(b) {
+      b$est_dispersion
+    }))
+    pb_coeffs$disp_fit <- do.call(c, lapply(coeffs_for_blocks, function(b) {
+      b$disp_fit
+    }))
 
-    return(pb_coeffs)
-  })
-
-  if (length(model_statuses) > 0) {
-    status_vec <- unlist(model_statuses, use.names = FALSE)
-    status_tab <- table(status_vec, useNA = "ifany")
-    msg <- paste(paste(names(status_tab), status_tab, sep = "="), collapse = "; ")
-    message(sprintf("\tmodel status counts for %s: %s", cell_group, msg))
-  }
-
-  pb_coeffs <- list()
-  pb_coeffs$coefficients <- do.call(rbind, lapply(coeffs_for_blocks, function(b) {
-    b$coefficients
-  }))
-  pb_coeffs$stdev.unscaled <- do.call(rbind, lapply(coeffs_for_blocks, function(b) {
-    b$stdev.unscaled
-  }))
-  # pb_coeffs$sigma = do.call(rbind, lapply(coeffs_for_blocks, function(b){b$sigma}))
-  pb_coeffs$sigma <- do.call(c, lapply(coeffs_for_blocks, function(b) {
-    b$sigma
-  }))
-  pb_coeffs$df.residual <- do.call(c, lapply(coeffs_for_blocks, function(b) {
-    b$df.residual
-  }))
-  pb_coeffs$trend <- do.call(c, lapply(coeffs_for_blocks, function(b) {
-    b$trend
-  }))
-  pb_coeffs$est_dispersion <- do.call(c, lapply(coeffs_for_blocks, function(b) {
-    b$est_dispersion
-  }))
-  pb_coeffs$disp_fit <- do.call(c, lapply(coeffs_for_blocks, function(b) {
-    b$disp_fit
-  }))
-
-  # Ensure rownames are present for downstream contrasts
-  if (is.null(rownames(pb_coeffs$coefficients)) || any(is.na(rownames(pb_coeffs$coefficients)))) {
-    rownames(pb_coeffs$coefficients) <- rownames(cg_pb_cds)
-  }
-  if (is.null(rownames(pb_coeffs$stdev.unscaled)) || any(is.na(rownames(pb_coeffs$stdev.unscaled)))) {
-    rownames(pb_coeffs$stdev.unscaled) <- rownames(cg_pb_cds)
+    # Ensure rownames are present for downstream contrasts
+    if (is.null(rownames(pb_coeffs$coefficients)) || any(is.na(rownames(pb_coeffs$coefficients)))) {
+      rownames(pb_coeffs$coefficients) <- rownames(cg_pb_cds)
+    }
+    if (is.null(rownames(pb_coeffs$stdev.unscaled)) || any(is.na(rownames(pb_coeffs$stdev.unscaled)))) {
+      rownames(pb_coeffs$stdev.unscaled) <- rownames(cg_pb_cds)
+    }
   }
 
   assertthat::assert_that(nrow(pb_coeffs$coefficients) == nrow(cg_pb_cds))

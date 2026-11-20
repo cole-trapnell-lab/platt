@@ -34,6 +34,7 @@ compare_genes_within_state_graph(
   perf_summary_path = NULL,
   profile = FALSE,
   profile_out = NULL,
+  fit_method = c("closed_form", "monocle"),
   ...
 )
 }
@@ -73,7 +74,8 @@ compare_genes_within_state_graph(
 
 \item{write_dir}{Directory to write output files. Default is NULL.}
 
-\item{max_simultaneous_genes}{Maximum number of genes to analyze simultaneously. Default is NULL.}
+\item{max_simultaneous_genes}{Maximum number of genes to analyze simultaneously. Default is NULL.
+Only the monocle fit uses it (see \code{fit_method}).}
 
 \item{filter_mode}{Gene filtering strategy ("global" uses aggregate detection, "by_background_count" uses per-cell-type background rates).}
 
@@ -82,6 +84,11 @@ compare_genes_within_state_graph(
 \item{profile}{Whether to enable Rprof profiling for the DEG run.}
 
 \item{profile_out}{Path for the Rprof output (default derived from write_dir when profile = TRUE).}
+
+\item{fit_method}{"closed_form" (default) fits \code{~ 0 + perturbation} directly when there is no nuisance
+term, over all of a cell group's genes at once (see \code{closed_form_state_coefficients()}); "monocle"
+always calls \code{monocle3::fit_models()} in blocks of \code{max_simultaneous_genes}. With a nuisance term the
+monocle fit is used either way.}
 
 \item{...}{Additional arguments.}
 
